@@ -3,11 +3,10 @@ import { Browser, BrowserPlatform, computeExecutablePath, getDownloadUrl, instal
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { ENV } from "@zks/shared";
+import { isDownload, pinnedEntry, pinnedExecutablePath, pinnedInstallDir, type PinnedDownload, type PlatformKey, type ToolName } from "@zks/shared/node";
 import type { ZksContext } from "./context.ts";
 import { downloadVerified } from "./download.ts";
-import { findOnPath, runCommand } from "./exec.ts";
-import { isDownload, type PinnedDownload, type ToolName } from "./lock.ts";
-import type { PlatformKey } from "./platform.ts";
+import { runCommand } from "./exec.ts";
 
 export type InstallStatus = "present" | "installed" | "system";
 
@@ -17,14 +16,6 @@ const CHROME_PLATFORMS: Partial<Record<PlatformKey, BrowserPlatform>> = {
   "mac-arm64": BrowserPlatform.MAC_ARM,
   "win-x64": BrowserPlatform.WIN64,
 };
-const SHORT_HASH_LENGTH = 12;
-
-function pinnedEntry(context: ZksContext, name: ToolName) {
-  const entry = context.lock.tools[name].platforms[context.platform];
-  if (!entry) throw new Error(`${name} has no pinned build for ${context.platform}`);
-  return entry;
-}
-
 function chromeOptions(context: ZksContext) {
   const platform = CHROME_PLATFORMS[context.platform];
   if (!platform) throw new Error(`chrome-headless-shell has no build for ${context.platform}`);
@@ -32,17 +23,11 @@ function chromeOptions(context: ZksContext) {
   return { browser: Browser.CHROMEHEADLESSSHELL, buildId, platform, cacheDir: path.join(context.toolsDir, "chrome-headless-shell") };
 }
 
-function extractedDir(context: ZksContext, name: ToolName, entry: PinnedDownload): string {
-  return path.join(context.toolsDir, name, entry.sha256.slice(0, SHORT_HASH_LENGTH));
-}
-
 /** Where the tool's executable is, or would be once installed. */
 export function toolExecutablePath(context: ZksContext, name: ToolName): string | undefined {
   if (name === "ffmpeg" && process.env[ENV.ffmpeg]) return process.env[ENV.ffmpeg];
-  const entry = pinnedEntry(context, name);
-  if (!isDownload(entry)) return findOnPath(entry.executable ?? entry.homebrew);
-  if (name === "chrome-headless-shell") return computeExecutablePath(chromeOptions(context));
-  return path.join(extractedDir(context, name, entry), entry.executable ?? name);
+  if (name === "chrome-headless-shell" && isDownload(pinnedEntry(context, name))) return computeExecutablePath(chromeOptions(context));
+  return pinnedExecutablePath(context, name);
 }
 
 export function chromeDownloadUrl(context: ZksContext): string {
@@ -81,7 +66,7 @@ export async function installTool(context: ZksContext, name: ToolName): Promise<
   if (executable && existsSync(executable)) return "present";
   const archivePath = path.join(context.toolsDir, ".downloads", path.basename(new URL(entry.url).pathname));
   await downloadVerified({ url: entry.url, sha256: entry.sha256, destination: archivePath });
-  extractArchive(archivePath, extractedDir(context, name, entry));
+  extractArchive(archivePath, pinnedInstallDir(context.toolsDir, name, entry));
   rmSync(archivePath, { force: true });
   return "installed";
 }

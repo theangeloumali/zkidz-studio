@@ -3,15 +3,11 @@
 import { constants } from "node:fs";
 import { access, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
-import { loadToolsLock } from "@zks/cli/src/lock.ts";
-import { platformKey } from "@zks/cli/src/platform.ts";
-import { toolExecutablePath } from "@zks/cli/src/tools.ts";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { APP_PORT, ENV } from "@zks/shared";
+import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
 
-export const STUDIO_HOME_DIRS = ["db", "backups", "tools", "models", "locks", "projects"] as const;
 export const PROJECT_DIRS = ["media", "work", "progress", "deliverables"] as const;
-const APP_FOLDER_NAME = "zkidz-studio";
 const OWNER_ONLY_MODE = 0o700;
 const MAX_PORT = 65535;
 const SETUP_HINT = "Run: pnpm zks setup";
@@ -26,14 +22,8 @@ export interface ServerConfig {
   readonly ffprobePath: string;
 }
 
-export function defaultStudioHome(host: { platform: NodeJS.Platform; homeDir: string; env: Environment }): string {
-  if (host.platform === "win32") return win32.join(host.env.LOCALAPPDATA ?? win32.join(host.homeDir, "AppData", "Local"), APP_FOLDER_NAME);
-  if (host.platform === "darwin") return posix.join(host.homeDir, "Library", "Application Support", APP_FOLDER_NAME);
-  return posix.join(host.env.XDG_DATA_HOME ?? posix.join(host.homeDir, ".local", "share"), APP_FOLDER_NAME);
-}
-
 export function loadServerConfig(env: Environment): ServerConfig {
-  const studioHome = env[ENV.home] ?? defaultStudioHome({ platform: process.platform, homeDir: homedir(), env });
+  const studioHome = defaultZksHome({ platform: process.platform, homeDir: homedir(), env });
   if (!isAbsolute(studioHome)) throw new Error(`${ENV.home} must be an absolute path`);
   return {
     studioHome,
@@ -55,7 +45,7 @@ export async function assertFfprobeInstalled(ffprobePath: string): Promise<void>
 
 export async function ensureStudioHome(studioHome: string): Promise<void> {
   await mkdir(studioHome, { recursive: true, mode: OWNER_ONLY_MODE });
-  await Promise.all(STUDIO_HOME_DIRS.map((dir) => mkdir(join(studioHome, dir), { recursive: true, mode: OWNER_ONLY_MODE })));
+  await Promise.all(ZKS_HOME_DIRS.map((dir) => mkdir(join(studioHome, dir), { recursive: true, mode: OWNER_ONLY_MODE })));
 }
 
 export function projectDir(studioHome: string, slug: string): string {
@@ -78,14 +68,7 @@ function parsePort(rawPort: string | undefined): number {
 function pinnedFfmpegPath(env: Environment, studioHome: string): string {
   const overridePath = env[ENV.ffmpeg];
   if (overridePath) return overridePath;
-  const toolsContext = {
-    home: studioHome,
-    toolsDir: join(studioHome, "tools"),
-    modelsDir: join(studioHome, "models"),
-    platform: platformKey(),
-    lock: loadToolsLock(),
-  };
-  const ffmpegPath = toolExecutablePath(toolsContext, "ffmpeg");
+  const ffmpegPath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, "ffmpeg");
   if (!ffmpegPath) throw new Error(`ffmpeg is not installed. ${SETUP_HINT}`);
   return ffmpegPath;
 }

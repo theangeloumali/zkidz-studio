@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ZksContext } from "./context.ts";
 import { downloadVerified } from "./download.ts";
-import type { ModelPin } from "./lock.ts";
+import type { ModelPin } from "@zks/shared/node";
 
 export interface ModelStatus {
   name: string;

@@ -38,7 +38,7 @@ class Clip(NamedTuple):
 
 def probe(argument):
     path, _, zoom = argument.partition("@")
-    stream = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
+    stream = json.loads(subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
                                         "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt", "-of", "json", path],
                                        capture_output=True, text=True, check=True).stdout)["streams"][0]
     if stream["r_frame_rate"] != f"{FPS_NUM}/{FPS_DEN}":

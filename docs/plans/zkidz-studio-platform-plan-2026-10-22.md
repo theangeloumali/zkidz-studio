@@ -1230,9 +1230,11 @@ Source: `claudedocs/research/install-ci.md`.
                                                   └──────────────────────────┘
 ```
 
-- `devEngines.runtime: { name: "node", version: ">=24.11 <27", onFail: "download" }`, `devEngines.packageManager` pnpm `^12`
-  (https://pnpm.io/package_json). No Corepack (dropped from Node 25+, https://github.com/nodejs/corepack). Never name a script
-  `setup` (`pnpm setup` is built in, https://pnpm.io/cli/setup).
+- `devEngines.runtime: { name: "node", version: ">=24.11 <27", onFail: "download" }`, `devEngines.packageManager` pnpm pinned
+  exactly to the bootstrap's version (`^12` resolves under `minimumReleaseAge` to an older pnpm, which the checksummed bootstrap then
+  switches to), and `packageManager` carries `+sha512.<hex>` so Corepack verifies its switch too; pnpm's own switch verifies the
+  lockfile's `packageManagerDependencies` integrity (https://pnpm.io/package_json). Corepack is not required (dropped from
+  Node 25+, https://github.com/nodejs/corepack). Never name a script `setup` (`pnpm setup` is built in, https://pnpm.io/cli/setup).
 - Spike 06 passed in a fresh `node:24` container: pnpm downloaded the pinned Node, wrote it and pnpm 12.15.0 to the lockfile with
   per-platform integrity hashes, and switched itself to the pinned pnpm. Only package scripts run on the pinned Node; a bare `node`
   in the checkout still ran the system one. So the README, `doctor` hints and CI run everything through `pnpm <script>`, `pnpm exec`

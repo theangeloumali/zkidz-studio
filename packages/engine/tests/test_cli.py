@@ -1,6 +1,7 @@
 # Created by The Angelo Umali.
 # zks-engine <cmd> --json: the server's contract with the engine is JSON on stdout and the exit code.
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -13,8 +14,8 @@ import support  # noqa: F401  first: it sets a scratch ZKS_HOME
 from zks_engine import __version__, cli
 
 
-def run_cli(*args):
-    return subprocess.run([sys.executable, "-m", "zks_engine.cli", *args], capture_output=True, text=True)
+def run_cli(*args, env=None):
+    return subprocess.run([sys.executable, "-m", "zks_engine.cli", *args], capture_output=True, text=True, env=env)
 
 
 class CliTests(unittest.TestCase):
@@ -38,6 +39,17 @@ class CliTests(unittest.TestCase):
         error = json.loads(result.stdout)["error"]
         self.assertEqual(error["code"], "media_rejected")
         self.assertIn("playlist", error["message"])
+
+    def test_a_missing_pinned_ffprobe_is_a_json_error(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            clip = Path(scratch) / "clip.mp4"
+            clip.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+            missing = str(Path(scratch) / "tools" / "ffprobe")
+            result = run_cli("probe", "--json", str(clip), env={**os.environ, "ZKS_FFPROBE": missing})
+        self.assertEqual(result.returncode, cli.EXIT_TOOL_MISSING)
+        error = json.loads(result.stdout)["error"]
+        self.assertEqual(error["code"], "tool_missing")
+        self.assertIn(missing, error["message"])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg and ffprobe")
     def test_probe_prints_metadata(self):

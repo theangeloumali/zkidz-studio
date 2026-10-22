@@ -139,7 +139,7 @@ def chain(*filters):
 
 
 def probe_video(path):
-    result = subprocess.run(["ffprobe", "-v", "error", *ffio.WHITELISTS, "-select_streams", "v:0", "-show_entries",
+    result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", *ffio.WHITELISTS, "-select_streams", "v:0", "-show_entries",
                              "stream=codec_name,width,height,pix_fmt,sample_aspect_ratio:stream_side_data", "-of", "json", str(path)],
                             capture_output=True, text=True, check=True)
     return json.loads(result.stdout)["streams"][0]

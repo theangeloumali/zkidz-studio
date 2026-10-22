@@ -3,8 +3,11 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
+// Node-environment tests (the real-server CSRF suite) have no DOM to patch.
+const hasDom = typeof window !== "undefined";
+
 // jsdom has no modal dialog support; open/close is all the picker tests need.
-if (typeof HTMLDialogElement.prototype.showModal !== "function") {
+if (hasDom && typeof HTMLDialogElement.prototype.showModal !== "function") {
   HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
     this.open = true;
   };
@@ -15,7 +18,7 @@ if (typeof HTMLDialogElement.prototype.showModal !== "function") {
 }
 
 // jsdom has no canvas; axe probes it for icon contrast and logs noise otherwise.
-HTMLCanvasElement.prototype.getContext = () => null;
+if (hasDom) HTMLCanvasElement.prototype.getContext = () => null;
 
 afterEach(() => {
   cleanup();

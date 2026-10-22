@@ -1,10 +1,13 @@
 # Created by The Angelo Umali.
 # ffmpeg input policy (plan §7.5): user media is a plain local file, never a playlist, list, URL or image sequence.
+import os
+import re
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import support  # noqa: F401  first: it sets a scratch ZKS_HOME
 
@@ -130,3 +133,43 @@ class ProbeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PinnedFfprobeTests(unittest.TestCase):
+    """The server checks a pinned ffprobe at startup; the engine must run that same binary, not a PATH lookalike."""
+
+    def setUp(self):
+        environment = mock.patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        for name in ("ZKS_FFPROBE", "ZKS_FFMPEG"):
+            os.environ.pop(name, None)
+
+    def test_zks_ffprobe_wins(self):
+        os.environ["ZKS_FFPROBE"] = "/pinned/bin/ffprobe"
+        os.environ["ZKS_FFMPEG"] = "/other/ffmpeg"
+        self.assertEqual(ffio.ffprobe_bin(), "/pinned/bin/ffprobe")
+
+    def test_ffprobe_sits_beside_zks_ffmpeg(self):
+        os.environ["ZKS_FFMPEG"] = str(Path("/pinned/bin/ffmpeg"))
+        self.assertEqual(ffio.ffprobe_bin(), str(Path("/pinned/bin/ffprobe")))
+        os.environ["ZKS_FFMPEG"] = str(Path("/pinned/bin/FFMPEG.EXE"))
+        self.assertEqual(ffio.ffprobe_bin(), str(Path("/pinned/bin/ffprobe.exe")))
+
+    def test_a_dev_checkout_falls_back_to_path(self):
+        self.assertEqual(ffio.ffprobe_bin(), "ffprobe")
+
+    def test_probe_runs_the_pinned_binary(self):
+        os.environ["ZKS_FFPROBE"] = "/pinned/bin/ffprobe"
+        with tempfile.TemporaryDirectory() as folder:
+            clip = Path(folder) / "clip.mp4"
+            clip.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+            failed = subprocess.CompletedProcess([], 1, "", "boom")
+            with mock.patch.object(ffio.subprocess, "run", return_value=failed) as run, self.assertRaises(ffio.MediaRejected):
+                ffio.probe(clip)
+        self.assertEqual(run.call_args.args[0][0], "/pinned/bin/ffprobe")
+
+    def test_no_engine_module_calls_a_bare_ffprobe(self):
+        bare_call = re.compile(r"""\[\s*["']ffprobe["']""")
+        offenders = [path.name for path in Path(ffio.__file__).parent.glob("*.py") if bare_call.search(path.read_text(encoding="utf-8"))]
+        self.assertEqual(offenders, [])

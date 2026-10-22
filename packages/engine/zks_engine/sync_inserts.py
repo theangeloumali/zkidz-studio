@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 import numpy as np
 
+from . import ffio
 from .pipeline import FPS_DEN, FPS_NUM, WORK, has_cuda, probe_video, rotation_of, upright_size
 from .showcase import panel_for
 
@@ -126,7 +127,7 @@ def draft_insert(span, src, size, mode):
 
 
 def has_audio(path):
-    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
+    probe = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
                            capture_output=True, text=True, check=True)
     return bool(probe.stdout.strip())
 

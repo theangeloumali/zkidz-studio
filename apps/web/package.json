@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && tsc -p tests/real-server",
     "test": "vitest run"
   },
   "dependencies": {

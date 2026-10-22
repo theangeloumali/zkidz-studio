@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import { redactReport, redactText, type PathRoots } from "@zks/shared";
 import type { ZksContext } from "./context.ts";
 import {
   checkBootstrapTool,
@@ -15,7 +16,6 @@ import {
   type CheckResult,
 } from "./checks.ts";
 import os from "node:os";
-import { redactReport, redactText, type PathRoots } from "./redact.ts";
 
 export type { CheckResult } from "./checks.ts";
 

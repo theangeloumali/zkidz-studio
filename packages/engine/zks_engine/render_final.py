@@ -270,7 +270,7 @@ def intro_bounds(frames, at, jobs=RENDER_JOBS):
 @functools.cache
 def frame_times(source):
     """Presentation times (s) of every video frame, from the packet table: no decode."""
-    result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts,pts_time", "-of", "csv=p=0",
+    result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts,pts_time", "-of", "csv=p=0",
                              str(source)], capture_output=True, text=True, check=True)
     return sorted(float(line.split(",")[1]) for line in result.stdout.split() if "," in line and "N/A" not in line)
 
@@ -302,7 +302,7 @@ def frames_written(report):
 
 
 def count_frames(path):
-    result = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=nb_read_packets",
+    result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=nb_read_packets",
                              "-of", "json", str(path)], capture_output=True, text=True, check=True)
     return int(json.loads(result.stdout)["streams"][0]["nb_read_packets"])
 

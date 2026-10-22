@@ -8,6 +8,7 @@ import sys
 from . import __version__, ffio
 
 EXIT_REJECTED = 3
+EXIT_TOOL_MISSING = 4
 
 
 def version_payload(_args):
@@ -37,6 +38,8 @@ def main(argv=None):
         payload, code = args.handler(args), 0
     except ffio.MediaRejected as error:
         payload, code = {"error": {"code": "media_rejected", "message": str(error)}}, EXIT_REJECTED
+    except ffio.ToolMissing as error:
+        payload, code = {"error": {"code": "tool_missing", "message": str(error)}}, EXIT_TOOL_MISSING
     print(json.dumps(payload))
     return code
 

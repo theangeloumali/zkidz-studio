@@ -11,3 +11,4 @@ export * from "./tools/index.ts";
 export * from "./runtime.ts";
 export * from "./api/index.ts";
 export * from "./json-schema.ts";
+export * from "./redact.ts";

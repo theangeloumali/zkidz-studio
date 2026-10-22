@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ZksContext } from "../src/context.ts";
-import { loadToolsLock } from "../src/lock.ts";
-import { PLATFORM_KEYS, type PlatformKey } from "../src/platform.ts";
+import { loadToolsLock, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
 import { chromeDownloadUrl, installTool, toolExecutablePath } from "../src/tools.ts";
 
 function contextFor(platform: PlatformKey): ZksContext {

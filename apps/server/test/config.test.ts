@@ -2,30 +2,15 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { isDownload, loadToolsLock } from "@zks/cli/src/lock.ts";
-import { platformKey } from "@zks/cli/src/platform.ts";
 import { APP_PORT } from "@zks/shared";
+import { isDownload, loadToolsLock, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertFfprobeInstalled, defaultStudioHome, ensureStudioHome, loadServerConfig, STUDIO_HOME_DIRS } from "../src/config.ts";
+import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "../src/config.ts";
 
 let scratchDir = "";
 afterEach(async () => {
   if (scratchDir) await rm(scratchDir, { recursive: true, force: true });
   scratchDir = "";
-});
-
-describe("defaultStudioHome", () => {
-  it("follows each platform's per-user data folder (plan §3.3)", () => {
-    expect(defaultStudioHome({ platform: "linux", homeDir: "/home/u", env: {} })).toBe("/home/u/.local/share/zkidz-studio");
-    expect(defaultStudioHome({ platform: "darwin", homeDir: "/Users/u", env: {} })).toBe("/Users/u/Library/Application Support/zkidz-studio");
-    expect(defaultStudioHome({ platform: "win32", homeDir: "C:\\Users\\u", env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" } })).toBe(
-      "C:\\Users\\u\\AppData\\Local\\zkidz-studio",
-    );
-  });
-
-  it("honours XDG_DATA_HOME on Linux", () => {
-    expect(defaultStudioHome({ platform: "linux", homeDir: "/home/u", env: { XDG_DATA_HOME: "/data" } })).toBe("/data/zkidz-studio");
-  });
 });
 
 describe("loadServerConfig", () => {
@@ -79,7 +64,7 @@ describe("ensureStudioHome", () => {
     scratchDir = await mkdtemp(join(tmpdir(), "zks-home-"));
     const studioHome = join(scratchDir, "studio");
     await ensureStudioHome(studioHome);
-    for (const dir of ["", ...STUDIO_HOME_DIRS]) {
+    for (const dir of ["", ...ZKS_HOME_DIRS]) {
       const dirStat = await stat(join(studioHome, dir));
       expect(dirStat.isDirectory()).toBe(true);
       if (process.platform !== "win32") expect(dirStat.mode & 0o777).toBe(0o700);

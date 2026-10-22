@@ -2,8 +2,8 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadToolsLock, type ToolsLock } from "./lock.ts";
-import { defaultZksHome, platformKey, uvEnvironment, type PlatformKey } from "./platform.ts";
+import { defaultZksHome, loadToolsLock, platformKey, ZKS_HOME_DIRS, type PlatformKey, type ToolsLock } from "@zks/shared/node";
+import { uvEnvironment } from "./platform.ts";
 
 export interface ZksContext {
   home: string;
@@ -13,11 +13,10 @@ export interface ZksContext {
   lock: ToolsLock;
 }
 
-const HOME_SUBDIRS = ["db", "backups", "tools", "models", "locks", "projects"] as const;
 const OWNER_ONLY = 0o700;
 
 export function resolveZksHome(): string {
-  return path.resolve(defaultZksHome({ env: process.env, nodePlatform: process.platform, homeDir: os.homedir() }));
+  return path.resolve(defaultZksHome({ env: process.env, platform: process.platform, homeDir: os.homedir() }));
 }
 
 export function createContext(): ZksContext {
@@ -28,7 +27,7 @@ export function createContext(): ZksContext {
 }
 
 export function ensureHomeLayout({ home }: ZksContext): void {
-  for (const subdir of HOME_SUBDIRS) mkdirSync(path.join(home, subdir), { recursive: true, mode: OWNER_ONLY });
+  for (const subdir of ZKS_HOME_DIRS) mkdirSync(path.join(home, subdir), { recursive: true, mode: OWNER_ONLY });
   // mkdir's mode does not tighten a directory that already exists.
   if (process.platform !== "win32") chmodSync(home, OWNER_ONLY);
 }

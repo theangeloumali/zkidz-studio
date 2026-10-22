@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Created by The Angelo Umali.
 import os from "node:os";
+import type { PathRoots } from "@zks/shared";
 import { createContext, resolveZksHome } from "./context.ts";
 import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
-import type { PathRoots } from "./redact.ts";
 import { runSetup } from "./setup.ts";
 
 const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name>";

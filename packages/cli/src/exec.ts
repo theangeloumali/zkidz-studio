@@ -20,18 +20,6 @@ export const runCommand: CommandRunner = (command, args, timeoutMs = DEFAULT_TIM
   return { code: child.error ? null : child.status, stdout: child.stdout ?? "", stderr: child.stderr ?? "" };
 };
 
-export function findOnPath(name: string, extraDirs: string[] = []): string | undefined {
-  const extensions = isWindows ? (process.env.PATHEXT ?? ".EXE;.CMD").split(";").concat("") : [""];
-  const searchDirs = [...extraDirs, ...(process.env.PATH ?? "").split(path.delimiter).filter(Boolean)];
-  for (const dir of searchDirs) {
-    for (const extension of extensions) {
-      const candidate = path.join(dir, name + extension.toLowerCase());
-      if (existsSync(candidate)) return candidate;
-    }
-  }
-  return undefined;
-}
-
 /** Versioned bootstrap dirs that setup.sh / setup.ps1 create under ZKS_HOME/tools/<name>/<version>. */
 export function bootstrapDirs(toolsDir: string, name: string): string[] {
   const root = path.join(toolsDir, name);

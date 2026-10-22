@@ -1,9 +1,9 @@
 // Created by The Angelo Umali.
 import os from "node:os";
+import { redactText } from "@zks/shared";
+import type { ToolName } from "@zks/shared/node";
 import { ensureHomeLayout, type ZksContext } from "./context.ts";
-import type { ToolName } from "./lock.ts";
 import { fetchModel } from "./models.ts";
-import { redactText } from "./redact.ts";
 import { installTool } from "./tools.ts";
 
 const SETUP_TOOLS: readonly ToolName[] = ["ffmpeg", "whisper-cpp", "chrome-headless-shell"];

@@ -2,6 +2,7 @@
 # ffmpeg input policy (plan §7.5). ffmpeg allows every protocol by default, so a playlist renamed .mp4 could open other
 # files or URLs: user media is sniffed before ffmpeg sees it, then read under protocol and container whitelists.
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -20,6 +21,10 @@ HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
 
 class MediaRejected(ValueError):
     """User media that is not a plain local media file."""
+
+
+class ToolMissing(RuntimeError):
+    """The pinned ffmpeg/ffprobe is not where the environment says it is."""
 
 
 def check_user_media(path):
@@ -87,11 +92,25 @@ def rational(text):
     return int(num), int(den or 1)
 
 
+def ffprobe_bin():
+    """The pinned ffprobe the server checked at startup: ZKS_FFPROBE, else beside ZKS_FFMPEG; PATH only in a dev checkout."""
+    if os.environ.get("ZKS_FFPROBE"):
+        return os.environ["ZKS_FFPROBE"]
+    if os.environ.get("ZKS_FFMPEG"):
+        ffmpeg = Path(os.environ["ZKS_FFMPEG"])
+        return str(ffmpeg.with_name("ffprobe.exe" if ffmpeg.name.lower().endswith(".exe") else "ffprobe"))
+    return "ffprobe"
+
+
 def probe(path):
     """The probe_media contract (@zks/shared tools/media.ts): size is upright, as a player shows it."""
     source = check_user_media(path)
-    result = subprocess.run(["ffprobe", "-v", "error", *WHITELISTS, "-show_format", "-show_streams", "-of", "json", str(source)],
-                            capture_output=True, text=True)
+    ffprobe = ffprobe_bin()
+    try:
+        result = subprocess.run([ffprobe, "-v", "error", *WHITELISTS, "-show_format", "-show_streams", "-of", "json", str(source)],
+                                capture_output=True, text=True)
+    except FileNotFoundError:
+        raise ToolMissing(f"ffprobe is not installed at {ffprobe}. Run: pnpm zks setup") from None
     if result.returncode:
         raise MediaRejected(f"{Path(path).name}: ffprobe could not read it ({result.stderr.strip()[-300:]})")
     info = json.loads(result.stdout)

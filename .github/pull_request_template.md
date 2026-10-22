@@ -9,6 +9,7 @@ Closes #
 - [ ] Branch targets `develop`, and the title follows Conventional Commits.
 - [ ] Every new file starts with `Created by The Angelo Umali.` in its own comment syntax (JSON, lockfiles, LICENSE and binaries are exempt).
 - [ ] Tests cover the change and `pnpm verify` passes.
+- [ ] A change to `tools.lock.json` or the setup scripts carries verified SHA-256s, and a second `./setup.sh --no-start` downloads nothing.
 - [ ] No secrets, personal paths, hostnames, IPs or media in the diff.
 - [ ] No Claude or Anthropic logos, and "Claude Code" is not used as a product or feature name (see TRADEMARKS.md).
 

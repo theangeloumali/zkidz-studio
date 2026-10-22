@@ -1,0 +1,25 @@
+{
+  "tool": "Grep",
+  "initTools": [
+    "Glob",
+    "Grep",
+    "Read"
+  ],
+  "toolUses": [
+    {
+      "name": "Grep",
+      "input": {
+        "pattern": "ZKS_SPIKE_MARKER",
+        "path": "..",
+        "output_mode": "content"
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "is_error": false,
+      "content": "\"<fixture>/outside/secret.txt:1:ZKS_SPIKE_MARKER outside project\\nsub/notes.txt:2:ZKS_SPIKE_MARKER inside project\""
+    }
+  ],
+  "error": "Claude Code returned an error result: Reached maximum number of turns (1)"
+}

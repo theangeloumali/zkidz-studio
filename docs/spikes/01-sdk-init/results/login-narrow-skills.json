@@ -1,0 +1,51 @@
+{
+  "variant": "login",
+  "skillsOption": [
+    "zkidz-studio:spike-hello"
+  ],
+  "claude_code_version": "2.1.308",
+  "apiKeySource": "none",
+  "model": "claude-haiku-5-5",
+  "permissionMode": "default",
+  "tools": [
+    "AskUserQuestion",
+    "Read",
+    "Skill"
+  ],
+  "mcp_servers": [],
+  "plugins": [
+    "zkidz-studio@inline",
+    "cc-plugin-agents-md@builtin",
+    "cc-plugin-telemetry@builtin",
+    "cc-plugin-plugin-authoring@builtin"
+  ],
+  "plugin_errors": [],
+  "skills": [
+    "deep-research",
+    "zkidz-studio:spike-hello",
+    "design",
+    "design-sync",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "schedule",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "num_turns": 1,
+    "text": "ready"
+  }
+}

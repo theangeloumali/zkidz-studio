@@ -1,0 +1,132 @@
+/* Created by The Angelo Umali. */
+@import "tailwindcss";
+/* Unlayered on purpose: these values must beat Tailwind's layered defaults (e.g. --ease-out), plan §9.1. */
+@import "../../../../design/tokens.css";
+
+/* Utilities read the token variables directly; only the ZKidz palette, radii and type scale exist. */
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--color-bg);
+  --color-bg-elevated: var(--color-bg-elevated);
+  --color-surface: var(--color-surface);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-copy: var(--color-copy);
+  --color-copy-muted: var(--color-copy-muted);
+  --color-copy-dim: var(--color-copy-dim);
+  --color-accent: var(--color-accent);
+  --color-accent-strong: var(--color-accent-strong);
+  --color-on-accent: var(--color-on-accent);
+  --color-cta: var(--color-cta);
+  --color-cta-strong: var(--color-cta-strong);
+  --color-on-cta: var(--color-on-cta);
+  --color-cta-edge: var(--color-cta-edge);
+  --color-danger: var(--color-danger);
+  --color-success: var(--color-success);
+  --color-focus: var(--color-focus);
+
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --text-display: var(--text-display);
+  --text-display--line-height: var(--leading-display);
+  --text-h2: var(--text-h2);
+  --text-h2--line-height: var(--leading-h2);
+  --text-h3: var(--text-h3);
+  --text-h3--line-height: var(--leading-h3);
+  --text-lede: var(--text-lede);
+  --text-lede--line-height: var(--leading-lede);
+  --text-label: var(--text-label);
+  --text-label--line-height: var(--leading-label);
+  --text-body: var(--text-body);
+  --text-body--line-height: var(--leading-body);
+  --text-ui-sm: var(--text-ui-sm);
+  --text-ui: var(--text-ui);
+  --text-ui-lg: var(--text-ui-lg);
+  --text-panel-title: var(--text-panel-title);
+
+  --radius-*: initial;
+  --radius-control: var(--radius-control);
+  --radius-card: var(--radius-card);
+  --radius-field: var(--radius-field);
+  --radius-inset: var(--radius-inset);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-*: initial;
+  --shadow-overlay: var(--shadow-overlay);
+}
+
+@utility font-condensed {
+  font-stretch: var(--font-stretch-condensed);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+    color: var(--color-copy);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    min-height: 100dvh;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  :focus-visible {
+    outline: var(--focus-width) solid var(--color-focus);
+    outline-offset: var(--focus-offset);
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-on-accent);
+  }
+
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  dialog::backdrop {
+    background: var(--backdrop);
+  }
+}
+
+/* Dialog entrance: scale + fade from an already-visible state, never from nothing. */
+.dialog-pop[open] {
+  animation: dialog-pop var(--dur-1) var(--ease-out);
+}
+
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+  }
+
+  .dialog-pop[open] {
+    animation-name: dialog-fade;
+  }
+
+  @keyframes dialog-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}

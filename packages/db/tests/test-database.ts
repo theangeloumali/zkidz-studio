@@ -1,7 +1,6 @@
 // Created by The Angelo Umali.
 // Opens the backend the plan §8 switch selects: PGlite in memory when DATABASE_URL is unset, postgres.js otherwise.
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import type { SQL } from "drizzle-orm";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
@@ -9,9 +8,7 @@ import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
 import { drizzle as drizzlePostgres } from "drizzle-orm/postgres-js";
 import { migrate as migratePostgres } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-
-// fileURLToPath, not .pathname: on Windows .pathname yields "/C:/..." and keeps %20 escapes.
-const MIGRATIONS_FOLDER = fileURLToPath(new URL("../migrations", import.meta.url));
+import { MIGRATIONS_FOLDER } from "../src/index.ts";
 
 export interface TestDatabase {
   readonly backend: "pglite" | "postgres";

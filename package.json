@@ -18,6 +18,9 @@
     }
   },
   "scripts": {
+    "start": "pnpm -F @zks/web build && pnpm -F @zks/server start",
+    "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
+    "zks": "node packages/cli/src/main.ts",
     "verify": "node scripts/check-attribution.mjs && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
     "db:test:matrix": "node scripts/db-test-matrix.mjs",
     "format": "prettier --write .",

@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { ProjectPathSchema, STUDIO_TOOL_NAMES, STUDIO_TOOLS, findStudioTool, studioToolName } from "../src/index.ts";
+import { ProjectPathSchema, STUDIO_AUTO_ALLOWED_TOOL_NAMES, STUDIO_TOOL_NAMES, STUDIO_TOOLS, findStudioTool, studioToolName } from "../src/index.ts";
 import { ASSET_ID, JOB_ID, validCutSpec } from "./fixtures.ts";
 import { sampleCueByKind } from "./cue-samples.ts";
 
@@ -87,6 +87,13 @@ describe("STUDIO_TOOLS catalog (plan §6.8)", () => {
     expect(studioToolName("set_cuts")).toBe("mcp__studio__set_cuts");
     expect(STUDIO_TOOL_NAMES).toHaveLength(Object.keys(EXPECTED_CATALOG).length);
     expect(STUDIO_TOOL_NAMES.every((qualifiedName) => qualifiedName.startsWith("mcp__studio__"))).toBe(true);
+  });
+
+  it("keeps gated tools out of the auto-allowed list so Claude Code still prompts for them", () => {
+    expect(STUDIO_AUTO_ALLOWED_TOOL_NAMES).toContain("mcp__studio__set_cuts");
+    expect(STUDIO_AUTO_ALLOWED_TOOL_NAMES).not.toContain("mcp__studio__render_master");
+    expect(STUDIO_AUTO_ALLOWED_TOOL_NAMES).not.toContain("mcp__studio__delete_asset");
+    expect(STUDIO_AUTO_ALLOWED_TOOL_NAMES.every((qualifiedName) => findStudioTool(qualifiedName)?.approval === "auto")).toBe(true);
   });
 
   it.each(Object.entries(VALID_INPUT_BY_TOOL))("accepts a valid %s input", (toolName, validInput) => {

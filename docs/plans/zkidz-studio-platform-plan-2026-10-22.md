@@ -17,7 +17,7 @@ Date 2026-10-22. Author: Marcus (tech lead). Inputs: the six research files in `
 
 ## Phase ledger
 
-- [ ] Phase 0: Bootstrap, shared contracts, spikes, mock-up reconciliation and approval
+- [x] Phase 0: Bootstrap, shared contracts, spikes, mock-up reconciliation and approval (done 2026-10-23; mock-up approval gate `design/mockup/APPROVED.md` waits on Angelo)
 - [ ] Phase 1: Foundations (server, DB, event bus, web shell, engine import, setup CLI)
 - [ ] Phase 2: Claude connection and agent host (auth modes A and B, terminal mode T as opt-in, SDK session, PTY host, hooks
       bridge, MCP tools v1, activity feed)

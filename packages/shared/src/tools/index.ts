@@ -56,8 +56,11 @@ function isStudioToolName(candidateName: string): candidateName is StudioToolNam
   return Object.hasOwn(STUDIO_TOOLS, candidateName);
 }
 
-/** Every catalog tool, qualified; mode T passes these to `--allowedTools` (plan §6.3). */
+/** Every catalog tool, qualified. */
 export const STUDIO_TOOL_NAMES = Object.keys(STUDIO_TOOLS).filter(isStudioToolName).map(studioToolName);
+
+/** Mode T's `--allowedTools` (plan §6.3): gated tools stay out so Claude Code's own prompt backs up the server's gate. */
+export const STUDIO_AUTO_ALLOWED_TOOL_NAMES = STUDIO_TOOL_NAMES.filter((qualifiedName) => findStudioTool(qualifiedName)?.approval === "auto");
 
 /** Looks up a contract by bare or `mcp__studio__`-qualified name, e.g. from a hook payload's tool_name. */
 export function findStudioTool(toolName: string): StudioToolContract | undefined {

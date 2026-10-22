@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { CSRF_HEADER } from "@zks/shared";
+import { API_ROUTES, CSRF_HEADER, isStateChangingMethod } from "@zks/shared";
 import { describe, expect, it } from "vitest";
 import { buildGuardedApp, sendRequest, TEST_APP_HOST, TEST_APP_PORT, TEST_PREVIEW_PORT, validWriteHeaders, type HeaderOverrides } from "./test-app.ts";
 
@@ -82,6 +82,34 @@ describe("Origin + CSRF header on state-changing methods", () => {
     expect((await sendRequest(app, "/api/projects/p1/media", { method: "POST", headers, body: "bytes" })).status).toBe(200);
     expect((await sendRequest(app, "/api/projects/p1/media/extra", { method: "POST", headers, body: "bytes" })).status).toBe(403);
     expect((await sendRequest(app, "/api/rules", { method: "POST", headers, body: "bytes" })).status).toBe(403);
+  });
+
+  const NON_UPLOAD_WRITES = Object.entries(API_ROUTES)
+    .filter(([, route]) => isStateChangingMethod(route.method) && !("body" in route && route.body === "binary"))
+    .map(([name, route]) => [name, route.method, route.path.replace(/:[A-Za-z]+/g, "p1")] as const);
+
+  it.each(NON_UPLOAD_WRITES)("rejects an octet-stream body on %s (%s %s)", async (_name, method, path) => {
+    const { app, csrfToken } = buildGuardedApp();
+    const headers = { ...validWriteHeaders(csrfToken), "content-type": "application/octet-stream" };
+    const response = await sendRequest(app, path, { method, headers, body: "bytes" });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "Forbidden: content-type" });
+  });
+
+  it.each(["PUT", "PATCH", "DELETE"])("rejects an octet-stream %s on the upload path", async (method) => {
+    const { app, csrfToken } = buildGuardedApp();
+    const headers = { ...validWriteHeaders(csrfToken), "content-type": "application/octet-stream" };
+    expect((await sendRequest(app, "/api/projects/p1/media", { method, headers, body: "bytes" })).status).toBe(403);
+  });
+
+  it.each<[string, HeaderOverrides]>([
+    ["missing Origin", { origin: undefined }],
+    ["missing CSRF header", { [CSRF_HEADER]: undefined }],
+    ["Sec-Fetch-Site cross-site", { "sec-fetch-site": "cross-site" }],
+  ])("still rejects an upload with %s", async (_label, overrides) => {
+    const { app, csrfToken } = buildGuardedApp();
+    const headers = { ...validWriteHeaders(csrfToken), "content-type": "application/octet-stream", ...overrides };
+    expect((await sendRequest(app, "/api/projects/p1/media", { method: "POST", headers, body: "bytes" })).status).toBe(403);
   });
 
   it("gives each launch its own token", () => {

@@ -9,7 +9,7 @@ import tempfile
 import time
 import unittest
 
-from support import ENGINE, HF_SKIP, hf_installed, make_edl, scratch_work  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, HYPERFRAMES_SKIP, hf_installed, make_edl, needs_renderer, scratch_work  # first: it sets a scratch ZKS_HOME
 from test_hf_bridge import assert_seek_safe, build, clip_markup, tweens
 from test_hf_render import hyperframes_ready, rgba
 
@@ -32,7 +32,7 @@ def kinds(work, folder):
     return sorted(cue["kind"] for cue in json.loads((work / "hf" / folder / "cues.json").read_text(encoding="utf-8")))
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class LayerFilterTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -86,7 +86,7 @@ class LayerFilterTests(unittest.TestCase):
         self.assertIn("behind", result.stderr)
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class LayerIntroTests(unittest.TestCase):
     """A behind hook still places the brand intro, but only the normal pass carries the pre-roll and the split."""
 
@@ -111,7 +111,7 @@ class LayerIntroTests(unittest.TestCase):
             self.assertIn("media/fixture/nope.png", result.stderr)
 
 
-@unittest.skipUnless(hyperframes_ready(), "needs node, ffmpeg, Chrome and the overlay renderer's packages (npm ci --prefix packages/engine/hf)")
+@needs_renderer(hyperframes_ready(), HYPERFRAMES_SKIP)
 class BehindRenderTests(unittest.TestCase):
     def render(self, target, *args):
         return subprocess.run(["node", str(ENGINE / "hf" / "render.js"), target, *args], cwd=self.work,

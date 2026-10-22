@@ -48,4 +48,23 @@ describe("DropZone", () => {
 
     expect(onPickInPlace).toHaveBeenCalledOnce();
   });
+
+  it("takes a drop anywhere on the page, not only inside the box", () => {
+    const { onFiles, zone } = renderZone();
+    const files = [videoFile("a.mp4")];
+    fireEvent.dragEnter(document.body, { dataTransfer: { files: [], types: ["Files"] } });
+    expect(zone).toHaveAttribute("data-dragging", "true");
+
+    fireEvent.drop(document.body, { dataTransfer: { files, types: ["Files"] } });
+    expect(onFiles).toHaveBeenCalledWith(files);
+    expect(zone).toHaveAttribute("data-dragging", "false");
+  });
+
+  it("clears the drop target when the drag leaves the window", () => {
+    const { zone } = renderZone();
+    fireEvent.dragEnter(document.body, { dataTransfer: { files: [], types: ["Files"] } });
+    fireEvent.dragLeave(document.body, { dataTransfer: { files: [], types: ["Files"] }, relatedTarget: null });
+
+    expect(zone).toHaveAttribute("data-dragging", "false");
+  });
 });

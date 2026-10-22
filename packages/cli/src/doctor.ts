@@ -56,3 +56,9 @@ export function formatDoctorText(checks: CheckResult[], roots: PathRoots = DEFAU
   ]);
   return redactText(lines.join("\n"), roots);
 }
+
+/** A crash under --json still prints JSON, and its message can quote ZKS_HOME paths, so it is redacted too. */
+export function formatFatalError(error: unknown, { asJson, roots }: { asJson: boolean; roots: PathRoots }): string {
+  const message = redactText(error instanceof Error ? error.message : String(error), roots);
+  return asJson ? JSON.stringify({ ok: false, error: message }, null, 2) : message;
+}

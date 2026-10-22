@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-// GET /api/events (plan D3): replay from Last-Event-ID, or one `resync` per project past the cap, then live events.
+// GET /api/events (plan D3): replay from Last-Event-ID (or ?after=), or one `resync` per project past the cap, then live events.
 import { EventsQuerySchema, LAST_EVENT_ID_HEADER, LastEventIdSchema, type StudioEvent } from "@zks/shared";
 import type { Hono } from "hono";
 import { streamSSE, type SSEStreamingApi } from "hono/streaming";
@@ -10,9 +10,10 @@ const RECONNECT_DELAY_MS = 2000;
 
 export function registerEventRoutes(app: Hono, eventBus: EventBus): void {
   app.get("/api/events", (c) => {
-    const { project: projectIds } = parseOrBadRequest(EventsQuerySchema, { project: c.req.queries("project") });
+    const { project: projectIds, after } = parseOrBadRequest(EventsQuerySchema, { project: c.req.queries("project"), after: c.req.query("after") });
     const rawCursor = c.req.header(LAST_EVENT_ID_HEADER);
-    const cursor = rawCursor === undefined ? null : parseOrBadRequest(LastEventIdSchema, rawCursor);
+    // The header comes from the browser's own reconnect, so it is newer than the cursor baked into the URL.
+    const cursor = rawCursor === undefined ? (after ?? null) : parseOrBadRequest(LastEventIdSchema, rawCursor);
 
     return streamSSE(c, async (stream) => {
       const sendFrame = createFrameWriter(stream);

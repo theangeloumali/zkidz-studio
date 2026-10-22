@@ -1,10 +1,18 @@
 // Created by The Angelo Umali.
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { isDownload, loadToolsLock } from "@zks/cli/src/lock.ts";
+import { platformKey } from "@zks/cli/src/platform.ts";
 import { APP_PORT } from "@zks/shared";
-import { afterEach, describe, expect, it } from "vitest";
-import { defaultStudioHome, ensureStudioHome, loadServerConfig, STUDIO_HOME_DIRS } from "../src/config.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { assertFfprobeInstalled, defaultStudioHome, ensureStudioHome, loadServerConfig, STUDIO_HOME_DIRS } from "../src/config.ts";
+
+let scratchDir = "";
+afterEach(async () => {
+  if (scratchDir) await rm(scratchDir, { recursive: true, force: true });
+  scratchDir = "";
+});
 
 describe("defaultStudioHome", () => {
   it("follows each platform's per-user data folder (plan §3.3)", () => {
@@ -21,9 +29,28 @@ describe("defaultStudioHome", () => {
 });
 
 describe("loadServerConfig", () => {
+  // A developer's own ZKS_FFMPEG must not decide which branch these tests take.
+  beforeEach(() => vi.stubEnv("ZKS_FFMPEG", ""));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("defaults the port and leaves DATABASE_URL unset for PGlite", () => {
     const config = loadServerConfig({ ZKS_HOME: "/srv/zks" });
-    expect(config).toMatchObject({ studioHome: "/srv/zks", port: APP_PORT, databaseUrl: undefined, isContainer: false, ffprobePath: "ffprobe" });
+    expect(config).toMatchObject({ studioHome: "/srv/zks", port: APP_PORT, databaseUrl: undefined, isContainer: false });
+  });
+
+  const pinnedFfmpeg = loadToolsLock().tools.ffmpeg.platforms[platformKey()];
+  it.runIf(pinnedFfmpeg !== undefined && isDownload(pinnedFfmpeg))("resolves ffprobe beside the pinned ffmpeg in ZKS_HOME, never on PATH", async () => {
+    if (pinnedFfmpeg === undefined || !isDownload(pinnedFfmpeg)) return;
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-tools-"));
+    const pinnedDir = join(scratchDir, "tools", "ffmpeg", pinnedFfmpeg.sha256.slice(0, 12), dirname(pinnedFfmpeg.executable ?? "ffmpeg"));
+    const ffprobeName = process.platform === "win32" ? "ffprobe.exe" : "ffprobe";
+    await mkdir(pinnedDir, { recursive: true });
+    await writeFile(join(pinnedDir, ffprobeName), "", { mode: 0o755 });
+
+    const config = loadServerConfig({ ZKS_HOME: scratchDir });
+
+    expect(config.ffprobePath).toBe(join(pinnedDir, ffprobeName));
+    await expect(assertFfprobeInstalled(config.ffprobePath)).resolves.toBeUndefined();
   });
 
   it("reads ZKS_PORT, ZKS_CONTAINER and finds ffprobe beside ZKS_FFMPEG", () => {
@@ -41,12 +68,13 @@ describe("loadServerConfig", () => {
   });
 });
 
-describe("ensureStudioHome", () => {
-  let scratchDir = "";
-  afterEach(async () => {
-    if (scratchDir) await rm(scratchDir, { recursive: true, force: true });
+describe("assertFfprobeInstalled", () => {
+  it("refuses to start without the pinned tool and says how to install it", async () => {
+    await expect(assertFfprobeInstalled("/no/such/tools/ffmpeg/bin/ffprobe")).rejects.toThrow(/pnpm zks setup/);
   });
+});
 
+describe("ensureStudioHome", () => {
   it("creates the home and its layout owner-only", async () => {
     scratchDir = await mkdtemp(join(tmpdir(), "zks-home-"));
     const studioHome = join(scratchDir, "studio");

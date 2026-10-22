@@ -2,7 +2,7 @@
 # HyperFrames render: hf/render.js writes exactly one transparent 1080x1920 PNG per edited frame under frames/<video>/
 # (the render_final.py contract), the gallery draws every brand kind, review stills composite on the proxy, and the
 # gallery's SFX events are the canvas page's own.
-# Skips without node, ffmpeg, system Chrome or the pinned CLI (npm ci in engine/hf).
+# Skips without node, ffmpeg, system Chrome or the pinned CLI (pnpm install at the repo root).
 import json
 import os
 import shutil
@@ -14,13 +14,14 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from support import ENGINE, GALLERY, GALLERY_FRAMES, fixture_media, make_edl  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import doctor
 from zks_engine.render_final import PNG_RGBA, png_header
 
 TINY_CUES = 'const CUE_SHEET = [{ kind: "keyword", at: 0.2, end: 1.8, text: "Tiny", tone: "paper" }];\n'
 OPENER_CUES = 'const CUE_SHEET = [{ kind: "hookTitle", at: 0, end: 3, intro: true, kicker: "How I ask", lines: ["From $12", "to $25."], accentLine: 1 }];\n'
+CANVAS_GALLERY_EVENTS = ENGINE / "tests" / "fixture" / "sfx" / "gallery-canvas.json"
 
 
 def hyperframes_ready():
@@ -39,7 +40,7 @@ def pixel(png, x, y):
                           capture_output=True, check=True).stdout
 
 
-@unittest.skipUnless(hyperframes_ready(), "needs node, ffmpeg, Chrome and the overlay renderer's packages (npm ci --prefix packages/engine/hf)")
+@needs_renderer(hyperframes_ready(), HYPERFRAMES_SKIP)
 class HyperFramesRenderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -137,11 +138,8 @@ class HyperFramesRenderTests(unittest.TestCase):
         self.assertFalse((self.work / "hf" / "gallery").exists(), "stills must not write the folder a frame render reads")
 
     def test_gallery_sounds_are_the_canvas_pages_through_the_effects_sound_design(self):
-        canvas = subprocess.run(["node", str(ENGINE / "render-overlays.js"), "gallery", "--events"], cwd=self.work,
-                                env={**os.environ, "ZKS_WORK": str(self.work)}, capture_output=True, text=True,
-                                encoding="utf-8", errors="replace", timeout=300)
-        self.assertEqual(canvas.returncode, 0, canvas.stdout + canvas.stderr)
-        canvas_events = json.loads((self.work / "edl" / "gallery.sfx.json").read_text(encoding="utf-8"))
+        # The canvas renderer is not shipped here: its --events output for this gallery is a recorded fixture.
+        canvas_events = json.loads(CANVAS_GALLERY_EVENTS.read_text(encoding="utf-8"))
         result = self.render("gallery", "--events")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         hf_events = json.loads((self.work / "edl" / "gallery.sfx.json").read_text(encoding="utf-8"))

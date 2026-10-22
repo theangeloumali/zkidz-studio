@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import type { MediaAsset, Project } from "@zks/shared";
+import { CSRF_HEADER, type MediaAsset, type Project } from "@zks/shared";
 import type { UploadRequest } from "../src/api/upload.ts";
 import type { EventSourceLike } from "../src/events/connection.ts";
 
@@ -110,8 +110,8 @@ export class FakeEventSource implements EventSourceLike {
     this.onopen?.(new Event("open"));
   }
 
-  emit(data: string): void {
-    this.onmessage?.(new MessageEvent("message", { data }));
+  emit(data: string, lastEventId = ""): void {
+    this.onmessage?.(new MessageEvent("message", { data, lastEventId }));
   }
 
   /** readyState 0: the browser retries itself; 2: it gave up. */
@@ -121,6 +121,9 @@ export class FakeEventSource implements EventSourceLike {
   }
 }
 
+export const TEST_CSRF_TOKEN = "test-launch-token";
+
+/** Like the real server, every response carries the launch CSRF token. */
 export function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", [CSRF_HEADER]: TEST_CSRF_TOKEN } });
 }

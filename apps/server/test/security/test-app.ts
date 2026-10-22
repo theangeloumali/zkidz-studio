@@ -2,7 +2,7 @@
 // Shared harness for the security tests: a Hono app with the middleware mounted first, as the server does.
 import { CSRF_HEADER } from "@zks/shared";
 import { Hono } from "hono";
-import { createSecurity } from "./index.ts";
+import { createSecurity } from "../../src/security/index.ts";
 
 export const TEST_APP_PORT = 4317;
 export const TEST_PREVIEW_PORT = 4318;

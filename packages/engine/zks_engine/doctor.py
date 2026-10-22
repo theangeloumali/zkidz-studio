@@ -70,14 +70,14 @@ def check_chrome():
 
 
 def check_hyperframes():
-    """The HyperFrames renderer's pinned CLI, GSAP and fontkit (hf/package.json), installed with npm ci there."""
+    """The HyperFrames renderer's pinned CLI, GSAP and fontkit (hf/package.json), installed by the workspace pnpm install."""
     wanted = json.loads((HF_DIR / "package.json").read_text(encoding="utf-8"))["dependencies"]
     found = {}
     for name in wanted:
         manifest = HF_DIR / "node_modules" / name / "package.json"
         found[name] = json.loads(manifest.read_text(encoding="utf-8"))["version"] if manifest.exists() else None
     if found != wanted:
-        return False, f"hf has {found}, package.json pins {wanted} (run npm ci --prefix packages/engine/hf)"
+        return False, f"hf has {found}, package.json pins {wanted} (run pnpm install at the repo root)"
     return True, " + ".join(f"{name} {version}" for name, version in wanted.items())
 
 

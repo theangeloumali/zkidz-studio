@@ -10,7 +10,7 @@ uv sync --project packages/engine
 uv run --project packages/engine zks-engine version --json
 uv run --project packages/engine zks-engine probe --json <media file>
 uv run --project packages/engine python -m unittest discover -s packages/engine/tests
-npm ci --prefix packages/engine/hf   # only for the overlay renderer and its tests
+pnpm install                         # at the repo root: also installs the overlay renderer (hf/)
 ```
 
 The project installs editable: the engine finds `hf/` next to `zks_engine/`.

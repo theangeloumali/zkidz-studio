@@ -7,7 +7,7 @@ import re
 import subprocess
 import unittest
 
-from support import ENGINE, HF_SKIP, hf_installed  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, hf_installed, needs_renderer  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import doctor
 
@@ -55,7 +55,7 @@ console.log(JSON.stringify({
 """
 
 
-@unittest.skipUnless(hf_installed() and doctor.check_kit()[0], HF_SKIP)
+@needs_renderer(hf_installed() and doctor.check_kit()[0])
 class BrandTests(unittest.TestCase):
     def test_card_furniture_is_frozen_per_cue_seed(self):
         cards = node_json(CARD)

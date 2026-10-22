@@ -111,7 +111,11 @@ async function rejectPlaylistText(filePath: string): Promise<void> {
     const file = await open(filePath, "r");
     try {
       const { buffer, bytesRead } = await file.read({ buffer: Buffer.alloc(SNIFF_BYTES), position: 0 });
-      head = buffer.subarray(0, bytesRead).toString("utf8").replace(/^\uFEFF/, "").trimStart();
+      head = buffer
+        .subarray(0, bytesRead)
+        .toString("utf8")
+        .replace(/^\uFEFF/, "")
+        .trimStart();
     } finally {
       await file.close();
     }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createSecurity, PathEscapeError, type PathEscapeReason } from "./index.ts";
+import { createSecurity, PathEscapeError, type PathEscapeReason } from "../../src/security/index.ts";
 
 const { confinePath } = createSecurity({ appPort: 4317, previewPort: 4318, container: false });
 const isWindows = process.platform === "win32";

@@ -55,9 +55,10 @@ export function checkBootstrapTool(context: ZksContext, name: "pnpm" | "uv"): Ch
   return { id: name, status: "ok", required: true, detail: firstLine(version.stdout), data: { path: executable } };
 }
 
+// --no-cache: uv would otherwise create UV_CACHE_DIR, and doctor must not create ZKS_HOME before setup does (0700).
 export function checkPython(context: ZksContext): CheckResult {
   const uv = findOnPath("uv", bootstrapDirs(context.toolsDir, "uv"));
-  const found = uv ? runCommand(uv, ["python", "find"]) : undefined;
+  const found = uv ? runCommand(uv, ["python", "find", "--no-cache"]) : undefined;
   if (!found || found.code !== 0) return { id: "python", status: "fail", required: true, detail: "no Python found by uv", fix: "run: uv python install" };
   const version = runCommand(firstLine(found.stdout), ["--version"]);
   return { id: "python", status: "ok", required: true, detail: firstLine(version.stdout), data: { path: firstLine(found.stdout) } };
@@ -159,8 +160,15 @@ export function checkClaude(): CheckResult {
   return { id: "claude", status: "ok", required: false, detail: firstLine(version.stdout) };
 }
 
-export function checkDisk(context: ZksContext): CheckResult {
-  const stats = statfsSync(context.home);
+/** ZKS_HOME does not exist before setup, but the disk it will land on does. */
+function nearestExistingDir(candidate: string): string {
+  let current = path.resolve(candidate);
+  while (!existsSync(current) && path.dirname(current) !== current) current = path.dirname(current);
+  return current;
+}
+
+export function checkDisk({ home }: Pick<ZksContext, "home">): CheckResult {
+  const stats = statfsSync(nearestExistingDir(home));
   const freeGb = Math.floor((stats.bavail * stats.bsize) / BYTES_PER_GB);
   const isLow = freeGb < MIN_FREE_GB;
   return {

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Created by The Angelo Umali.
 import os from "node:os";
-import { createContext } from "./context.ts";
-import { doctorExitCode, formatDoctorJson, formatDoctorText, runDoctor } from "./doctor.ts";
+import { createContext, resolveZksHome } from "./context.ts";
+import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
+import type { PathRoots } from "./redact.ts";
 import { runSetup } from "./setup.ts";
 
 const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name>";
@@ -21,7 +22,7 @@ async function main(argv: string[]): Promise<number> {
       // --fetch repairs what setup would install, then diagnoses; logs go to stderr so --json stays parseable.
       if (flags.has("--fetch")) await runSetup(context, (line) => console.error(line));
       const checks = await runDoctor(context);
-      const roots = { zksHome: context.home, homeDir: os.homedir() };
+      const roots = pathRoots();
       console.log(flags.has("--json") ? formatDoctorJson(checks, roots) : formatDoctorText(checks, roots));
       return doctorExitCode(checks);
     }
@@ -31,6 +32,10 @@ async function main(argv: string[]): Promise<number> {
       console.error(USAGE);
       return EXIT_USAGE;
   }
+}
+
+function pathRoots(): PathRoots {
+  return { zksHome: resolveZksHome(), homeDir: os.homedir() };
 }
 
 async function runModels(context: ReturnType<typeof createContext>, args: string[], asJson: boolean): Promise<number> {
@@ -50,6 +55,7 @@ async function runModels(context: ReturnType<typeof createContext>, args: string
 try {
   process.exitCode = await main(process.argv.slice(2));
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  const asJson = process.argv.includes("--json");
+  (asJson ? console.log : console.error)(formatFatalError(error, { asJson, roots: pathRoots() }));
   process.exitCode = 1;
 }

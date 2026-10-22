@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ENGINE, GALLERY, GALLERY_FRAMES, HF_SKIP, hf_installed, make_edl, scratch_work, seconds  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, GALLERY, GALLERY_FRAMES, hf_installed, make_edl, needs_renderer, scratch_work, seconds  # first: it sets a scratch ZKS_HOME
 
 # Source frames 300-330 (10.01-11.011 s) are a trimmed pause; the reel also loses everything before frame 150 (5.005 s).
 FULL = make_edl([(0, 300), (330, 600)])
@@ -52,7 +52,7 @@ def map_cues(edl, cue_source, include_derived=False):
     return json.loads(result.stdout)
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class TimemapTests(unittest.TestCase):
     def cue(self, mapped, kind):
         return next(cue for cue in mapped["cues"] if cue["kind"] == kind)
@@ -103,7 +103,7 @@ def build(work, target, *args):
                           encoding="utf-8", errors="replace", env={**os.environ, "ZKS_WORK": str(work)}, timeout=120)
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class BuildTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -168,11 +168,12 @@ class BuildTests(unittest.TestCase):
         self.assertIn("hookTitle", result.stderr)
         self.assertNotIn("OVERLAYS=canvas", result.stderr)
 
-    def test_a_canvas_only_kind_names_the_canvas_opt_out(self):
+    def test_a_canvas_only_kind_fails_without_naming_a_renderer_this_engine_lacks(self):
         (self.work / "cues" / "older.js").write_text('const CUE_SHEET = [{ kind: "terminalCard", at: 1, end: 3, lines: ["ls"] }];\n', encoding="utf-8")
         result = build(self.work, "full:older")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("render this edit with OVERLAYS=canvas", result.stderr)
+        self.assertIn("unknown cue kinds: terminalCard", result.stderr)
+        self.assertNotIn("OVERLAYS=canvas", result.stderr)
 
     def test_unpinned_items_and_caption_joins_match_the_canvas_page(self):
         (self.work / "cues" / "parity.js").write_text(PARITY_CUES, encoding="utf-8")
@@ -212,7 +213,7 @@ def tweens(html):
     return json.loads(re.search(r'id="hf-tweens">(.*?)</script>', html, re.S).group(1))
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class SeekSafetyTests(unittest.TestCase):
     """HyperFrames workers seek to frames in any order, so a tween's start value must never depend on what rendered
     before it: when two tweens share an element's property, every later one is a fromTo that does not render early."""
@@ -228,7 +229,7 @@ class SeekSafetyTests(unittest.TestCase):
 END_CARD_CUES = 'const CUE_SHEET = [{ kind: "endCard", at: 1, end: 9, cta: "Follow" }];\n'
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class TypedCursorTests(unittest.TestCase):
     """The end card's call to action types, then its cursor blinks as the canvas typeOn draws it: on for the first
     half of every 0.5 s after the last letter, off for the second."""
@@ -254,7 +255,7 @@ CARD_CUES = (f"const CUE_SHEET = [{INTRO_HOOK.format(at=0)}, {{ kind: \"keyword\
              f"{{ kind: \"caption\", at: 5.2, end: 6.2, text: \"Said here\" }}];\n")
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class BrandIntroTests(unittest.TestCase):
     """A hookTitle with `intro: true` plays first; the full-screen brand pre-roll goes in when it ends. build.js writes the
     pre-roll's composition and its sounds beside the edit's, and hands sfx.py the hook's end and the split's sounds; once
@@ -370,7 +371,7 @@ class BrandIntroTests(unittest.TestCase):
         self.assertFalse((self.work / "hf" / "plain.intro").exists())
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class RenderFailureTests(unittest.TestCase):
     """A failed hyperframes run names its output and how it ended, even when its stderr is empty."""
 
@@ -396,7 +397,7 @@ class RenderFailureTests(unittest.TestCase):
         self.assertTrue(self.failure('{ stderr: Buffer.from("Chrome crashed"), message: "Command failed", status: 1 }').startswith("Chrome crashed"))
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class CliAndMarkupTests(unittest.TestCase):
     """The brand-intro CLI refuses a missing or malformed flag instead of guessing (its --out folders are emptied), and
     the stat odometer escapes the text it writes into SVG."""
@@ -467,7 +468,7 @@ def clip_markup(html, clip_id):
     return html[start:min(ends)]
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class VlogKindTests(unittest.TestCase):
     """chatCard, headlineStack, lineChart and phoneFrame: each builds, draws its cue's words and nothing else, and stays
     seek-safe."""
@@ -541,7 +542,7 @@ class VlogKindTests(unittest.TestCase):
         self.assertFalse({event["sound"] for event in events} - set(sfx.RECIPES))
 
 
-@unittest.skipUnless(hf_installed(), HF_SKIP)
+@needs_renderer(hf_installed())
 class DeterminismTests(unittest.TestCase):
     """Seeded sketch, particles and shakes: two builds in separate processes write byte-identical compositions."""
 

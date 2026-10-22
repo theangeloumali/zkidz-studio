@@ -165,12 +165,7 @@ function build(target, { guides = false, events = false, variant = "", layer = "
   warnings.forEach((warning) => console.warn(`CUE WARNING: ${warning}`));
   const unknown = [...new Set(cues.map((cue) => cue.kind).filter((kind) => !isKnownKind(kind)))];
   if (unknown.length) {
-    // An older sheet's kinds the canvas kit draws: say how to render it there (the opt-out) instead of only refusing.
-    const onCanvas = unknown.every((kind) => Object.hasOwn(canvasBrand().scope.COMPONENTS, kind));
-    throw new Error(
-      `unknown cue kinds: ${unknown.join(", ")}. Supported: ${Object.keys(REGISTRY).sort().join(", ")}` +
-        (onCanvas ? ". The canvas kit draws them: render this edit with OVERLAYS=canvas" : ""),
-    );
+    throw new Error(`unknown cue kinds: ${unknown.join(", ")}. Supported: ${Object.keys(REGISTRY).sort().join(", ")}`);
   }
 
   const folder = target.replace(/:/g, "--");

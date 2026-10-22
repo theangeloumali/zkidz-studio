@@ -1,6 +1,6 @@
 # Created by The Angelo Umali.
 # Machine-wide slots for heavy work, shared by every session and worktree: a GPU master, overlay frame drawing, whisper.
-# A slot is a lock file created exclusively (render-overlays.js speaks the same format). A holder that died, or a lock
+# A slot is a lock file created exclusively (hf/slots.js speaks the same format). A holder that died, or a lock
 # older than STALE_HOURS, is reclaimed, so a crashed render never blocks the machine.
 import contextlib
 import json

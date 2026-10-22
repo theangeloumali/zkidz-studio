@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
@@ -11,8 +11,7 @@ const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 const SUBPROCESS_TIMEOUT_MS = 30_000;
 const tempHomes: string[] = [];
 
-function runCli(args: string[]) {
-  const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
+function runCli(args: string[], home = mkdtempSync(path.join(tmpdir(), "zks-cli-"))) {
   tempHomes.push(home);
   return spawnSync(process.execPath, [MAIN, ...args], { encoding: "utf8", env: { ...process.env, ZKS_HOME: home } });
 }
@@ -39,5 +38,17 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
     const outcome = runCli(["models", "fetch", "huge"]);
     expect(outcome.status).toBe(1);
     expect(outcome.stderr).toContain('Unknown model "huge"');
+  });
+
+  // A fresh install has no ZKS_HOME yet; doctor must still diagnose it, as JSON, without naming the user.
+  it("reports a missing ZKS_HOME as failed checks in valid, redacted JSON", { timeout: 120_000 }, () => {
+    const missingHome = path.join(homedir(), `.zks-missing-${process.pid}`);
+    const outcome = runCli(["doctor", "--json"], missingHome);
+    expect(outcome.status).toBe(1);
+    const report = JSON.parse(outcome.stdout) as { ok: boolean; checks: { id: string }[] };
+    expect(report.ok).toBe(false);
+    expect(report.checks.map((check) => check.id)).toContain("disk");
+    expect(outcome.stdout + outcome.stderr).not.toContain(homedir());
+    expect(existsSync(missingHome)).toBe(false);
   });
 });

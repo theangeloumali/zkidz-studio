@@ -387,9 +387,9 @@ def check_overlay_frames(frames_dir, frames):
     and an opaque frame saved as RGB changes the PNG input's format mid-chunk, which crashed overlay_cuda."""
     pngs = sorted(frames_dir.glob("*.png"))
     if len(pngs) != frames:
-        return f"{len(pngs)} overlay PNGs but the edit has {frames} frames; re-run render-overlays.js"
+        return f"{len(pngs)} overlay PNGs but the edit has {frames} frames; re-run hf/render.js"
     if pngs and (size := png_header(pngs[0])[:2]) != OUTPUT:
-        return f"overlay PNGs are {'x'.join(map(str, size))}, not 1080x1920; re-run render-overlays.js"
+        return f"overlay PNGs are {'x'.join(map(str, size))}, not 1080x1920; re-run hf/render.js"
     if flat := next((png for png in pngs if png_header(png)[2] != PNG_RGBA), None):
         return f"{flat.name} is not RGBA (an opaque frame saved without alpha); re-run the overlay render"
     return None

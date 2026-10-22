@@ -1,10 +1,20 @@
 // Created by The Angelo Umali.
 // Path confinement for every user-supplied path (plan §9.4, §11): lexical checks first, then realpath containment.
-import { realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, realpath, stat, type FileHandle } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 
 export type PathEscapeReason =
-  "nul-byte" | "encoded-sequence" | "windows-path-form" | "parent-segment" | "trailing-dot-or-space" | "reserved-name" | "unresolvable" | "outside-root";
+  | "nul-byte"
+  | "encoded-sequence"
+  | "windows-path-form"
+  | "parent-segment"
+  | "trailing-dot-or-space"
+  | "reserved-name"
+  | "unresolvable"
+  | "outside-root"
+  | "not-a-file"
+  | "changed-during-open";
 
 export class PathEscapeError extends Error {
   override readonly name = "PathEscapeError";
@@ -28,7 +38,10 @@ const RESERVED_DEVICE_NAME = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³
 export async function confinePath(rootDir: string, candidatePath: string): Promise<string> {
   const lexicalViolation = findLexicalViolation(candidatePath);
   if (lexicalViolation !== null) throw new PathEscapeError(lexicalViolation);
+  return resolveWithinRoot(rootDir, candidatePath);
+}
 
+async function resolveWithinRoot(rootDir: string, candidatePath: string): Promise<string> {
   const rootRealPath = await realpathOrReject(rootDir);
   const candidateRealPath = await realpathOrReject(resolve(rootRealPath, candidatePath));
   if (!isWithinRoot(rootRealPath, candidateRealPath)) throw new PathEscapeError("outside-root");
@@ -58,6 +71,44 @@ function findSegmentViolation(segment: string): PathEscapeReason | null {
   const baseName = (segment.split(".")[0] ?? "").trimEnd();
   if (RESERVED_DEVICE_NAME.test(baseName)) return "reserved-name";
   return null;
+}
+
+export interface ConfinedFile {
+  readonly handle: FileHandle;
+  readonly realPath: string;
+}
+
+// O_NOFOLLOW refuses a final-component link swapped in after the check; O_NONBLOCK stops a planted FIFO hanging the open.
+// Both are undefined on Windows, where the post-open check alone carries the guarantee.
+const OPEN_FLAGS = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+
+/**
+ * confinePath, then open and prove the opened inode is still the one the root holds at that path. Reading through the
+ * returned handle closes the check-then-open race a path string leaves; the caller closes the handle.
+ */
+export async function openConfined(rootDir: string, candidatePath: string): Promise<ConfinedFile> {
+  const realPath = await confinePath(rootDir, candidatePath);
+  const handle = await open(realPath, OPEN_FLAGS).catch(() => {
+    throw new PathEscapeError("changed-during-open");
+  });
+  try {
+    await assertOpenedInsideRoot(rootDir, realPath, handle);
+    return { handle, realPath };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
+async function assertOpenedInsideRoot(rootDir: string, realPath: string, handle: FileHandle): Promise<void> {
+  const openedStats = await handle.stat();
+  if (!openedStats.isFile()) throw new PathEscapeError("not-a-file");
+  // Resolving again after the open is what makes this race-free: a swap before the open shows here as outside-root.
+  const recheckedPath = await resolveWithinRoot(rootDir, realPath);
+  const recheckedStats = await stat(recheckedPath).catch(() => null);
+  if (recheckedPath !== realPath || recheckedStats?.dev !== openedStats.dev || recheckedStats.ino !== openedStats.ino) {
+    throw new PathEscapeError("changed-during-open");
+  }
 }
 
 async function realpathOrReject(path: string): Promise<string> {

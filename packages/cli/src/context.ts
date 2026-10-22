@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadToolsLock, type ToolsLock } from "./lock.ts";
-import { defaultZksHome, platformKey, type PlatformKey } from "./platform.ts";
+import { defaultZksHome, platformKey, uvEnvironment, type PlatformKey } from "./platform.ts";
 
 export interface ZksContext {
   home: string;
@@ -16,8 +16,14 @@ export interface ZksContext {
 const HOME_SUBDIRS = ["db", "backups", "tools", "models", "locks", "projects"] as const;
 const OWNER_ONLY = 0o700;
 
+export function resolveZksHome(): string {
+  return path.resolve(defaultZksHome({ env: process.env, nodePlatform: process.platform, homeDir: os.homedir() }));
+}
+
 export function createContext(): ZksContext {
-  const home = path.resolve(defaultZksHome({ env: process.env, nodePlatform: process.platform, homeDir: os.homedir() }));
+  const home = resolveZksHome();
+  // Children (uv python find, setup) inherit these, matching what the setup scripts exported.
+  Object.assign(process.env, uvEnvironment(home, process.env));
   return { home, toolsDir: path.join(home, "tools"), modelsDir: path.join(home, "models"), platform: platformKey(), lock: loadToolsLock() };
 }
 

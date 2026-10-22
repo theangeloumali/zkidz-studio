@@ -83,6 +83,12 @@ describe("SSE contract (plan §8, D3)", () => {
     expect(EventsQuerySchema.safeParse({ project: "not-a-uuid" }).success).toBe(false);
   });
 
+  it("takes an optional ?after= cursor, since a new EventSource after a reload sends no Last-Event-ID", () => {
+    expect(EventsQuerySchema.parse({ project: PROJECT_ID, after: "7" })).toEqual({ project: [PROJECT_ID], after: 7 });
+    expect(EventsQuerySchema.parse({ project: PROJECT_ID })).not.toHaveProperty("after");
+    expect(EventsQuerySchema.safeParse({ project: PROJECT_ID, after: "abc" }).success).toBe(false);
+  });
+
   it("parses Last-Event-ID as a positive event id", () => {
     expect(LastEventIdSchema.parse("42")).toBe(42);
     expect(LastEventIdSchema.safeParse("-1").success).toBe(false);

@@ -89,6 +89,36 @@ describe("GET /api/events", () => {
     expect(frames.map((frame) => frame.data)).toEqual([missedFirst, missedSecond, live]);
   });
 
+  it("replays from ?after= when a reloaded page opens a new stream without Last-Event-ID", async () => {
+    const project = await insertProject(server);
+    const seen = await server.eventBus.publish(narration(project.id, "seen before reload"));
+    const missed = await server.eventBus.publish(narration(project.id, "missed during reload"));
+
+    const sse = await openSseReader(await getRequest(server, `/api/events?project=${project.id}&after=${seen.id}`));
+    const live = await server.eventBus.publish(narration(project.id, "live"));
+    const frames = await sse.nextFrames(2);
+    await sse.close();
+    expect(frames.map((frame) => frame.data)).toEqual([missed, live]);
+  });
+
+  it("prefers Last-Event-ID over ?after=, because the browser's own reconnect sends the newer cursor", async () => {
+    const project = await insertProject(server);
+    const stale = await server.eventBus.publish(narration(project.id, "stale cursor"));
+    const seen = await server.eventBus.publish(narration(project.id, "seen"));
+    const missed = await server.eventBus.publish(narration(project.id, "missed"));
+
+    const response = await getRequest(server, `/api/events?project=${project.id}&after=${stale.id}`, { [LAST_EVENT_ID_HEADER]: String(seen.id) });
+    const sse = await openSseReader(response);
+    const [frame] = await sse.nextFrames(1);
+    await sse.close();
+    expect(frame?.data).toEqual(missed);
+  });
+
+  it("rejects a malformed ?after= cursor", async () => {
+    const project = await insertProject(server);
+    expect((await getRequest(server, `/api/events?project=${project.id}&after=abc`)).status).toBe(400);
+  });
+
   it(`sends resync instead of replaying more than ${SSE_REPLAY_LIMIT} events`, async () => {
     const project = await insertProject(server);
     const cursor = await server.eventBus.publish(narration(project.id, "cursor"));

@@ -6,7 +6,7 @@ import { serve } from "@hono/node-server";
 import { openDatabase } from "@zks/db";
 import { LOOPBACK_HOST, PREVIEW_PORT } from "@zks/shared";
 import { createApp } from "./app.ts";
-import { ensureStudioHome, loadServerConfig } from "./config.ts";
+import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
@@ -23,6 +23,7 @@ async function main(): Promise<void> {
   const security = createSecurity({ appPort: config.port, previewPort: PREVIEW_PORT, container: config.isContainer });
   const bindHost = config.isContainer ? CONTAINER_BIND_HOST : LOOPBACK_HOST;
   security.assertLoopbackBind(bindHost);
+  await assertFfprobeInstalled(config.ffprobePath);
 
   await ensureStudioHome(config.studioHome);
   const database = await openDatabase({ dataDir: join(config.studioHome, "db"), databaseUrl: config.databaseUrl });

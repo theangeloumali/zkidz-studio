@@ -6,20 +6,23 @@ cd "$(dirname "$0")"
 START=1
 for arg in "$@"; do case "$arg" in --no-start) START=0 ;; *) echo "usage: ./setup.sh [--no-start]" >&2 && exit 2 ;; esac; done
 export HYPERFRAMES_NO_TELEMETRY=1 DO_NOT_TRACK=1
-PNPM_VERSION=12.8.2
+PNPM_VERSION=12.15.0
 UV_VERSION=0.12.24
 case "$(uname -s)-$(uname -m)" in
-  Linux-x86_64) PNPM_ASSET=pnpm-linux-x64 PNPM_SHA=8400740c0c9aa1cb0e5b91748b95524e1839f3fb720f8ef5d4910c3fc4d0e72f
+  Linux-x86_64) PNPM_ASSET=pnpm-linux-x64 PNPM_SHA=55b5ed0092bd11176c1669598e231ae52e7cedac59de6efd0d415730f37d0598
     UV_ASSET=uv-x86_64-unknown-linux-gnu UV_SHA=b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6 ;;
-  Linux-aarch64) PNPM_ASSET=pnpm-linux-arm64 PNPM_SHA=8daad024c6ac24ac17b852a8c849e6290b63d537abc0a2c3efe6938d970f9739
+  Linux-aarch64) PNPM_ASSET=pnpm-linux-arm64 PNPM_SHA=d7ce93a2c7d847d3a34bd3f559b60c14f578b1320c17cc352a2c5c5fdf956117
     UV_ASSET=uv-aarch64-unknown-linux-gnu UV_SHA=5231be65f496304623895dacdbf1de8504fec90303684bdf05805aa34414dd21 ;;
-  Darwin-arm64) PNPM_ASSET=pnpm-darwin-arm64 PNPM_SHA=abdace06607e8bcdcd72517a6b4bf01f711627e5979a65c828eccd69e71e9e6f
+  Darwin-arm64) PNPM_ASSET=pnpm-darwin-arm64 PNPM_SHA=6a41a2877773e97f19832067187cc6fc82e186d8a2cf91fec4b4c1a5fbd6ef27
     UV_ASSET=uv-aarch64-apple-darwin UV_SHA=0c4346de7abdb49495b393b9ec809fe387aa43e586be20fecb972216c1e71732 ;;
   *) echo "unsupported platform $(uname -s)-$(uname -m); supported: linux-x64, linux-arm64, mac-arm64" >&2 && exit 1 ;;
 esac
 if [ "$(uname -s)" = Darwin ]; then DEFAULT_HOME="$HOME/Library/Application Support/zkidz-studio"; else DEFAULT_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/zkidz-studio"; fi
 export ZKS_HOME="${ZKS_HOME:-$DEFAULT_HOME}"
 TOOLS="$ZKS_HOME/tools"
+# uv otherwise puts its managed Python and cache under ~/.local/share/uv and ~/.cache/uv; packages/cli uvEnvironment() applies the same defaults.
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$ZKS_HOME/tools/python}"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$ZKS_HOME/cache/uv}"
 mkdir -p "$TOOLS/.downloads" && chmod 700 "$ZKS_HOME"
 sha256_of() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
@@ -44,7 +47,7 @@ command -v uv >/dev/null || {
 }
 
 pnpm install --frozen-lockfile
-if [ -f packages/engine/pyproject.toml ]; then uv sync --project packages/engine; else echo "packages/engine not present yet: skipping uv sync"; fi
+uv sync --locked --project packages/engine
 pnpm exec node packages/cli/src/main.ts setup
 if [ "$START" = 1 ]; then exec pnpm start; fi
 echo "setup complete. Start with: pnpm start"

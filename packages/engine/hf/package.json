@@ -1,5 +1,5 @@
 {
-  "name": "zkidz-films-hf",
+  "name": "@zks/engine-hf",
   "private": true,
   "description": "Pinned HyperFrames CLI, GSAP and fontkit for the brand overlay renderer.",
   "dependencies": {

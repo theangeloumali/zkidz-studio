@@ -2,11 +2,11 @@
 // The server's security boundary (plan §11). Mount `middleware` before every route.
 import { randomBytes } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
-import { confinePath } from "./confine-path.ts";
+import { confinePath, openConfined, type ConfinedFile } from "./confine-path.ts";
 import { assertLoopbackHost } from "./loopback-bind.ts";
 import { createRequestGuard } from "./request-guards.ts";
 
-export { PathEscapeError, type PathEscapeReason } from "./confine-path.ts";
+export { PathEscapeError, type ConfinedFile, type PathEscapeReason } from "./confine-path.ts";
 export { NonLoopbackBindError } from "./loopback-bind.ts";
 
 export interface SecurityConfig {
@@ -23,6 +23,8 @@ export interface Security {
   readonly assertLoopbackBind: (host: string) => void;
   /** Resolves `candidatePath` against `rootDir` to a realpath inside it, or throws PathEscapeError. */
   readonly confinePath: (rootDir: string, candidatePath: string) => Promise<string>;
+  /** confinePath plus a race-free open: serve bytes from `handle`, never by reopening `realPath`. Caller closes it. */
+  readonly openConfined: (rootDir: string, candidatePath: string) => Promise<ConfinedFile>;
 }
 
 const CSRF_TOKEN_BYTES = 32;
@@ -36,5 +38,6 @@ export function createSecurity(config: SecurityConfig): Security {
       if (!config.container) assertLoopbackHost(host);
     },
     confinePath,
+    openConfined,
   };
 }

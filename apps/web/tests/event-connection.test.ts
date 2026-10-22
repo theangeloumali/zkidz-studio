@@ -17,6 +17,7 @@ describe("connectEvents", () => {
   let disconnect: () => void;
 
   beforeEach(() => {
+    sessionStorage.clear();
     vi.useFakeTimers();
     FakeEventSource.instances.length = 0;
     onEvent.mockReset();
@@ -62,6 +63,17 @@ describe("connectEvents", () => {
     expect(onStatus).toHaveBeenLastCalledWith("live");
   });
 
+  it("reopens from the last event id it saw, so the server replays instead of the app refetching", () => {
+    latestSource().open();
+    latestSource().emit(JSON.stringify({ type: "narration", projectId: PROJECT_ID, at: "2026-10-21T10:00:00.000Z", text: "Cutting" }), "7");
+    latestSource().error(2);
+    vi.advanceTimersByTime(1_000);
+    latestSource().open();
+
+    expect(latestSource().url).toBe(`/api/events?project=${PROJECT_ID}&after=7`);
+    expect(onResync).not.toHaveBeenCalled();
+  });
+
   it("doubles the wait after each failed reopen", () => {
     latestSource().error(2);
     vi.advanceTimersByTime(1_000);
@@ -80,5 +92,36 @@ describe("connectEvents", () => {
 
     expect(FakeEventSource.instances).toHaveLength(1);
     expect(latestSource().isClosed).toBe(true);
+  });
+});
+
+describe("connectEvents after a reload", () => {
+  const connect = () =>
+    connectEvents({ projectIds: [PROJECT_ID], onEvent: () => undefined, onResync: () => undefined, createSource: (url) => new FakeEventSource(url) });
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    FakeEventSource.instances.length = 0;
+  });
+
+  it("resumes from the cursor the previous page stored", () => {
+    const disconnectFirst = connect();
+    latestSource().emit(JSON.stringify({ type: "narration", projectId: PROJECT_ID, at: "2026-10-21T10:00:00.000Z", text: "Cutting" }), "41");
+    disconnectFirst();
+
+    const disconnectReloaded = connect();
+    expect(latestSource().url).toBe(`/api/events?project=${PROJECT_ID}&after=41`);
+    disconnectReloaded();
+  });
+
+  it("still connects when storage is unavailable", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked", "SecurityError");
+    });
+    const disconnect = connect();
+
+    expect(latestSource().url).toBe(`/api/events?project=${PROJECT_ID}`);
+    disconnect();
+    vi.restoreAllMocks();
   });
 });

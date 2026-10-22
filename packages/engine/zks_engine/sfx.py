@@ -1,5 +1,5 @@
 # Created by The Angelo Umali.
-# Mixes the overlay's sound effects under the edited voice: edl/<v>.sfx.json (render-overlays.js <v> --events)
+# Mixes the overlay's sound effects under the edited voice: edl/<v>.sfx.json (hf/render.js <v> --events)
 # + audio/<v>_edit.wav -> audio/<v>_mix.wav, same sample count, loudness held by an ebur128 gate. An `intro` block
 # (hf/build.js, a brand pre-roll) also writes audio/<v>_intro.wav.
 # Usage (from the work dir): python -m zks_engine.sfx v1   (exit 1 when the gate still fails after 3 bus cuts)
@@ -260,7 +260,7 @@ def main(video):
     edl_path, events_path = WORK / "edl" / f"{video}.json", WORK / "edl" / f"{video}.sfx.json"
     payload = json.loads(events_path.read_text(encoding="utf-8"))
     if payload["frames"] != edl["frames"] or edl_path.stat().st_mtime > events_path.stat().st_mtime:
-        sys.exit(f"{video}: {events_path.name} is older than or differs from {edl_path.name}; re-run render-overlays.js {video} --events")
+        sys.exit(f"{video}: {events_path.name} is older than or differs from {edl_path.name}; re-run hf/render.js {video} --events")
     intro = payload.get("intro")
     unknown = sorted({event["sound"] for event in payload["events"] + (intro["events"] if intro else [])} - RECIPES.keys())
     if unknown:

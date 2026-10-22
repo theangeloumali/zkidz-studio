@@ -168,7 +168,10 @@ class OverlayFrameTests(unittest.TestCase):
 
     def test_frame_count_must_match_the_edit(self):
         write_png_header(self.frames / "00000.png", 1080, 1920)
-        self.assertIn("1 overlay PNGs", render_final.check_overlay_frames(self.frames, 3))
+        problem = render_final.check_overlay_frames(self.frames, 3)
+        self.assertIn("1 overlay PNGs", problem)
+        # The hint names the renderer this engine ships.
+        self.assertIn("hf/render.js", problem)
 
     def test_gpu_path_needs_opencl_for_the_composite(self):
         with mock.patch.object(render_final, "has_opencl", return_value=False):

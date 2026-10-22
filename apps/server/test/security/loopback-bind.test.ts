@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { createSecurity, NonLoopbackBindError } from "./index.ts";
+import { createSecurity, NonLoopbackBindError } from "../../src/security/index.ts";
 
 function securityFor(container: boolean) {
   return createSecurity({ appPort: 4317, previewPort: 4318, container });

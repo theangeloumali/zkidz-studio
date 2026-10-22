@@ -1,6 +1,9 @@
 // Created by The Angelo Umali.
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { doctorExitCode, formatDoctorJson, type CheckResult } from "../src/doctor.ts";
+import { checkDisk } from "../src/checks.ts";
+import { doctorExitCode, formatDoctorJson, formatFatalError, type CheckResult } from "../src/doctor.ts";
 import { probeGpuBackend } from "../src/gpu.ts";
 import type { CommandRunner } from "../src/exec.ts";
 
@@ -77,5 +80,30 @@ describe("doctor report", () => {
     expect(json).not.toContain("jdoe");
     expect(json).toContain("$ZKS_HOME/tools/ffmpeg");
     expect(json).toContain("~/.cache");
+  });
+});
+
+describe("checkDisk", () => {
+  it("measures the nearest existing parent when ZKS_HOME does not exist yet", () => {
+    const disk = checkDisk({ home: path.join(tmpdir(), "zks-never-created", "nested") });
+    expect(disk.id).toBe("disk");
+    expect(disk.detail).toMatch(/^\d+ GB free$/);
+  });
+});
+
+describe("formatFatalError", () => {
+  const roots = { zksHome: "/srv/jdoe-data/zks", homeDir: "/u/jdoe" };
+  const crash = new Error("ENOENT: no such file or directory, statfs '/srv/jdoe-data/zks' for jdoe@example.org");
+
+  it("emits a parseable JSON error object under --json", () => {
+    const output = formatFatalError(crash, { asJson: true, roots });
+    const parsed = JSON.parse(output) as { ok: boolean; error: string };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain("statfs '$ZKS_HOME'");
+  });
+
+  it("redacts paths and emails in plain text", () => {
+    const output = formatFatalError(crash, { asJson: false, roots });
+    expect(output).not.toContain("jdoe");
   });
 });

@@ -2,9 +2,9 @@
 import { API_ROUTES, CSRF_HEADER, isStateChangingMethod } from "@zks/shared";
 import { z } from "zod";
 
-/** The server may inject the per-launch token here; the header's presence is what the Origin check pairs with (ADR 0006). */
-const CSRF_META_SELECTOR = 'meta[name="zks-csrf"]';
-const CSRF_FALLBACK = "1";
+// The server sends its per-launch token on every response; same-origin script is the only reader (ADR 0006).
+let launchCsrfToken: string | null = null;
+let pendingTokenFetch: Promise<string> | null = null;
 
 // No shared error DTO exists yet; accept either common shape and fall back to the status text.
 const ErrorBodySchema = z.object({ error: z.string().optional(), message: z.string().optional() });
@@ -19,8 +19,23 @@ export class ApiError extends Error {
   }
 }
 
-export function csrfToken(): string {
-  return document.querySelector<HTMLMetaElement>(CSRF_META_SELECTOR)?.content || CSRF_FALLBACK;
+function rememberCsrfToken(response: Response): void {
+  launchCsrfToken = response.headers.get(CSRF_HEADER) ?? launchCsrfToken;
+}
+
+/** The launch token, read from a cheap GET first when no response has carried it yet. */
+export function ensureCsrfToken(): Promise<string> {
+  if (launchCsrfToken !== null) return Promise.resolve(launchCsrfToken);
+  pendingTokenFetch ??= fetch(API_ROUTES.listProjects.path)
+    .then((response) => {
+      rememberCsrfToken(response);
+      if (launchCsrfToken === null) throw new ApiError("The studio did not hand out a request token.", response.status);
+      return launchCsrfToken;
+    })
+    .finally(() => {
+      pendingTokenFetch = null;
+    });
+  return pendingTokenFetch;
 }
 
 export function routeUrl(path: string, params: Readonly<Record<string, string>> = {}): string {
@@ -44,10 +59,11 @@ interface RequestOptions {
 export async function requestJson<Schema extends z.ZodType>(schema: Schema, url: string, options: RequestOptions = {}): Promise<z.infer<Schema>> {
   const method = options.method ?? "GET";
   const headers = new Headers();
-  if (isStateChangingMethod(method)) headers.set(CSRF_HEADER, csrfToken());
+  if (isStateChangingMethod(method)) headers.set(CSRF_HEADER, await ensureCsrfToken());
   if (options.body !== undefined) headers.set("content-type", "application/json");
 
   const response = await fetch(url, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+  rememberCsrfToken(response);
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new ApiError(errorMessageFrom(body, response.statusText || `Request failed (${response.status})`), response.status);
   return schema.parse(body);

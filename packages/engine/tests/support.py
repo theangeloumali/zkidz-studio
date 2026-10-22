@@ -1,9 +1,11 @@
 # Created by The Angelo Umali.
 # Shared by the engine tests: scratch ZKS_HOME, hand-made EDLs and scratch work dirs.
+import functools
 import json
 import os
 import shutil
 import tempfile
+import unittest
 from pathlib import Path
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -20,11 +22,36 @@ NTSC = {"fps_num": 30000, "fps_den": 1001}
 GALLERY = ENGINE / "tests" / "fixture" / "cues" / "hf-gallery.js"
 FIXTURE_MEDIA = ENGINE / "tests" / "fixture" / "images"
 GALLERY_FRAMES = 2908  # 97 s: every gallery cue fits
-HF_SKIP = "needs node and the overlay renderer's packages (npm ci --prefix packages/engine/hf)"
+HF_SKIP = "needs node and the overlay renderer's packages (pnpm install at the repo root)"
+HYPERFRAMES_SKIP = "needs node, ffmpeg, Chrome and the overlay renderer's packages (pnpm install at the repo root)"
 
 
 def hf_installed():
     return bool(shutil.which("node") and (HF / "node_modules" / "fontkit" / "package.json").exists())
+
+
+def needs_renderer(ready, reason=HF_SKIP):
+    """skipUnless for the overlay renderer tests; ZKS_REQUIRE_HF=1 (CI) fails them instead, so they cannot quietly stop running."""
+
+    def missing():
+        if os.environ.get("ZKS_REQUIRE_HF") == "1":
+            raise AssertionError(f"ZKS_REQUIRE_HF=1 but the test {reason}")
+        raise unittest.SkipTest(reason)
+
+    def decorate(item):
+        if ready:
+            return item
+        if isinstance(item, type):
+            item.setUpClass = classmethod(lambda cls: missing())
+            return item
+
+        @functools.wraps(item)
+        def guarded(*args, **kwargs):
+            missing()
+
+        return guarded
+
+    return decorate
 
 
 def seconds(frames):

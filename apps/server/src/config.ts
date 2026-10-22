@@ -1,8 +1,12 @@
 // Created by The Angelo Umali.
 // Server settings from the environment (plan §3.3). ZKS_HOME holds the database, keys and projects, so it is owner-only.
-import { mkdir } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, posix, win32 } from "node:path";
+import { loadToolsLock } from "@zks/cli/src/lock.ts";
+import { platformKey } from "@zks/cli/src/platform.ts";
+import { toolExecutablePath } from "@zks/cli/src/tools.ts";
 import { APP_PORT, ENV } from "@zks/shared";
 
 export const STUDIO_HOME_DIRS = ["db", "backups", "tools", "models", "locks", "projects"] as const;
@@ -10,6 +14,7 @@ export const PROJECT_DIRS = ["media", "work", "progress", "deliverables"] as con
 const APP_FOLDER_NAME = "zkidz-studio";
 const OWNER_ONLY_MODE = 0o700;
 const MAX_PORT = 65535;
+const SETUP_HINT = "Run: pnpm zks setup";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -35,8 +40,17 @@ export function loadServerConfig(env: Environment): ServerConfig {
     port: parsePort(env[ENV.port]),
     databaseUrl: env[ENV.databaseUrl] || undefined,
     isContainer: env[ENV.container] === "1",
-    ffprobePath: ffprobeBeside(env[ENV.ffmpeg]),
+    ffprobePath: ffprobeBeside(pinnedFfmpegPath(env, studioHome)),
   };
+}
+
+/** Startup check: uploads are probed only by the checksummed tool `zks setup` installs (plan §11), never a PATH lookalike. */
+export async function assertFfprobeInstalled(ffprobePath: string): Promise<void> {
+  try {
+    await access(ffprobePath, constants.X_OK);
+  } catch {
+    throw new Error(`ffprobe is not installed at ${ffprobePath}. ${SETUP_HINT}`);
+  }
 }
 
 export async function ensureStudioHome(studioHome: string): Promise<void> {
@@ -60,8 +74,23 @@ function parsePort(rawPort: string | undefined): number {
   return port;
 }
 
-function ffprobeBeside(ffmpegPath: string | undefined): string {
-  if (!ffmpegPath) return "ffprobe";
+/** ZKS_FFMPEG wins; otherwise the same lookup `zks setup` installs into (ZKS_HOME/tools, or Homebrew on macOS). */
+function pinnedFfmpegPath(env: Environment, studioHome: string): string {
+  const overridePath = env[ENV.ffmpeg];
+  if (overridePath) return overridePath;
+  const toolsContext = {
+    home: studioHome,
+    toolsDir: join(studioHome, "tools"),
+    modelsDir: join(studioHome, "models"),
+    platform: platformKey(),
+    lock: loadToolsLock(),
+  };
+  const ffmpegPath = toolExecutablePath(toolsContext, "ffmpeg");
+  if (!ffmpegPath) throw new Error(`ffmpeg is not installed. ${SETUP_HINT}`);
+  return ffmpegPath;
+}
+
+function ffprobeBeside(ffmpegPath: string): string {
   const extension = basename(ffmpegPath).toLowerCase().endsWith(".exe") ? ".exe" : "";
   return join(dirname(ffmpegPath), `ffprobe${extension}`);
 }

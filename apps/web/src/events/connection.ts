@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { API_ROUTES, StudioEventSchema, type StudioEvent } from "@zks/shared";
+import { API_ROUTES, LastEventIdSchema, StudioEventSchema, type StudioEvent } from "@zks/shared";
 
 /** The slice of EventSource the connector drives, so tests can stand in for it. */
 export interface EventSourceLike {
@@ -24,14 +24,15 @@ interface ConnectOptions {
 const EVENT_SOURCE_CLOSED = 2;
 const FIRST_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
+const CURSOR_KEY_PREFIX = "zks.events.after.";
 
 /**
  * While readyState is CONNECTING the browser retries on its own and resends Last-Event-ID.
- * Once it gives up (CLOSED) a new EventSource starts without a cursor, because the events query
- * accepts only `project`; the reopen therefore asks the caller to resync.
+ * A new EventSource (a reopen, or a page reload) sends none, so it passes the last seen id as
+ * `?after=`; only a stream opened without any cursor asks the caller to resync.
  */
 export function connectEvents({ projectIds, onEvent, onResync, onStatus, createSource = (url) => new EventSource(url) }: ConnectOptions): () => void {
-  const url = `${API_ROUTES.events.path}?${new URLSearchParams(projectIds.map((projectId) => ["project", projectId])).toString()}`;
+  let cursor = readStoredCursor(projectIds);
   let source: EventSourceLike | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryMs = FIRST_RETRY_MS;
@@ -39,15 +40,21 @@ export function connectEvents({ projectIds, onEvent, onResync, onStatus, createS
 
   function open(): void {
     onStatus?.(isReopen ? "reconnecting" : "connecting");
-    const current = createSource(url);
+    const isResumable = cursor !== null;
+    const current = createSource(eventsUrl(projectIds, cursor));
     source = current;
     current.onopen = () => {
       retryMs = FIRST_RETRY_MS;
       onStatus?.("live");
-      if (isReopen) onResync();
+      if (isReopen && !isResumable) onResync();
       isReopen = false;
     };
     current.onmessage = (message) => {
+      const eventId = LastEventIdSchema.safeParse(message.lastEventId);
+      if (eventId.success) {
+        cursor = eventId.data;
+        storeCursor(projectIds, cursor);
+      }
       const event = parseEvent(message.data);
       if (event) onEvent(event);
     };
@@ -66,6 +73,35 @@ export function connectEvents({ projectIds, onEvent, onResync, onStatus, createS
     clearTimeout(retryTimer);
     source?.close();
   };
+}
+
+function eventsUrl(projectIds: readonly string[], cursor: number | null): string {
+  const query = new URLSearchParams(projectIds.map((projectId) => ["project", projectId]));
+  if (cursor !== null) query.set("after", String(cursor));
+  return `${API_ROUTES.events.path}?${query.toString()}`;
+}
+
+/** Event ids are global, so a shared stream may resume only from the oldest cursor of its projects. */
+function readStoredCursor(projectIds: readonly string[]): number | null {
+  const cursors = projectIds.map((projectId) => LastEventIdSchema.safeParse(readSessionValue(CURSOR_KEY_PREFIX + projectId)));
+  if (cursors.length === 0 || !cursors.every((parsed) => parsed.success)) return null;
+  return Math.min(...cursors.map((parsed) => parsed.data));
+}
+
+function storeCursor(projectIds: readonly string[], cursor: number): void {
+  try {
+    for (const projectId of projectIds) sessionStorage.setItem(CURSOR_KEY_PREFIX + projectId, String(cursor));
+  } catch {
+    // Storage blocked (private mode, policy): a reload then resyncs by refetching.
+  }
+}
+
+function readSessionValue(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 function parseEvent(data: unknown): StudioEvent | null {

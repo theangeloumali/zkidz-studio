@@ -90,6 +90,20 @@ describe("confinePath rejects traversal (plan §9.4)", () => {
     await expectEscape("escape-dir/secret.txt", "outside-root");
   });
 
+  it("rejects a sibling whose name differs from the root only in case", async () => {
+    const mixedCaseRoot = join(sandboxDir, "CaseRoot");
+    const lowerCaseSibling = join(sandboxDir, "caseroot");
+    await mkdir(mixedCaseRoot);
+    // Case-insensitive volumes cannot hold both names; there the two are one directory and nothing can escape.
+    const hasDistinctSibling = await mkdir(lowerCaseSibling).then(
+      () => true,
+      () => false,
+    );
+    if (!hasDistinctSibling) return;
+    await writeFile(join(lowerCaseSibling, "secret.txt"), "secret");
+    await expect(confinePath(mixedCaseRoot, join(lowerCaseSibling, "secret.txt"))).rejects.toBeInstanceOf(PathEscapeError);
+  });
+
   it("rejects a path that does not exist, since its realpath cannot be proven", async () => {
     await expectEscape("media/missing.mp4", "unresolvable");
   });

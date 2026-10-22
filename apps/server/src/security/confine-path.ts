@@ -69,10 +69,9 @@ async function realpathOrReject(path: string): Promise<string> {
   }
 }
 
+// Both sides are realpaths, so casing is already canonical; folding it would admit a case-sensitive sibling on Windows.
 function isWithinRoot(rootRealPath: string, candidateRealPath: string): boolean {
-  const root = IS_WINDOWS ? rootRealPath.toLowerCase() : rootRealPath;
-  const candidate = IS_WINDOWS ? candidateRealPath.toLowerCase() : candidateRealPath;
   // Separator-bounded, so /projects/a never admits /projects/a-evil.
-  const rootWithSeparator = root.endsWith(sep) ? root : root + sep;
-  return candidate === root || candidate.startsWith(rootWithSeparator);
+  const rootWithSeparator = rootRealPath.endsWith(sep) ? rootRealPath : rootRealPath + sep;
+  return candidateRealPath === rootRealPath || candidateRealPath.startsWith(rootWithSeparator);
 }

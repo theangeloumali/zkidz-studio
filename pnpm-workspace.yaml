@@ -1,0 +1,13 @@
+# Created by The Angelo Umali.
+packages:
+  - apps/*
+  - packages/*
+  - scripts
+
+# Reviewed build scripts only (strictDepBuilds fails the install on any other).
+strictDepBuilds: true
+allowBuilds:
+  node-pty: true
+
+# Minutes. A week-old floor keeps a freshly hijacked release out of the lockfile.
+minimumReleaseAge: 10080

@@ -17,3 +17,19 @@ docs/plans/*.html
 *.wav
 *.bin
 *.part
+# Models, tool downloads and local data dirs
+models/
+.models/
+data/
+.data/
+.zks/
+*.gguf
+*.onnx
+*.safetensors
+# Build, test and OS output
+dist/
+coverage/
+.turbo/
+playwright-report/
+test-results/
+.DS_Store

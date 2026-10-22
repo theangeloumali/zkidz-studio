@@ -1,0 +1,4 @@
+# Created by The Angelo Umali.
+# cmd.exe misparses batch labels and gotos in LF files.
+*.cmd text eol=crlf
+*.bat text eol=crlf

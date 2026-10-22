@@ -16,9 +16,9 @@ regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqp
 secretGroup = 1
 keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp"]
 
-# The only allowed match: local Supabase Postgres (plan §8), the CLI's public default password on loopback,
-# on the CLI default port 54322 or the plan's 55322. Anchored so any other host, port, user, password or database fails.
+# The only allowed match: local Supabase Postgres (plan §8), the CLI's public default password on loopback.
+# Any port: the port holds no secret and moves (Windows reserves 55322, spike 03). Any other host, user, password or database fails.
 [[rules.allowlists]]
 description = "Local Supabase Postgres default URL (loopback only, plan §8)"
 regexTarget = "match"
-regexes = ['''^postgres(?:ql)?://postgres:postgres@127\.0\.0\.1:5[45]322/postgres$''']
+regexes = ['''^postgres(?:ql)?://postgres:postgres@127\.0\.0\.1:\d{1,5}/postgres$''']

@@ -1,6 +1,6 @@
-# ZKidz Studio: platform plan of record (v1.0)
+<!-- Created by The Angelo Umali. -->
 
-Created by The Angelo Umali.
+# ZKidz Studio: platform plan of record (v1.0)
 
 Context: this is a new build, not a fix. A new public repo turns the zkidz-films short-form pipeline into a local-first, open-source
 editor. The user drops footage, types a prompt and watches Claude build the edit live. No reproduction step applies.
@@ -370,9 +370,7 @@ catalog (§6.8), the event schema (§6.11) and the plugin (§6.9) with the SDK p
 // apps/server/src/terminal/launch-args.ts
 export function buildTerminalArgs(run: TerminalRun): string[] {
   return [
-    ...(run.resume
-      ? ["--resume", run.sessionId]
-      : ["--session-id", run.sessionId]),
+    ...(run.resume ? ["--resume", run.sessionId] : ["--session-id", run.sessionId]),
     "--restricted", // loads only managed settings and --settings; spike 7 confirms /login still works
     "--settings",
     run.settingsPath, // hooks below; 0600, deleted at session end
@@ -518,37 +516,15 @@ fixed in ADR 0002.
 
 ```ts
 // apps/server/src/auth/agent-env.ts
-const OS_BASICS = [
-  "PATH",
-  "HOME",
-  "USERPROFILE",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "TMP",
-  "TEMP",
-  "TMPDIR",
-  "SystemRoot",
-  "ComSpec",
-  "PATHEXT",
-  "LANG",
-];
+const OS_BASICS = ["PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TMP", "TEMP", "TMPDIR", "SystemRoot", "ComSpec", "PATHEXT", "LANG"];
 const PROXY_VARS = ["HTTPS_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS"]; // only when the user opts in on the settings page
 
 // Mode B: the switch plus the provider page's non-secret variables; credentials come from the user's cloud CLI profile.
 const PROVIDER_VARS: Record<CloudProvider, string[]> = {
   bedrock: ["CLAUDE_CODE_USE_BEDROCK", "AWS_REGION", "AWS_PROFILE"],
-  vertex: [
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLOUD_ML_REGION",
-    "ANTHROPIC_VERTEX_PROJECT_ID",
-  ],
+  vertex: ["CLAUDE_CODE_USE_VERTEX", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID"],
   foundry: ["CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE"],
-  anthropicAws: [
-    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
-    "ANTHROPIC_AWS_WORKSPACE_ID",
-    "AWS_REGION",
-    "AWS_PROFILE",
-  ],
+  anthropicAws: ["CLAUDE_CODE_USE_ANTHROPIC_AWS", "ANTHROPIC_AWS_WORKSPACE_ID", "AWS_REGION", "AWS_PROFILE"],
 };
 
 export type AuthMode =
@@ -556,15 +532,9 @@ export type AuthMode =
   | { kind: "cloud"; provider: CloudProvider; values: Record<string, string> }
   | { kind: "terminal"; tokens: TerminalTokens }; // §6.3: no credential at all
 
-export function buildAgentEnv(
-  mode: AuthMode,
-  appVersion: string,
-  proxyOptIn: boolean,
-): Record<string, string> {
+export function buildAgentEnv(mode: AuthMode, appVersion: string, proxyOptIn: boolean): Record<string, string> {
   const pick = (names: string[], source: Record<string, string | undefined>) =>
-    Object.fromEntries(
-      names.flatMap((name) => (source[name] ? [[name, source[name]!]] : [])),
-    );
+    Object.fromEntries(names.flatMap((name) => (source[name] ? [[name, source[name]!]] : [])));
   const env: Record<string, string> = {
     ...pick(OS_BASICS, process.env),
     ...pick(
@@ -577,8 +547,7 @@ export function buildAgentEnv(
     CLAUDE_AGENT_SDK_CLIENT_APP: `zkidz-studio/${appVersion}`,
   };
   if (mode.kind === "apiKey") env.ANTHROPIC_API_KEY = mode.apiKey;
-  if (mode.kind === "cloud")
-    Object.assign(env, pick(PROVIDER_VARS[mode.provider], mode.values));
+  if (mode.kind === "cloud") Object.assign(env, pick(PROVIDER_VARS[mode.provider], mode.values));
   if (mode.kind === "terminal") Object.assign(env, terminalEnv(mode.tokens)); // TERM, COLORTERM, ZKS_HOOK_TOKEN, ZKS_MCP_*
   return env;
 }
@@ -592,11 +561,7 @@ allowlist for every mode. In the `terminal` kind the env also carries no `ANTHRO
 // apps/server/src/agent/session.ts
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
-export function startSession(
-  project: Project,
-  mode: AuthMode,
-  inbox: AsyncIterable<SDKUserMessage>,
-) {
+export function startSession(project: Project, mode: AuthMode, inbox: AsyncIterable<SDKUserMessage>) {
   const abortController = new AbortController();
   const session = query({
     prompt: inbox, // streaming input: needed for interrupt(), queued prompts and images
@@ -615,28 +580,19 @@ export function startSession(
         append: studioRules(project),
       },
       tools: ["Read", "Skill", "AskUserQuestion"], // D4: no Edit/Write/Bash/Web
-      disallowedTools: [
-        "Bash",
-        "Edit",
-        "Write",
-        "WebFetch",
-        "WebSearch",
-        "Agent",
-      ],
+      disallowedTools: ["Bash", "Edit", "Write", "WebFetch", "WebSearch", "Agent"],
       allowedTools: [...AUTO_APPROVED_TOOLS, `Read(/${STUDIO_PLUGIN_DIR}/**)`], // §6.8; `//` anchors an absolute path
       mcpServers: { studio: studioMcpServer(project) },
       strictMcpConfig: true,
       permissionMode: "default", // dontAsk would deny AskUserQuestion
-      canUseTool: (toolName, input, { signal }) =>
-        decide(project, toolName, input, signal), // §6.10: deny by default
+      canUseTool: (toolName, input, { signal }) => decide(project, toolName, input, signal), // §6.10: deny by default
       hooks: {
         PreToolUse: [{ hooks: [confineReads(project.dir, STUDIO_PLUGIN_DIR)] }],
       },
       includePartialMessages: true,
       resume: project.sdkSessionId, // explicit id, never `continue: true`
       maxTurns: project.settings.maxTurns, // every mode, per prompt
-      maxBudgetUsd:
-        mode.kind === "apiKey" ? project.settings.budgetUsd : undefined,
+      maxBudgetUsd: mode.kind === "apiKey" ? project.settings.budgetUsd : undefined,
       abortController,
     },
   });
@@ -1419,10 +1375,7 @@ for (const phase of plan.phases.filter((p) => !p.done)) {
   await run("pnpm verify");
 
   emitDispatchState({ wavePhase: "wave2-verify" });
-  const findings = await Promise.all([
-    dispatch("maya", review(phase)),
-    dispatch("kai", review(phase)),
-  ]);
+  const findings = await Promise.all([dispatch("maya", review(phase)), dispatch("kai", review(phase))]);
   await fixRound(findings); // owners fix their own paths; rerun pnpm verify
   await run(phase.verifyCommand);
   tickLedger(phase.n); // "- [x] Phase N" in this doc

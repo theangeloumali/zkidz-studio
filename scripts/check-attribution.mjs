@@ -68,8 +68,15 @@ const EXEMPT_EXTENSIONS = new Set([
   ".mp4",
   ".wav",
   ".pdf",
+  ".log",
 ]);
 const EXEMPT_FILENAMES = new Set([".prettierrc", "pnpm-lock.yaml", "LICENSE", "NOTICE"]);
+
+// drizzle-kit regenerates migration SQL, so it is a generated file under D11 (hand-written rollbacks live elsewhere).
+/** @param {string} relativePath */
+function isDrizzleMigration(relativePath) {
+  return extname(relativePath) === ".sql" && relativePath.split("/").at(-2) === "migrations";
+}
 
 /**
  * The header line a file must start with: a string, null when exempt, undefined when no rule covers it.
@@ -80,18 +87,26 @@ function expectedHeaderLine(relativePath) {
   const fileName = basename(relativePath);
   const extension = extname(fileName);
   if (EXEMPT_FILENAMES.has(fileName) || EXEMPT_EXTENSIONS.has(extension)) return null;
+  if (isDrizzleMigration(relativePath)) return null;
   return LINE_BY_FILENAME[fileName] ?? LINE_BY_EXTENSION[extension];
 }
 
 /**
- * Line 1 carries the attribution; only a shebang may sit above it, and never in Markdown.
+ * Line 1 carries the attribution. Only a shebang, or YAML frontmatter that parsers need on line 1
+ * (SKILL.md, GitHub issue templates), may sit above it.
  * @param {string} contents
  * @param {string} headerLine
  */
 function startsWithHeader(contents, headerLine) {
-  const [firstLine = "", secondLine = ""] = contents.split(/\r?\n/, 2);
+  const lines = contents.split(/\r?\n/);
+  const [firstLine = "", secondLine = ""] = lines;
   if (firstLine.trimEnd() === headerLine) return true;
-  return firstLine.startsWith("#!") && secondLine.trimEnd() === headerLine;
+  if (firstLine.startsWith("#!")) return secondLine.trimEnd() === headerLine;
+  if (headerLine !== MARKUP_LINE || firstLine.trimEnd() !== "---") return false;
+  const frontmatterEnd = lines.indexOf("---", 1);
+  if (frontmatterEnd === -1) return false;
+  const firstBodyLine = lines.slice(frontmatterEnd + 1).find((line) => line.trim() !== "");
+  return firstBodyLine?.trimEnd() === headerLine;
 }
 
 /** Tracked plus untracked-but-not-ignored files, so a new file is checked before it is staged. @param {string} repoRoot */

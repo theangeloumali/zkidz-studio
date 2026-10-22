@@ -60,6 +60,26 @@ describe("findAttributionProblems", () => {
     expect(findAttributionProblems(repoDir)).toEqual([{ path: "docs/late.md", expected: `<!-- ${ATTRIBUTION} -->` }]);
   });
 
+  it("accepts the line right after YAML frontmatter, which must stay on line 1", () => {
+    writeRepoFile(".github/ISSUE_TEMPLATE/bug.md", `---\nname: Bug\n---\n\n<!-- ${ATTRIBUTION} -->\n\nBody\n`);
+    writeRepoFile("skills/hello/SKILL.md", `---\nname: hello\n---\n<!-- ${ATTRIBUTION} -->\n`);
+
+    expect(findAttributionProblems(repoDir)).toEqual([]);
+  });
+
+  it("still reports frontmatter Markdown with the line further down", () => {
+    writeRepoFile("skills/late/SKILL.md", `---\nname: late\n---\n\n# Title\n\n<!-- ${ATTRIBUTION} -->\n`);
+
+    expect(findAttributionProblems(repoDir)).toEqual([{ path: "skills/late/SKILL.md", expected: `<!-- ${ATTRIBUTION} -->` }]);
+  });
+
+  it("exempts generated files: tool logs and drizzle-kit migrations", () => {
+    writeRepoFile("results/run.log", "output\n");
+    writeRepoFile("packages/db/migrations/0000_sticky_cobalt_man.sql", 'CREATE SCHEMA "studio";\n');
+
+    expect(findAttributionProblems(repoDir)).toEqual([]);
+  });
+
   it("accepts the line right after a shebang", () => {
     writeRepoFile("bin/run.mjs", `#!/usr/bin/env node\n// ${ATTRIBUTION}\n`);
 

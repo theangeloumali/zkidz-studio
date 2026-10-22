@@ -1,0 +1,192 @@
+/* Created by The Angelo Umali. */
+/*
+ * zkidz-studio design tokens: the ZKidz theme (the default theme of the app).
+ * Upstream: packages/ui/src/styles/globals.css
+ * ("UP:<line>" below). zkidz-courses mirrors it byte-for-byte in styles/zkidz-tokens.css
+ * (theme:check passes 2026-10-22). Video values: zkidz-films engine/overlay/brand.js ("FILMS:").
+ * "STUDIO" marks a value this app adds; each says what it derives from. Research: claudedocs/research/brand.md.
+ */
+
+/* Fonts are self-hosted (OFL-1.1) so the local app works offline and calls no CDN:
+   @fontsource-variable/archivo/wdth.css (wght 100-900, wdth 62-125%),
+   @fontsource-variable/jetbrains-mono. Import them in the app entry, not here. */
+
+/* Dark navy-slate ground: the default, and the no-attribute fallback (UP:36-57). */
+:root,
+[data-theme="dark"] {
+  --color-bg: #0c1117; /* UP:38 */
+  --color-bg-elevated: #121922; /* UP:39 */
+  --color-surface: #18212c; /* UP:40 */
+  --color-border: #243140; /* UP:41 hairline, decorative only (1.43:1) */
+  --color-border-strong: #6f8aa6; /* UP:42 control edges (5.29:1) */
+  --color-copy: #ece7de; /* UP:43 15.39:1 on bg */
+  --color-copy-muted: #95a3b3; /* UP:44 7.37:1 */
+  --color-copy-dim: #8494a5; /* UP:45 6.10:1 */
+  --color-accent: #8ea9c4; /* UP:46 steel: links, active, progress, focus */
+  --color-accent-strong: #b3c7da; /* UP:47 */
+  --color-on-accent: #0c1117; /* UP:48 */
+  --color-cta: #d5b13a; /* UP:49 gold: primary action + flood band only */
+  --color-cta-strong: #e2c45d; /* UP:50 */
+  --color-on-cta: #071f3a; /* UP:51 8.04:1 on cta */
+  --color-cta-edge: transparent; /* UP:52 */
+  --color-danger: #ff9c94; /* UP:53 */
+  --color-success: #7fd9a0; /* UP:54 */
+  --color-focus: var(--color-accent); /* UP:55 */
+  color-scheme: dark; /* UP:56 */
+}
+
+/* Cream ground (UP:61-82). */
+[data-theme="light"] {
+  --color-bg: #f3efe8; /* UP:62 */
+  --color-bg-elevated: #ffffff; /* UP:63 */
+  --color-surface: #e9e4da; /* UP:64 */
+  --color-border: #d4d6d5; /* UP:65 */
+  --color-border-strong: #62788c; /* UP:66 */
+  --color-copy: #172230; /* UP:67 14.01:1 */
+  --color-copy-muted: #526171; /* UP:68 5.54:1 */
+  --color-copy-dim: #586775; /* UP:69 5.07:1 */
+  --color-accent: #2e4a64; /* UP:70 8.04:1 */
+  --color-accent-strong: #1f3850; /* UP:71 */
+  --color-on-accent: #ffffff; /* UP:72 */
+  --color-cta: #be9724; /* UP:73 2.40:1 on cream: never text */
+  --color-cta-strong: #d5b13a; /* UP:74 */
+  --color-on-cta: #071f3a; /* UP:75 */
+  --color-cta-edge: #9f7e16; /* UP:77 gives the gold button its 3:1 edge */
+  --color-danger: #b3261e; /* UP:78 */
+  --color-success: #17693a; /* UP:79 */
+  --color-focus: var(--color-accent); /* UP:80 */
+  color-scheme: light; /* UP:81 */
+}
+
+/* The one gold flood band per screen; the button inverts to navy on gold (UP:123-142). */
+[data-tone="flood"] {
+  --color-bg: #d5b13a;
+  --color-bg-elevated: #e2c45d;
+  --color-surface: #e2c45d;
+  --color-border: #071f3a;
+  --color-border-strong: #071f3a;
+  --color-copy: #071f3a;
+  --color-copy-muted: #24364d;
+  --color-copy-dim: #24364d;
+  --color-accent: #071f3a;
+  --color-accent-strong: #172230;
+  --color-on-accent: #f3efe8;
+  --color-cta: #071f3a;
+  --color-cta-strong: #172230;
+  --color-on-cta: #f3efe8;
+  --color-cta-edge: transparent;
+  --color-focus: #071f3a;
+  background-color: var(--color-bg);
+  color: var(--color-copy);
+}
+
+:root {
+  /* Short semantic aliases this app's components use; they follow the theme above. */
+  --color-text: var(--color-copy);
+  --color-text-muted: var(--color-copy-muted);
+  --color-text-dim: var(--color-copy-dim);
+  --color-line: var(--color-border);
+  --color-line-strong: var(--color-border-strong);
+
+  /* Logo master pixels, theme-independent (packages/ui/src/brand/logoPaths.ts:6,13). */
+  --color-logo-steel: #2d5e74;
+  --color-logo-gold: #d4af36;
+
+  /* Video overlay palette for the live preview; always on footage or ink (FILMS:3-20, sketch.js:20-28). */
+  --color-video-ink: #172230; /* Z.ink */
+  --color-video-paper: #f3efe8; /* Z.fill */
+  --color-video-gold: #d5b13a; /* BRAND.goldBright: the hook's accent line and gold rule */
+  --color-video-gold-rule: #c9a838; /* Z.gold: rules on paper, never text */
+  --color-video-steel: #3b7a9e; /* Z.steel */
+
+  /* Type. Archivo carries display, body and labels through its width axis (apps/company/app/fonts.ts:3-9). */
+  --font-display: "Archivo Variable", "Archivo", system-ui, sans-serif;
+  --font-sans: var(--font-display);
+  /* Quotes only (apps/portfolio/app/fonts.ts:11-18); never chrome. */
+  --font-voice: "Newsreader", Georgia, "Times New Roman", serif;
+  /* STUDIO: timecodes, logs and the agent transcript; the films kit's mono (films/kit/sketch.js:29). */
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular",
+    Menlo, monospace;
+  --font-stretch-condensed: 68%; /* @utility font-condensed, UP:225-227 */
+  --font-stretch-semi-condensed: 88%; /* UP:229-231 */
+  --font-stretch-expanded: 112%; /* UP:233-235 */
+
+  /* Marketing scale (UP:86-92), for the landing and empty-state hero only. */
+  --text-display: clamp(3.25rem, 13vw, 13.5rem);
+  --text-h2: clamp(2rem, 4.2vw, 3.75rem);
+  --text-statement: clamp(1.5rem, 2.8vw, 2.75rem);
+  --text-h3: clamp(1.25rem, 1.8vw, 1.625rem);
+  --text-lede: clamp(1.125rem, 1.5vw, 1.375rem);
+  --text-label: 0.8125rem; /* UP:92 */
+  --text-body: 1.0625rem; /* body font-size, UP:174 */
+  --leading-body: 1.6; /* UP:175 */
+  --leading-display: 0.86; /* packages/ui/tailwind.config.js:36 */
+  --leading-h2: 0.94; /* tailwind.config.js:37 */
+  --leading-h3: 1.15; /* tailwind.config.js:39 */
+  --leading-lede: 1.35; /* tailwind.config.js:40 */
+  --leading-label: 1.3; /* tailwind.config.js:41 */
+
+  /* STUDIO: a dense tool scale for panels; nothing goes below the site's 13px label. */
+  --text-ui-sm: var(--text-label);
+  --text-ui: 0.9375rem;
+  --text-ui-lg: var(--text-body);
+  --text-panel-title: 1.25rem; /* the h3 clamp's floor */
+
+  /* Space. Base unit = Tailwind v4's --spacing 0.25rem, which the sites use unchanged. */
+  --space-unit: 0.25rem;
+  --space-1: calc(var(--space-unit) * 1);
+  --space-2: calc(var(--space-unit) * 2);
+  --space-3: calc(var(--space-unit) * 3);
+  --space-4: calc(var(--space-unit) * 4);
+  --space-5: calc(var(--space-unit) * 5);
+  --space-6: calc(var(--space-unit) * 6);
+  --space-8: calc(var(--space-unit) * 8);
+  --space-10: calc(var(--space-unit) * 10);
+  --space-12: calc(var(--space-unit) * 12);
+  --space-16: calc(var(--space-unit) * 16);
+  --page-max: 90rem; /* UP:94 */
+  --gutter: clamp(1rem, 4vw, 3rem); /* UP:95 */
+  --space-section: clamp(4rem, 8vw, 7rem); /* UP:96 */
+  --header-h: 4.5rem; /* UP:97 */
+  --target-min: 2.75rem; /* min-h-11, the 44px touch floor (design/Button.tsx:37-40) */
+
+  /* Radii (UP:101-103) plus the names this app's components ask for. */
+  --radius-control: 999px;
+  --radius-object: 1.25rem;
+  --radius-field: 0.375rem;
+  --radius-button: var(--radius-control);
+  --radius-pill: var(--radius-control);
+  --radius-card: var(--radius-object);
+  --radius-input: var(--radius-field);
+  /* STUDIO: clip thumbnails and timeline blocks sit inside a card; nested radius = card radius - the poster card's p-4 (1.25rem - 1rem). */
+  --radius-inset: 0.25rem;
+
+  /* Elevation is a border, not a shadow: the sites ship no box-shadow on chrome or cards. */
+  --border-width: 1px;
+  --shadow-none: none;
+  /* The one inset ring in the system (packages/ui/src/styles/sequence.css:278). */
+  --shadow-ring: inset 0 0 0 1.5px var(--color-border-strong);
+  /* STUDIO: overlays (menus, the drop target) need separation from footage; tinted by the ground, never pure black at low alpha on light. */
+  --shadow-overlay: 0 12px 32px -12px color-mix(in oklab, #000 55%, transparent);
+  --backdrop: color-mix(
+    in oklab,
+    #000 55%,
+    transparent
+  ); /* zkidz-courses app/globals.css:185 */
+
+  /* Motion (UP:105-112). Override Tailwind's default --ease-out (0,0,0.2,1): keep this file unlayered. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 160ms; /* micro: press, toggle */
+  --dur-2: 320ms; /* sheets, panels */
+  --dur-3: 640ms; /* in-view reveals */
+  --dur-4: 900ms; /* curtain, heading wipe */
+  --dur-hover: 200ms; /* duration-200 on every hover colour change (design/classNames.ts:22,26) */
+  --reveal-shift: 1.5rem;
+  --stagger-step: 40ms; /* per word in RevealText (styles/motion.css:245) */
+
+  /* Focus ring (UP:196-197). */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+}

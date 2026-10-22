@@ -1,0 +1,104 @@
+%% Created by The Angelo Umali.
+flowchart TB
+  USER["Creator<br/>browser tab"] -- "http://127.0.0.1:4317" --> APP["ZKidz Studio (local)<br/>server, engine, DB"]
+  APP -- "stdio" --> CC["Claude Code child<br/>user's own credential"]
+  CC -- "HTTPS" --> API["Anthropic API /<br/>Bedrock / Vertex"]
+  APP --> FF["ffmpeg + GPU<br/>pinned download"]
+  APP --> HOME["ZKS_HOME files<br/>media, work, db"]
+%% ---
+flowchart TB
+  WEB["apps/web<br/>React UI"] -- "POST /api/*" --> SRV["apps/server (Hono)<br/>AgentSession, EventBus,<br/>JobRunner, MCP studio"]
+  SRV -- "SSE /api/events" --> WEB
+  SRV -- "query()" --> AG["Agent child<br/>SDK to claude"]
+  AG -- "SDKMessage" --> SRV
+  SRV -- "Drizzle" --> DB["DB: PGlite (B)<br/>or Supabase PG17 (A)"]
+  SRV -- "spawn" --> ENG["zks-engine<br/>Python via uv"]
+  SRV -- "spawn" --> HF["hf renderer<br/>Node + chrome-headless"]
+  ENG --> FFP["ffmpeg profile<br/>nvidia to cpu"]
+%% ---
+sequenceDiagram
+  participant U as User
+  participant W as Web UI
+  participant S as Server
+  participant C as Claude child
+  participant E as Engine
+  U->>W: prompt
+  W->>S: POST /prompt
+  S->>C: inbox.push
+  C-->>S: stream_event delta
+  S-->>W: text.delta
+  C->>S: tool_use set_cuts
+  S-->>W: tool.started
+  S->>E: validate, write cuts/v1.json, edl + audio
+  E-->>S: edl/v1.json
+  S-->>W: spec.version
+  S-->>W: preview.ready (composition rebuilt, no PNGs)
+  W-->>U: timeline + 9:16 re-seek
+  S->>C: tool_result {segments, keptS}
+  U->>W: Approve
+  W->>S: POST /decisions
+  S->>E: render_master job
+  E-->>S: progress JSONL
+  S-->>W: job.progress
+%% ---
+flowchart TB
+  URL{"DATABASE_URL"} -- "unset" --> B["Path B (default)<br/>PGlite, version pinned<br/>inside the server"]
+  URL -- "postgresql://" --> A["Path A (opt-in)<br/>Supabase CLI, PG 17<br/>Docker on 127.0.0.1"]
+  B --> SCH["Drizzle schema studio<br/>one migrations folder<br/>PG 17 features only"]
+  A --> SCH
+%% ---
+flowchart LR
+  ROOT["zkidz-studio/"] --> WEB["apps/web<br/>React UI (lena)"]
+  ROOT --> SRV["apps/server<br/>Hono server (ravi, kai security)"]
+  ROOT --> SH["packages/shared<br/>zod contracts (marcus)"]
+  ROOT --> DB["packages/db<br/>Drizzle (ravi)"]
+  ROOT --> CLI["packages/cli<br/>zks CLI (jordan)"]
+  ROOT --> ENG["packages/engine<br/>Python + hf (rio, jordan)"]
+  ROOT --> PLG["plugin + themes<br/>skills, theme packs (rio)"]
+  ROOT --> DES["design<br/>tokens, mockup (priya)"]
+  ROOT --> OPS["docs, supabase, docker,<br/>.github, setup"]
+  ROOT --> FIX["fixtures<br/>test media, goldens (maya)"]
+%% ---
+flowchart LR
+  BR["Browser<br/>xterm pane, feed,<br/>timeline, 9:16 preview"] <-->|"WebSocket: keys, resize, PTY bytes"| PTY["Local server<br/>PTY host (node-pty)"]
+  PTY -- "spawn argv, no shell" --> CC["user's own claude<br/>unmodified, /login"]
+  CC -- "stdio MCP + token" --> MCP["studio MCP server<br/>specs, jobs, gates"]
+  CC -- "HTTP hooks + token" --> HB["hooks bridge<br/>PreToolUse policy,<br/>Post, Stop, Notify"]
+  MCP --> BUS["EventBus"]
+  HB --> BUS
+  BUS -- "SSE StudioEvents" --> BR
+%% ---
+flowchart TB
+  START["Connect Claude<br/>cards A, B, T (opt-in)"] -- "A: paste key" --> KEY["GET /v1/models<br/>200 to keychain, 401 stay"]
+  START -- "B: cloud" --> CLOUD["provider env check"]
+  START -- "T: disclosure ticked" --> PANE["spawn user's claude in PTY<br/>xterm pane in the Editor"]
+  PANE -- "not signed in" --> LOGIN["Claude Code's own login<br/>screen or /login in pane"]
+  LOGIN --> READY
+  KEY --> READY["READY<br/>A/B: init.apiKeySource matches mode<br/>T: SessionStart hook received"]
+  CLOUD --> READY
+  PANE --> READY
+%% ---
+flowchart LR
+  BIN["ffmpeg from<br/>tools.lock.json"] --> LIST["list: -buildconf,<br/>-hwaccels, -encoders"]
+  LIST --> RUN["run: 8-frame testsrc2<br/>decode, composite, encode"]
+  RUN --> CAPS["capabilities.json<br/>first passing: nvidia, videotoolbox,<br/>qsv, amf, vaapi, cpu"]
+  CAPS --> GRAPH["engine graph per profile<br/>same contract, CPU = reference"]
+%% ---
+flowchart LR
+  BOOT["setup.sh / setup.ps1<br/>pnpm + uv only"] --> INST["pnpm install<br/>pinned Node"]
+  INST --> SETUP["pnpm zks setup<br/>python, ffmpeg, probe, chrome,<br/>models, claude, db, web build"]
+  SETUP --> START["pnpm start<br/>127.0.0.1:4317"]
+%% ---
+flowchart LR
+  W0["Wave 0<br/>marcus: contracts, ADRs"] --> LENA["lena<br/>apps/web"]
+  W0 --> RAVI["ravi<br/>server, db"]
+  W0 --> RIO["rio<br/>engine specs, plugin, themes"]
+  W0 --> JOR["jordan<br/>cli, backends, CI"]
+  W0 --> KE["kai, elena<br/>security, docs"]
+  LENA --> MERGE["merge into phase/N<br/>pnpm verify"]
+  RAVI --> MERGE
+  RIO --> MERGE
+  JOR --> MERGE
+  KE --> MERGE
+  MERGE --> REV["Wave 2: maya + kai<br/>review pair, fixes"]
+  REV --> PR["phase PR to develop"]

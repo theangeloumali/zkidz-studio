@@ -1,0 +1,1035 @@
+<!-- Created by The Angelo Umali. -->
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZKidz Studio mock-up</title>
+    <meta name="description" content="Clickable design reference for zkidz-studio: connect Claude, drop footage, watch the agent edit, render 4K." />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Lucide (ISC) icon paths, inlined so the page runs from file:// with no icon CDN. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M20 6 9 17l-5-5" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="m17 8-5-5-5 5" />
+        <path d="M12 3v12" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M12 15V3" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24">
+        <path d="M6 3 20 12 6 21Z" />
+      </symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24">
+        <rect x="14" y="4" width="4" height="16" rx="1" />
+        <rect x="6" y="4" width="4" height="16" rx="1" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="5" y="5" width="14" height="14" rx="2" />
+      </symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24">
+        <path d="m4 17 6-6-6-6" />
+        <path d="M12 19h8" />
+      </symbol>
+      <symbol id="i-key" viewBox="0 0 24 24">
+        <circle cx="7.5" cy="15.5" r="5.5" />
+        <path d="m21 2-9.6 9.6" />
+        <path d="m15.5 7.5 3 3L22 7l-3-3" />
+      </symbol>
+      <symbol id="i-cpu" viewBox="0 0 24 24">
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <rect x="9" y="9" width="6" height="6" rx="1" />
+        <path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2" />
+      </symbol>
+      <symbol id="i-database" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+        <path d="M3 12a9 3 0 0 0 18 0" />
+      </symbol>
+      <symbol id="i-film" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4" />
+      </symbol>
+      <symbol id="i-scan" viewBox="0 0 24 24">
+        <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+      </symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24">
+        <path d="m5 12 7-7 7 7" />
+        <path d="M12 19V5" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 6v6l4 2" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v4M12 16h.01" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 16v-4M12 8h.01" />
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+        <path d="M21 3v5h-5" />
+        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+        <path d="M8 16H3v5" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="14" height="14" rx="2" />
+        <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+      </symbol>
+      <symbol id="i-scissors" viewBox="0 0 24 24">
+        <circle cx="6" cy="6" r="3" />
+        <path d="M8.12 8.12 12 12" />
+        <path d="M20 4 8.12 15.88" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M14.8 14.8 20 20" />
+      </symbol>
+      <symbol id="i-type" viewBox="0 0 24 24">
+        <path d="M4 7V4h16v3" />
+        <path d="M9 20h6" />
+        <path d="M12 4v16" />
+      </symbol>
+      <symbol id="i-music" viewBox="0 0 24 24">
+        <path d="M9 18V5l12-2v13" />
+        <circle cx="6" cy="18" r="3" />
+        <circle cx="18" cy="16" r="3" />
+      </symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24">
+        <path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+        <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+        <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+      </symbol>
+      <symbol id="i-file-text" viewBox="0 0 24 24">
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="M16 13H8M16 17H8M10 9H8" />
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21" />
+      </symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <path d="M8 21h8M12 17v4" />
+      </symbol>
+      <symbol id="i-user" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="5" />
+        <path d="M20 21a8 8 0 0 0-16 0" />
+      </symbol>
+      <symbol id="i-video" viewBox="0 0 24 24">
+        <path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5" />
+        <rect x="2" y="6" width="14" height="12" rx="2" />
+      </symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24">
+        <path d="m12 14 4-4" />
+        <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+      </symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M5 12h14M12 5v14" />
+      </symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+      </symbol>
+      <symbol id="i-loader" viewBox="0 0 24 24">
+        <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+      </symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24">
+        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18" />
+        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      </symbol>
+      <symbol id="i-history" viewBox="0 0 24 24">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+        <path d="M3 3v5h5" />
+        <path d="M12 7v5l4 2" />
+      </symbol>
+    </svg>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="topbar">
+      <a class="wordmark" href="#home" aria-label="ZKidz Studio home">ZKIDZ <span>STUDIO</span></a>
+      <nav class="topnav" aria-label="Screens">
+        <a href="#connect" data-nav="connect">Connect</a>
+        <a href="#home" data-nav="home">Home</a>
+        <a href="#editor" data-nav="editor">Editor</a>
+        <a href="#rules" data-nav="rules">Rules</a>
+        <a href="#render" data-nav="render">Render</a>
+      </nav>
+      <div class="topbar-end">
+        <details class="proto" id="proto">
+          <summary>Mock-up states</summary>
+          <div class="proto-body">
+            <p class="help">Prototype controls. Not part of the product.</p>
+            <fieldset>
+              <legend class="label">Agent</legend>
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Agent state">
+                <button type="button" role="radio" aria-checked="true" data-state="normal">Normal</button>
+                <button type="button" role="radio" aria-checked="false" data-state="key-rejected">Key rejected</button>
+                <button type="button" role="radio" aria-checked="false" data-state="signed-out">Terminal signed out</button>
+                <button type="button" role="radio" aria-checked="false" data-state="rate-limited">Rate limited</button>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="label">Key check (GET /v1/models)</legend>
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Key check answer">
+                <button type="button" role="radio" aria-checked="true" data-keycheck="200">Accepts (200)</button>
+                <button type="button" role="radio" aria-checked="false" data-keycheck="401">Rejects (401)</button>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="label">Render</legend>
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Render state">
+                <button type="button" role="radio" aria-checked="true" data-render="gpu">GPU</button>
+                <button type="button" role="radio" aria-checked="false" data-render="cpu">No GPU</button>
+                <button type="button" role="radio" aria-checked="false" data-render="error">Encoder error</button>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend class="label">Home</legend>
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Home state">
+                <button type="button" role="radio" aria-checked="true" data-home="full">Projects</button>
+                <button type="button" role="radio" aria-checked="false" data-home="empty">Empty</button>
+                <button type="button" role="radio" aria-checked="false" data-home="loading">Loading</button>
+              </div>
+            </fieldset>
+            <div class="proto-actions">
+              <button class="btn btn-sm" type="button" id="proto-reset">Reset editor</button>
+              <button class="btn btn-sm" type="button" id="proto-hostile">Hostile agent text</button>
+            </div>
+          </div>
+        </details>
+        <span class="chip chip-session" id="credential-chip" title="Which Claude credential the agent uses">
+          <span class="dot dot-ok" aria-hidden="true"></span><span id="credential-chip-text">Claude · API key</span>
+        </span>
+        <button class="icon-btn" type="button" id="theme-toggle" aria-label="Switch to light theme">
+          <svg class="icon"><use href="#i-sun" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <!-- ============ 1. CONNECT ============ -->
+      <section class="screen screen-connect" data-screen="connect" aria-labelledby="connect-title" hidden>
+        <div class="connect-grid">
+          <div class="connect-col">
+            <p class="step mono">Setup · step 1 of 2</p>
+            <h1 class="h-display" id="connect-title">Connect Claude</h1>
+            <p class="lede">The studio runs Claude on this computer, using your own access. Pick one way in. You can change it later in Settings.</p>
+
+            <fieldset class="auth-options">
+              <legend class="label">How should the studio reach Claude?</legend>
+
+              <label class="auth-option" data-auth="api">
+                <input type="radio" name="auth" value="api" checked />
+                <span class="auth-option-body">
+                  <span class="auth-option-head">
+                    <svg class="icon"><use href="#i-key" /></svg>
+                    <span class="auth-option-title">Paste an Anthropic API key</span>
+                    <span class="badge badge-accent">Recommended</span>
+                  </span>
+                  <span class="auth-option-desc"
+                    >Billed to your Claude Console account. Have Max or Team? Your plan includes monthly API credits: link a Console org in claude.ai → Settings
+                    → Billing, then create a key.</span
+                  >
+                </span>
+              </label>
+              <div class="auth-detail" data-auth-detail="api">
+                <label class="field-label" for="api-key">API key</label>
+                <div class="field-row">
+                  <input
+                    class="field mono"
+                    id="api-key"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Paste your key"
+                    aria-describedby="api-key-help api-key-status"
+                  />
+                  <button class="btn btn-accent" type="button" id="api-key-check">Check key</button>
+                </div>
+                <p class="help" id="api-key-help">
+                  The studio asks Anthropic whether the key works (a model list request that costs no tokens). Stored in your OS keychain; the browser only ever
+                  sees the last 4 characters.
+                </p>
+                <p class="status-line" id="api-key-status" role="status"></p>
+              </div>
+
+              <label class="auth-option" data-auth="cloud">
+                <input type="radio" name="auth" value="cloud" />
+                <span class="auth-option-body">
+                  <span class="auth-option-head">
+                    <svg class="icon"><use href="#i-cloud" /></svg>
+                    <span class="auth-option-title">Use my cloud provider</span>
+                    <span class="badge">Advanced</span>
+                  </span>
+                  <span class="auth-option-desc"
+                    >Bedrock, Vertex AI, Foundry or Claude Platform on AWS, through your existing cloud CLI profile. The studio stores no cloud secrets.</span
+                  >
+                </span>
+              </label>
+              <div class="auth-detail" data-auth-detail="cloud" hidden>
+                <label class="field-label" for="cloud-provider">Provider</label>
+                <div class="field-row">
+                  <select class="field" id="cloud-provider" aria-describedby="cloud-status">
+                    <option>Bedrock</option>
+                    <option>Vertex AI</option>
+                    <option>Foundry</option>
+                    <option>Claude Platform on AWS</option>
+                  </select>
+                  <button class="btn btn-accent" type="button" id="cloud-check">Check profile</button>
+                </div>
+                <p class="status-line" id="cloud-status" role="status"></p>
+              </div>
+
+              <label class="auth-option" data-auth="cli">
+                <input type="radio" name="auth" value="cli" />
+                <span class="auth-option-body">
+                  <span class="auth-option-head">
+                    <svg class="icon"><use href="#i-terminal" /></svg>
+                    <span class="auth-option-title">Use Claude Code in a terminal (your own sign-in)</span>
+                    <span class="badge">Opt-in</span>
+                  </span>
+                  <span class="auth-option-desc"
+                    >Runs the Claude Code installed on this computer. You sign in inside the terminal with Claude Code's own <code>/login</code>; ZKidz Studio
+                    never sees or stores your credentials. Usage counts against your Claude plan.</span
+                  >
+                </span>
+              </label>
+              <div class="auth-detail" data-auth-detail="cli" hidden>
+                <div class="field-row">
+                  <button class="btn btn-accent" type="button" id="cli-open">
+                    <svg class="icon"><use href="#i-terminal" /></svg>Open terminal to sign in
+                  </button>
+                  <p class="status-line" id="cli-status" role="status"></p>
+                </div>
+                <div class="term term-mini" id="signin-term" hidden>
+                  <div class="term-bar">
+                    <span class="term-title mono">terminal · claude</span>
+                  </div>
+                  <ol class="term-body mono" id="signin-term-body" role="log" aria-label="Sign-in terminal"></ol>
+                </div>
+                <label class="check">
+                  <input type="checkbox" id="cli-consent" />
+                  <span
+                    >I understand, and I want to use my own Claude Code sign-in.
+                    <a class="link" href="https://www.anthropic.com/legal/consumer-terms" target="_blank" rel="noopener"
+                      >Anthropic's terms<span class="sr-only"> (opens in a new tab)</span></a
+                    ></span
+                  >
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="connect-col">
+            <section class="panel" aria-labelledby="doctor-title">
+              <div class="panel-head">
+                <h2 class="h-panel" id="doctor-title">This computer</h2>
+                <button class="btn btn-sm btn-ghost" type="button" id="doctor-rerun">
+                  <svg class="icon"><use href="#i-refresh" /></svg>Run checks again
+                </button>
+              </div>
+              <ul class="doctor" id="doctor-list">
+                <li class="doctor-row" data-state="ok">
+                  <svg class="icon doctor-icon"><use href="#i-check" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">Node.js</p>
+                    <p class="doctor-detail mono">v24 LTS · managed by pnpm</p>
+                  </div>
+                </li>
+                <li class="doctor-row" data-state="ok">
+                  <svg class="icon doctor-icon"><use href="#i-check" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">ffmpeg</p>
+                    <p class="doctor-detail mono">GPL build, downloaded at setup · checksum verified</p>
+                    <ul class="feature-chips" aria-label="ffmpeg features">
+                      <li data-on="true">hevc_nvenc</li>
+                      <li data-on="true">libplacebo</li>
+                      <li data-on="true">opencl</li>
+                      <li data-on="false">whisper <span class="sr-only">not built in</span></li>
+                    </ul>
+                  </div>
+                </li>
+                <li class="doctor-row" id="doctor-gpu" data-state="ok">
+                  <svg class="icon doctor-icon"><use href="#i-cpu" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">Video encoder</p>
+                    <p class="doctor-detail mono" id="gpu-detail">NVIDIA RTX · NVENC HEVC · 4K test encode passed</p>
+                    <div class="seg" role="radiogroup" aria-label="Preview another machine">
+                      <button type="button" role="radio" aria-checked="true" data-gpu="nvidia">NVIDIA</button>
+                      <button type="button" role="radio" aria-checked="false" data-gpu="apple">Apple</button>
+                      <button type="button" role="radio" aria-checked="false" data-gpu="cpu">No GPU</button>
+                    </div>
+                    <p class="help" id="gpu-help">Tested by encoding real frames, not by reading driver names.</p>
+                  </div>
+                </li>
+                <li class="doctor-row" data-state="ok">
+                  <svg class="icon doctor-icon"><use href="#i-check" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">Chrome</p>
+                    <p class="doctor-detail mono">System Chrome · draws captions and overlays</p>
+                  </div>
+                </li>
+                <li class="doctor-row" id="doctor-whisper" data-state="todo">
+                  <svg class="icon doctor-icon"><use href="#i-download" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">Speech model</p>
+                    <p class="doctor-detail mono" id="whisper-detail">whisper large-v3-turbo · 1.6 GB · not downloaded</p>
+                    <p class="doctor-fix" id="whisper-fix">Fix: download it now. It's checked against its SHA-256 before use.</p>
+                    <div class="progress" id="whisper-progress" hidden>
+                      <span class="progress-fill"></span>
+                    </div>
+                  </div>
+                  <button class="btn btn-sm" type="button" id="whisper-download">Download</button>
+                </li>
+                <li class="doctor-row" data-state="ok">
+                  <svg class="icon doctor-icon"><use href="#i-database" /></svg>
+                  <div class="doctor-main">
+                    <p class="doctor-name">Data backend</p>
+                    <p class="doctor-detail mono">Embedded database · switch in README (<code>DATABASE_URL</code>)</p>
+                    <p class="help">Footage and renders always stay as files in your project folder.</p>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <div class="connect-actions">
+              <p class="help" id="connect-gate" role="status">Check your key to continue.</p>
+              <button class="btn btn-cta btn-lg" type="button" id="connect-continue" disabled>
+                Continue<svg class="icon"><use href="#i-chevron-right" /></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 1b. FIRST RENDER (end of setup) ============ -->
+      <section class="screen screen-first" data-screen="first-render" aria-labelledby="first-title" hidden>
+        <div class="sample-wrap">
+          <div class="sample-copy">
+            <p class="step mono">Setup · step 2 of 2</p>
+            <h1 class="h-display" id="first-title">Your first render</h1>
+            <p class="lede">Five seconds, made on this computer just now with the ZKidz style and your video encoder. If this plays, everything works.</p>
+            <dl class="facts">
+              <div>
+                <dt>Encoder</dt>
+                <dd class="mono" id="first-encoder">hevc_nvenc</dd>
+              </div>
+              <div>
+                <dt>Rendered in</dt>
+                <dd class="mono">3.1 s</dd>
+              </div>
+              <div>
+                <dt>Size</dt>
+                <dd class="mono">1080×1920 · 5.0 s</dd>
+              </div>
+            </dl>
+            <div class="sample-actions">
+              <a class="btn btn-cta btn-lg" href="#home"
+                >Open the studio<svg class="icon">
+                  <use href="#i-chevron-right" /></svg
+              ></a>
+              <a class="btn btn-lg" href="#style">Pick a different style</a>
+            </div>
+          </div>
+          <figure class="sample sample-lg" id="first-render-player" data-style="zkidz">
+            <div class="sample-stage" role="img" aria-label="Sample render: hook title and caption in the ZKidz style">
+              <div class="ov-hook sample-hook">
+                <span class="ov-kicker">ZKIDZ STUDIO</span>
+                <span class="ov-line ov-line-white">Made on</span>
+                <span class="ov-line ov-line-gold">this computer</span>
+                <span class="ov-rule"></span>
+              </div>
+              <div class="ov-caption sample-caption">Five seconds, rendered locally.</div>
+            </div>
+            <figcaption class="sample-bar">
+              <div class="progress" aria-hidden="true">
+                <span class="progress-fill"></span>
+              </div>
+              <button class="icon-btn icon-btn-sm" type="button" data-replay aria-label="Play the sample again">
+                <svg class="icon"><use href="#i-refresh" /></svg>
+              </button>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ============ 1c. STYLE ONBOARDING ============ -->
+      <section class="screen screen-style" data-screen="style" aria-labelledby="style-title" hidden>
+        <div class="style-wrap">
+          <p class="step mono">Setup · optional</p>
+          <h1 class="h-display h-display-sm" id="style-title">Pick a style</h1>
+          <p class="lede">A style sets the title cards, caption plate and sound. Each card plays the same 5-second sample in that style.</p>
+          <fieldset class="style-list">
+            <legend class="sr-only">Styles</legend>
+            <label class="style-card">
+              <figure class="sample" data-style="zkidz">
+                <div class="sample-stage" aria-hidden="true">
+                  <div class="ov-hook sample-hook">
+                    <span class="ov-kicker">NEW SETUP</span><span class="ov-line ov-line-white">I let AI</span
+                    ><span class="ov-line ov-line-gold">edit this</span><span class="ov-rule"></span>
+                  </div>
+                  <div class="ov-caption sample-caption">Captions at the bottom.</div>
+                </div>
+                <figcaption class="sample-bar">
+                  <div class="progress" aria-hidden="true">
+                    <span class="progress-fill"></span>
+                  </div>
+                  <button class="icon-btn icon-btn-sm" type="button" data-replay aria-label="Play the ZKidz sample">
+                    <svg class="icon"><use href="#i-play" /></svg>
+                  </button>
+                </figcaption>
+              </figure>
+              <span class="style-text">
+                <input type="radio" name="style" value="zkidz" checked />
+                <span class="auth-option-title">ZKidz</span>
+                <span class="auth-option-desc">Gold hook title, steel cards, captions on a dark plate, light SFX. The default.</span>
+              </span>
+            </label>
+            <label class="style-card">
+              <figure class="sample" data-style="plain">
+                <div class="sample-stage" aria-hidden="true">
+                  <div class="ov-caption sample-caption">Captions only, no cards.</div>
+                </div>
+                <figcaption class="sample-bar">
+                  <div class="progress" aria-hidden="true">
+                    <span class="progress-fill"></span>
+                  </div>
+                  <button class="icon-btn icon-btn-sm" type="button" data-replay aria-label="Play the Plain sample">
+                    <svg class="icon"><use href="#i-play" /></svg>
+                  </button>
+                </figcaption>
+              </figure>
+              <span class="style-text">
+                <input type="radio" name="style" value="plain" />
+                <span class="auth-option-title">Plain</span>
+                <span class="auth-option-desc">Captions and cuts only. No title cards, no sound effects.</span>
+              </span>
+            </label>
+            <label class="style-card">
+              <figure class="sample" data-style="loud">
+                <div class="sample-stage" aria-hidden="true">
+                  <div class="ov-hook sample-hook"><span class="ov-line ov-line-gold">WAIT</span><span class="ov-line ov-line-white">FOR IT</span></div>
+                  <div class="ov-caption sample-caption">Big words, every beat.</div>
+                </div>
+                <figcaption class="sample-bar">
+                  <div class="progress" aria-hidden="true">
+                    <span class="progress-fill"></span>
+                  </div>
+                  <button class="icon-btn icon-btn-sm" type="button" data-replay aria-label="Play the Loud sample">
+                    <svg class="icon"><use href="#i-play" /></svg>
+                  </button>
+                </figcaption>
+              </figure>
+              <span class="style-text">
+                <input type="radio" name="style" value="loud" />
+                <span class="auth-option-title">Loud</span>
+                <span class="auth-option-desc">Oversized hook words and a sound on every cut. For fast talking-head clips.</span>
+              </span>
+            </label>
+          </fieldset>
+          <div class="sample-actions">
+            <a class="btn btn-cta btn-lg" href="#home" id="style-use"
+              >Use this style<svg class="icon">
+                <use href="#i-chevron-right" /></svg
+            ></a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 2. HOME ============ -->
+      <section class="screen screen-home" data-screen="home" aria-labelledby="home-title" hidden>
+        <div class="home-wrap">
+          <h1 class="h-display" id="home-title">Drop footage. Say what you want.</h1>
+
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="file-input" accept="video/*,audio/*,image/*" multiple class="sr-only" />
+            <svg class="icon icon-xl"><use href="#i-upload" /></svg>
+            <p class="dropzone-title">Drag video files here</p>
+            <p class="help">MP4, MOV or MKV from a phone, camera or screen recording. Files stay on this computer.</p>
+            <div class="dropzone-actions">
+              <label class="btn btn-cta btn-lg" for="file-input">Choose files</label>
+              <button class="btn btn-lg" type="button" id="inplace-open">
+                <svg class="icon"><use href="#i-folder" /></svg>Use a file in place
+              </button>
+            </div>
+          </div>
+          <ul class="uploads" id="uploads" aria-label="Adding files to the project" hidden></ul>
+
+          <div class="home-cols">
+            <section aria-labelledby="recent-title">
+              <div class="section-head">
+                <h2 class="h-panel" id="recent-title">Recent projects</h2>
+              </div>
+              <ul class="project-list" id="project-list" aria-busy="false">
+                <li>
+                  <a class="project-row" href="#editor">
+                    <span class="thumb thumb-a" aria-hidden="true"></span>
+                    <span class="project-main">
+                      <span class="project-name">I let AI edit my videos</span>
+                      <span class="project-meta mono">2 clips · 3:12 → 1:58 · edited today</span>
+                    </span>
+                    <span class="badge badge-accent">Rendering 62%</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="project-row" href="#editor">
+                    <span class="thumb thumb-b" aria-hidden="true"></span>
+                    <span class="project-main">
+                      <span class="project-name">Weekend market vlog</span>
+                      <span class="project-meta mono">7 clips · 0:58 · 2 days ago</span>
+                    </span>
+                    <span class="badge badge-success">4K ready</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="project-row" href="#editor">
+                    <span class="thumb thumb-c" aria-hidden="true"></span>
+                    <span class="project-main">
+                      <span class="project-name">Home server tour</span>
+                      <span class="project-meta mono">camera + screen recording · 2:40 · last week</span>
+                    </span>
+                    <span class="badge">Draft</span>
+                  </a>
+                </li>
+              </ul>
+              <div class="empty" id="project-empty" hidden>
+                <svg class="icon icon-lg"><use href="#i-folder" /></svg>
+                <p class="empty-title">No projects yet</p>
+                <p class="help">Drop a clip above to start your first one. It takes about a minute to get a first cut.</p>
+              </div>
+            </section>
+
+            <section aria-labelledby="templates-title">
+              <div class="section-head">
+                <h2 class="h-panel" id="templates-title">Start from a template</h2>
+              </div>
+              <ul class="template-list">
+                <li>
+                  <button class="template" type="button" data-template="Talking-head short">
+                    <svg class="template-frame" viewBox="0 0 36 64" aria-hidden="true">
+                      <rect class="tf-bg" width="36" height="64" rx="3" />
+                      <rect class="tf-card" x="5" y="9" width="26" height="12" rx="1.5" />
+                      <circle class="tf-subject" cx="18" cy="36" r="7" />
+                      <rect class="tf-caption" x="6" y="54" width="24" height="4" rx="1" />
+                    </svg>
+                    <span class="template-text">
+                      <span class="template-name">Talking-head short</span>
+                      <span class="template-desc">Trims pauses and retakes, adds a hook title, captions and punch-ins.</span>
+                      <span class="template-meta mono">Ingest: single clip</span>
+                    </span>
+                    <svg class="icon template-go">
+                      <use href="#i-chevron-right" />
+                    </svg>
+                  </button>
+                </li>
+                <li>
+                  <button class="template" type="button" data-template="Vlog">
+                    <svg class="template-frame" viewBox="0 0 36 64" aria-hidden="true">
+                      <rect class="tf-bg" width="36" height="64" rx="3" />
+                      <rect class="tf-card" x="3" y="6" width="9" height="52" rx="1.5" />
+                      <rect class="tf-card" x="13.5" y="6" width="9" height="52" rx="1.5" />
+                      <rect class="tf-card" x="24" y="6" width="9" height="52" rx="1.5" />
+                    </svg>
+                    <span class="template-text">
+                      <span class="template-name">Vlog</span>
+                      <span class="template-desc">Joins many clips in order, keeps the moments with speech, adds music beds and SFX.</span>
+                      <span class="template-meta mono">Ingest: join clips in order</span>
+                    </span>
+                    <svg class="icon template-go">
+                      <use href="#i-chevron-right" />
+                    </svg>
+                  </button>
+                </li>
+                <li>
+                  <button class="template" type="button" data-template="Screen-recording showcase">
+                    <svg class="template-frame" viewBox="0 0 36 64" aria-hidden="true">
+                      <rect class="tf-bg" width="36" height="64" rx="3" />
+                      <rect class="tf-card" x="4" y="10" width="28" height="18" rx="1.5" />
+                      <circle class="tf-subject" cx="18" cy="42" r="7" />
+                      <rect class="tf-caption" x="6" y="54" width="24" height="4" rx="1" />
+                    </svg>
+                    <span class="template-text">
+                      <span class="template-name">Screen-recording showcase</span>
+                      <span class="template-desc">Places your screen recording as a panel over the camera, synced to what you say.</span>
+                      <span class="template-meta mono">Ingest: showcase</span>
+                    </span>
+                    <svg class="icon template-go">
+                      <use href="#i-chevron-right" />
+                    </svg>
+                  </button>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 3. EDITOR ============ -->
+      <section class="screen screen-editor" data-screen="editor" aria-labelledby="editor-title" hidden>
+        <h1 class="sr-only" id="editor-title">Editor</h1>
+        <div class="editor">
+          <!-- Media bin -->
+          <section class="pane pane-bin" aria-labelledby="bin-title">
+            <div class="pane-head">
+              <h2 class="h-pane" id="bin-title">Media</h2>
+              <label class="icon-btn icon-btn-sm" for="bin-input" title="Add media">
+                <svg class="icon"><use href="#i-plus" /></svg><span class="sr-only">Add media</span>
+              </label>
+              <input type="file" id="bin-input" accept="video/*,audio/*,image/*" multiple class="sr-only" />
+            </div>
+            <ul class="bin-list" id="bin-list"></ul>
+            <div class="bin-drop" id="bin-drop">
+              <svg class="icon"><use href="#i-upload" /></svg>
+              <span>Drop more clips</span>
+            </div>
+          </section>
+
+          <!-- Preview -->
+          <section class="pane pane-preview" aria-labelledby="preview-title">
+            <div class="pane-head">
+              <h2 class="h-pane" id="preview-title">Preview</h2>
+              <span class="preview-note mono" id="preview-note">Live preview · not a render</span>
+              <button class="toggle" type="button" id="guides-toggle" aria-pressed="false">
+                <svg class="icon"><use href="#i-scan" /></svg>Safe zones
+              </button>
+            </div>
+            <div class="stage">
+              <div class="player" id="player">
+                <canvas class="footage" id="footage" width="270" height="480" aria-label="Placeholder footage"></canvas>
+                <div class="overlay-layer" id="overlay-layer" aria-hidden="true">
+                  <div class="ov-hook" id="ov-hook" hidden>
+                    <span class="ov-kicker">NEW SETUP</span>
+                    <span class="ov-line ov-line-white">I let AI edit</span>
+                    <span class="ov-line ov-line-gold">my videos</span>
+                    <span class="ov-rule"></span>
+                  </div>
+                  <div class="ov-chip" id="ov-chip" hidden>Pauses: gone</div>
+                  <div class="ov-caption" id="ov-caption" hidden></div>
+                </div>
+                <div class="guides" id="guides" hidden aria-hidden="true">
+                  <span class="guide guide-band"><span>Card band</span></span>
+                  <span class="guide guide-caption"><span>Caption line</span></span>
+                  <span class="guide guide-ui"><span>App buttons</span></span>
+                </div>
+                <div class="player-empty" id="player-empty">
+                  <p>Add a clip to see it here.</p>
+                </div>
+              </div>
+            </div>
+            <div class="transport">
+              <button class="icon-btn" type="button" id="play-btn" aria-label="Play">
+                <svg class="icon"><use href="#i-play" /></svg>
+              </button>
+              <span class="timecode mono" id="timecode">0:00.0 / 3:12.0</span>
+              <span class="punch-flag mono" id="punch-flag" hidden>1.08× punch-in</span>
+            </div>
+          </section>
+
+          <!-- Agent -->
+          <section class="pane pane-agent" aria-labelledby="agent-title">
+            <div class="pane-head">
+              <h2 class="sr-only" id="agent-title">Agent</h2>
+              <div class="tabs" role="tablist" aria-label="Agent view">
+                <button type="button" role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="true" data-view="activity">Activity</button>
+                <button type="button" role="tab" id="tab-terminal" aria-controls="panel-terminal" aria-selected="false" tabindex="-1" data-view="terminal">
+                  <svg class="icon"><use href="#i-terminal" /></svg>Terminal
+                </button>
+              </div>
+              <span class="agent-status" id="agent-status"><span class="dot" aria-hidden="true"></span><span id="agent-status-text">Idle</span></span>
+              <button class="btn btn-sm btn-danger" type="button" id="stop-btn" hidden>
+                <svg class="icon"><use href="#i-stop" /></svg>Stop
+              </button>
+            </div>
+            <div class="agent-view" role="tabpanel" id="panel-activity" aria-labelledby="tab-activity">
+              <ol class="feed" id="feed" aria-live="polite" aria-relevant="additions" aria-label="Agent activity"></ol>
+              <div class="feed-empty" id="feed-empty">
+                <p class="empty-title">Tell the agent what you want</p>
+                <p class="help">It transcribes, plans cuts, writes captions and adds overlays. You approve before anything renders.</p>
+              </div>
+              <div class="auth-block" id="auth-block-key" hidden>
+                <svg class="icon icon-lg"><use href="#i-alert" /></svg>
+                <p class="empty-title">Your API key was rejected</p>
+                <p class="help">Anthropic answered 401 when the studio checked the key. Paste a new one, or check your credit in the Claude Console.</p>
+                <a class="btn btn-accent" href="#connect">Re-enter key</a>
+                <a class="link" href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener"
+                  >Console billing<span class="sr-only"> (opens in a new tab)</span></a
+                >
+              </div>
+              <div class="auth-block" id="auth-block-cli" hidden>
+                <svg class="icon icon-lg"><use href="#i-alert" /></svg>
+                <p class="empty-title">Claude Code says you're signed out</p>
+                <p class="help">
+                  Sign in again inside the terminal with Claude Code's own
+                  <code>/login</code>. The studio never handles your sign-in.
+                </p>
+                <button class="btn btn-accent" type="button" id="auth-open-terminal">
+                  <svg class="icon"><use href="#i-terminal" /></svg>Open terminal to sign in
+                </button>
+                <p class="status-line mono">
+                  <svg class="icon spin"><use href="#i-loader" /></svg>Checking every 3 s
+                </p>
+              </div>
+            </div>
+            <div class="agent-view" role="tabpanel" id="panel-terminal" aria-labelledby="tab-terminal" hidden>
+              <div class="term" id="editor-term">
+                <div class="term-bar">
+                  <span class="term-title mono">claude · ~/ZKS_HOME/projects/i-let-ai-edit-my-videos</span>
+                </div>
+                <ol class="term-body mono" id="editor-term-body" role="log" aria-label="Claude terminal output"></ol>
+              </div>
+            </div>
+            <form class="composer" id="composer">
+              <label class="field-label" for="prompt">Prompt</label>
+              <textarea class="field composer-input" id="prompt" rows="3">
+Cut this into a 60-second TikTok. Trim the pauses and the retake, translate the Tagalog to English captions, mask the swears, and add a hook title.</textarea>
+              <div class="composer-foot">
+                <span class="help"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to send</span>
+                <button class="btn btn-cta" type="submit" id="send-btn">
+                  <svg class="icon"><use href="#i-arrow-up" /></svg>Start editing
+                </button>
+              </div>
+            </form>
+            <div class="usage" id="usage">
+              <div class="usage-row">
+                <span class="label">Usage</span>
+                <span class="mono usage-figure" id="usage-figure">≈ $0.00 this turn · ≈ $2.56 project</span>
+              </div>
+              <div class="meter" role="meter" aria-label="Project budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="51" id="usage-meter">
+                <span class="meter-fill" style="--v: 0.51"></span>
+              </div>
+              <p class="help usage-help" id="usage-help">Estimate against a $5.00 project cap. Actual billing is in your Claude Console.</p>
+            </div>
+          </section>
+
+          <!-- Timeline -->
+          <section class="pane pane-timeline" aria-labelledby="timeline-title">
+            <div class="pane-head">
+              <h2 class="h-pane" id="timeline-title">Timeline</h2>
+              <span class="mono timeline-meta" id="timeline-meta">Uncut · 3:12</span>
+              <span class="legend">
+                <span class="legend-item"><span class="sw sw-seg" aria-hidden="true"></span>Shot</span>
+                <span class="legend-item"><span class="sw sw-punch" aria-hidden="true"></span>Punch-in</span>
+                <span class="legend-item"><span class="sw sw-cut" aria-hidden="true"></span>Cut</span>
+                <span class="legend-item"><span class="sw sw-blur" aria-hidden="true"></span>Blur</span>
+              </span>
+            </div>
+            <div class="versions">
+              <span class="label"
+                ><svg class="icon"><use href="#i-history" /></svg>Versions</span
+              >
+              <ol class="version-list" id="version-list" aria-label="Versions of this edit"></ol>
+              <button class="btn btn-sm" type="button" id="version-restore" hidden></button>
+            </div>
+            <div class="timeline-scroll">
+              <div class="timeline" id="timeline">
+                <div class="ruler" id="ruler" aria-hidden="true"></div>
+                <div class="track" data-track="video">
+                  <span class="track-label"
+                    ><svg class="icon"><use href="#i-film" /></svg>Video</span
+                  >
+                  <div class="track-lane" id="lane-video"></div>
+                </div>
+                <div class="track" data-track="captions">
+                  <span class="track-label"
+                    ><svg class="icon"><use href="#i-type" /></svg>Captions</span
+                  >
+                  <div class="track-lane" id="lane-captions"></div>
+                </div>
+                <div class="track" data-track="cues">
+                  <span class="track-label"
+                    ><svg class="icon"><use href="#i-layers" /></svg>Overlays</span
+                  >
+                  <div class="track-lane" id="lane-cues"></div>
+                </div>
+                <div class="track" data-track="sfx">
+                  <span class="track-label"
+                    ><svg class="icon"><use href="#i-music" /></svg>SFX</span
+                  >
+                  <div class="track-lane" id="lane-sfx"></div>
+                </div>
+                <div class="playhead" id="playhead" aria-hidden="true"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ============ 3b. RULES ============ -->
+      <section class="screen screen-rules" data-screen="rules" aria-labelledby="rules-title" hidden>
+        <div class="rules-wrap">
+          <h1 class="h-display h-display-sm" id="rules-title">Rules</h1>
+          <p class="lede">
+            Standing instructions for this project. The agent reads them on every turn. Only you add rules: when the agent suggests one, it lands here only
+            after you click.
+          </p>
+          <form class="panel rule-form" id="rule-form">
+            <label class="field-label" for="rule-text">New rule</label>
+            <textarea class="field" id="rule-text" rows="3" maxlength="500" aria-describedby="rule-count"></textarea>
+            <div class="composer-foot">
+              <span class="help mono" id="rule-count">0 / 500</span>
+              <button class="btn btn-accent" type="submit">
+                <svg class="icon"><use href="#i-plus" /></svg>Add rule
+              </button>
+            </div>
+          </form>
+          <ol class="rule-list" id="rule-list" aria-label="Rules for this project"></ol>
+          <div class="empty" id="rule-empty" hidden>
+            <p class="empty-title">No rules yet</p>
+            <p class="help">Add one above, like "Keep every hook title under six words."</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 4. RENDER ============ -->
+      <section class="screen screen-render" data-screen="render" aria-labelledby="render-title" hidden>
+        <div class="render-wrap">
+          <div class="render-head">
+            <h1 class="h-display h-display-sm" id="render-title">Render & export</h1>
+            <p class="lede">I let AI edit my videos · 1:58 full edit · 0:59 Reels cut</p>
+            <fieldset class="targets">
+              <legend class="label">Render</legend>
+              <label class="check"><input type="checkbox" name="target" value="full" checked /><span>Full edit</span></label>
+              <label class="check"><input type="checkbox" name="target" value="reel" checked /><span>Reels cut</span></label>
+              <label class="check"><input type="checkbox" name="target" value="covers" checked /><span>Covers and caption</span></label>
+            </fieldset>
+          </div>
+
+          <div class="flood" data-tone="flood" id="flood" hidden role="status">
+            <div>
+              <p class="flood-title">Render finished</p>
+              <p class="flood-sub">
+                <span id="flood-count">7 files</span> in <span class="mono" id="flood-path"></span>, each checked by SHA-256 against the render.
+              </p>
+            </div>
+            <button class="btn btn-cta" type="button" id="open-folder">
+              <svg class="icon"><use href="#i-folder" /></svg>Open folder
+            </button>
+          </div>
+
+          <div class="render-grid">
+            <section class="panel" aria-labelledby="queue-title">
+              <div class="panel-head">
+                <h2 class="h-panel" id="queue-title">Queue</h2>
+                <span class="mono help" id="profile-line">Profile: NVIDIA · hevc_nvenc · 4 chunks</span>
+              </div>
+              <div class="notice notice-info" id="cpu-notice" hidden>
+                <svg class="icon"><use href="#i-info" /></svg>
+                <div>
+                  <p>
+                    <strong>No hardware encoder found.</strong> CPU rendering works, but 4K takes a long time here. A 1080p master is ready in about 9 minutes.
+                  </p>
+                  <button class="btn btn-sm" type="button" id="render-1080">Render 1080p instead</button>
+                </div>
+              </div>
+              <ol class="queue" id="queue"></ol>
+            </section>
+
+            <div class="render-side">
+              <section class="panel" aria-labelledby="util-title">
+                <div class="panel-head">
+                  <h2 class="h-panel" id="util-title">Hardware</h2>
+                  <span class="mono help" id="util-device">NVIDIA RTX</span>
+                </div>
+                <dl class="util" id="util"></dl>
+              </section>
+
+              <section class="panel" aria-labelledby="qc-title">
+                <div class="panel-head">
+                  <h2 class="h-panel" id="qc-title">Checks</h2>
+                </div>
+                <ul class="qc" id="qc-list"></ul>
+              </section>
+
+              <section class="panel" aria-labelledby="deliv-title">
+                <div class="panel-head">
+                  <h2 class="h-panel" id="deliv-title">Deliverables</h2>
+                </div>
+                <ul class="deliverables" id="deliverables"></ul>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="dialog" id="inplace-dialog" aria-labelledby="inplace-title">
+      <form method="dialog" class="dialog-body">
+        <h2 class="h-panel" id="inplace-title">Use a file in place</h2>
+        <p class="help">The file stays where it is and the studio reads it there. Single files only, never a folder.</p>
+        <p class="path mono">C:\Users\you\Videos\2026-10</p>
+        <fieldset class="fs-list">
+          <legend class="sr-only">Files in this folder</legend>
+          <label class="fs-row"
+            ><input type="radio" name="inplace" value="talk-take-2.mp4" data-meta="2:41 · 3840×2160 · HEVC" checked /><svg class="icon">
+              <use href="#i-video" /></svg
+            ><span class="fs-name">talk-take-2.mp4</span><span class="fs-meta mono">2:41 · 4.1 GB</span></label
+          >
+          <label class="fs-row"
+            ><input type="radio" name="inplace" value="screen-2026-10-21.mov" data-meta="1:12 · 2560×1440 · H.264" /><svg class="icon">
+              <use href="#i-monitor" /></svg
+            ><span class="fs-name">screen-2026-10-21.mov</span><span class="fs-meta mono">1:12 · 610 MB</span></label
+          >
+          <label class="fs-row"
+            ><input type="radio" name="inplace" value="broll-market.mp4" data-meta="0:48 · 3840×2160 · HEVC" /><svg class="icon">
+              <use href="#i-video" /></svg
+            ><span class="fs-name">broll-market.mp4</span><span class="fs-meta mono">0:48 · 1.2 GB</span></label
+          >
+        </fieldset>
+        <div class="dialog-actions">
+          <button class="btn" value="cancel">Cancel</button>
+          <button class="btn btn-accent" value="use" id="inplace-use">Use this file</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="js/core.js"></script>
+    <script src="js/terminal.js"></script>
+    <script src="js/connect.js"></script>
+    <script src="js/doctor.js"></script>
+    <script src="js/sample.js"></script>
+    <script src="js/home.js"></script>
+    <script src="js/timeline.js"></script>
+    <script src="js/preview.js"></script>
+    <script src="js/feed.js"></script>
+    <script src="js/versions.js"></script>
+    <script src="js/run.js"></script>
+    <script src="js/agent-state.js"></script>
+    <script src="js/render-outputs.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/rules.js"></script>
+    <script src="js/boot.js"></script>
+  </body>
+</html>

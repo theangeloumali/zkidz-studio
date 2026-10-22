@@ -1,0 +1,19 @@
+# Created by The Angelo Umali.
+node_modules/
+.claude/.worktree/
+# Maintainer-local analysis (plan §16)
+claudedocs/
+# HTML review twins (built by plan-to-html.sh)
+docs/plans/*.html
+# Secrets and local data
+.env
+.env.*
+!.env.example
+*.secrets.json
+# Media, models and partial downloads never enter git
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.bin
+*.part

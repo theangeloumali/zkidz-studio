@@ -1,0 +1,41 @@
+{
+  "variant": "mode-b-bedrock-no-creds",
+  "skillsOption": "all",
+  "claude_code_version": "2.1.308",
+  "apiKeySource": "none",
+  "model": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "permissionMode": "default",
+  "tools": [
+    "AskUserQuestion",
+    "Read",
+    "Skill"
+  ],
+  "mcp_servers": [],
+  "plugins": [
+    "zkidz-studio@inline",
+    "cc-plugin-agents-md@builtin",
+    "cc-plugin-plugin-authoring@builtin"
+  ],
+  "plugin_errors": [],
+  "skills": [
+    "deep-research",
+    "zkidz-studio:spike-hello",
+    "dataviz",
+    "update-config",
+    "verify",
+    "debug",
+    "code-review",
+    "simplify",
+    "batch",
+    "fewer-permission-prompts",
+    "doctor",
+    "loop",
+    "claude-api",
+    "workflow-authoring",
+    "run",
+    "run-skill-generator",
+    "plugin-authoring"
+  ],
+  "error": "aborted after 60000 ms",
+  "result": {}
+}

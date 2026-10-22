@@ -1,0 +1,24 @@
+{
+  "tool": "Glob",
+  "initTools": [
+    "Glob",
+    "Grep",
+    "Read"
+  ],
+  "toolUses": [
+    {
+      "name": "Glob",
+      "input": {
+        "pattern": "**/*.txt",
+        "path": ".."
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "is_error": false,
+      "content": "\"sub/notes.txt\\n<fixture>/outside/secret.txt\""
+    }
+  ],
+  "error": "Claude Code returned an error result: Reached maximum number of turns (1)"
+}

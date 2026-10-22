@@ -1,0 +1,17 @@
+{
+  "name": "zks-spike-03-db-backends",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "drizzle-kit generate --config drizzle.config.mjs",
+    "compare": "node compare.mjs"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
+  }
+}

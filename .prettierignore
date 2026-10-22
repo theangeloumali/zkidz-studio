@@ -1,0 +1,7 @@
+# Created by The Angelo Umali.
+pnpm-lock.yaml
+packages/shared/schema/
+design/mockup/
+# Recorded spike evidence and drizzle-kit output stay byte-for-byte as captured
+docs/spikes/*/results/
+docs/spikes/*/migrations/

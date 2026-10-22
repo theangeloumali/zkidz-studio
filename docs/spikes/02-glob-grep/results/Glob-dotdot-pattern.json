@@ -1,0 +1,20 @@
+{
+  "scenario": "Glob-dotdot-pattern",
+  "confined": false,
+  "initTools": ["Glob", "Grep", "Read"],
+  "toolUses": [
+    {
+      "name": "Glob",
+      "input": {
+        "pattern": "../outside/*.txt"
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "is_error": false,
+      "content": "\"No files found\""
+    }
+  ],
+  "error": "Claude Code returned an error result: Reached maximum number of turns (1)"
+}

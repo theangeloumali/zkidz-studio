@@ -1,0 +1,30 @@
+# Created by The Angelo Umali.
+# Gitleaks config: the upstream default rules plus one rule for credentials inside database URLs.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+title = "zkidz-studio"
+
+[extend]
+useDefault = true
+
+# The default rules do not flag "scheme://user:password@host" URLs. The password class takes every
+# userinfo character (real passwords carry $ and *); placeholders are excluded by the allowlist below.
+[[rules]]
+id = "database-url-credentials"
+description = "Database connection URL with an inline password"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?)://[\w.%-]+:([^\s:@/?#'"`]+)@[\w.-]+(?::\d+)?(?:/[\w.-]*)?'''
+secretGroup = 1
+keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp"]
+
+# The only allowed match: local Supabase Postgres (plan §8), the CLI's public default password on loopback.
+# Any port: the port holds no secret and moves (Windows reserves 55322, spike 03). Any other host, user, password or database fails.
+[[rules.allowlists]]
+description = "Local Supabase Postgres default URL (loopback only, plan §8)"
+regexTarget = "match"
+regexes = ['''^postgres(?:ql)?://postgres:postgres@127\.0\.0\.1:\d{1,5}/postgres$''']
+
+# Skips a password that is wholly a placeholder (${DB_PASSWORD}, <password>, ****); a partial one is still flagged.
+[[rules.allowlists]]
+description = "Password placeholders"
+regexTarget = "secret"
+regexes = ['''^(?:\$\{[A-Za-z_][A-Za-z0-9_]*\}|<[^<>]+>|\*+)$''']

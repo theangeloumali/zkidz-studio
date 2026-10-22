@@ -1,0 +1,21 @@
+{
+  "variant": "restricted-claudeai-mcp-off-2",
+  "claude_code_version": "2.1.308",
+  "apiKeySource": "none",
+  "output_style": "default",
+  "builtInTools": [
+    "Read"
+  ],
+  "mcpToolCount": 0,
+  "mcpServerCount": 0,
+  "claudeAiConnectorCount": 0,
+  "builtinPluginCount": 3,
+  "userOrInlinePluginCount": 0,
+  "skillCount": 19,
+  "agentCount": 5,
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "text": "ready"
+  }
+}

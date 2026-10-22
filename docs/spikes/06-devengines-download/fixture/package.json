@@ -1,0 +1,19 @@
+{
+  "name": "zks-spike-06-fixture",
+  "private": true,
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.22.0",
+      "onFail": "download"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "which-node": "node -e \"console.log('script node', process.version, process.execPath)\""
+  }
+}

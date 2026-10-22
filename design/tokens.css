@@ -105,9 +105,7 @@
   /* Quotes only (apps/portfolio/app/fonts.ts:11-18); never chrome. */
   --font-voice: "Newsreader", Georgia, "Times New Roman", serif;
   /* STUDIO: timecodes, logs and the agent transcript; the films kit's mono (films/kit/sketch.js:29). */
-  --font-mono:
-    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular",
-    Menlo, monospace;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --font-stretch-condensed: 68%; /* @utility font-condensed, UP:225-227 */
   --font-stretch-semi-condensed: 88%; /* UP:229-231 */
   --font-stretch-expanded: 112%; /* UP:233-235 */
@@ -169,11 +167,7 @@
   --shadow-ring: inset 0 0 0 1.5px var(--color-border-strong);
   /* STUDIO: overlays (menus, the drop target) need separation from footage; tinted by the ground, never pure black at low alpha on light. */
   --shadow-overlay: 0 12px 32px -12px color-mix(in oklab, #000 55%, transparent);
-  --backdrop: color-mix(
-    in oklab,
-    #000 55%,
-    transparent
-  ); /* zkidz-courses app/globals.css:185 */
+  --backdrop: color-mix(in oklab, #000 55%, transparent); /* zkidz-courses app/globals.css:185 */
 
   /* Motion (UP:105-112). Override Tailwind's default --ease-out (0,0,0.2,1): keep this file unlayered. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);

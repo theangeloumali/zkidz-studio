@@ -1,0 +1,26 @@
+{
+  "name": "@zks/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": "./schema.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.4.6",
+    "@zks/shared": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "drizzle-kit": "0.31.11",
+    "vitest": "^5.0.4"
+  }
+}

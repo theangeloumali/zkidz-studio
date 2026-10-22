@@ -1,0 +1,24 @@
+# Created by The Angelo Umali.
+# Gitleaks config: the upstream default rules plus one rule for credentials inside database URLs.
+# Docs: https://github.com/gitleaks/gitleaks#configuration
+
+title = "zkidz-studio"
+
+[extend]
+useDefault = true
+
+# The default rules do not flag "scheme://user:password@host" URLs. Placeholders such as
+# ${DB_PASSWORD} or <password> are excluded by the password character class, not by an allowlist.
+[[rules]]
+id = "database-url-credentials"
+description = "Database connection URL with an inline password"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?)://[\w.%-]+:([^\s:@/?#'"`<>${}*]+)@[\w.-]+(?::\d+)?(?:/[\w.-]*)?'''
+secretGroup = 1
+keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp"]
+
+# The only allowed match: local Supabase Postgres (plan §8), the CLI's public default password on loopback,
+# on the CLI default port 54322 or the plan's 55322. Anchored so any other host, port, user, password or database fails.
+[[rules.allowlists]]
+description = "Local Supabase Postgres default URL (loopback only, plan §8)"
+regexTarget = "match"
+regexes = ['''^postgres(?:ql)?://postgres:postgres@127\.0\.0\.1:5[45]322/postgres$''']

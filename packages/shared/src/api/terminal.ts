@@ -9,6 +9,7 @@ export const TERMINAL_TICKET_TTL_S = 30;
 export const TerminalTicketSchema = z.strictObject({ ticket: z.string().min(32), expiresAt: IsoTimestampSchema });
 export const TerminalSocketQuerySchema = z.strictObject({ ticket: z.string().min(32) });
 
+/** SessionStart reaches the bridge only through the command-hook relay: Claude Code skips an `http` SessionStart hook silently (spike 07). */
 export const HOOK_EVENT_NAMES = ["PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop", "Notification", "SessionStart"] as const;
 
 // Claude Code owns these payloads and adds fields over time, so they are loose: unknown keys pass through.

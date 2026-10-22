@@ -162,7 +162,7 @@ export const jobs = studio.table(
     params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
     specSnapshotSha256: text("spec_snapshot_sha256"), // renders the spec set as it was at job start (plan §7.6)
     stage: text("stage"),
-    progress: real("progress"), // 0..1, written at most once a second
+    pct: real("pct"), // 0..100 like JobPercentSchema, written at most once a second
     etaS: integer("eta_s"),
     pid: integer("pid"),
     attempt: integer("attempt").notNull().default(0),

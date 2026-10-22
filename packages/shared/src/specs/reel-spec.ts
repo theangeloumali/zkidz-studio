@@ -10,10 +10,13 @@ function isInSourceOrder(keeps: readonly { at: number; end: number }[]): boolean
   return keeps.every((keep, index) => index === 0 || keep.at >= (keeps[index - 1]?.end ?? 0));
 }
 
+/** Shared by ReelSpecSchema and the set_reel tool, so the tool cannot accept what the spec rejects. */
+export const ReelKeepListSchema = z.array(ReelKeepSchema).min(1).refine(isInSourceOrder, { message: "keeps must be in source order and must not overlap" });
+
 export const ReelSpecSchema = z.strictObject({
   schemaVersion: z.literal(1),
   baseVideoId: BaseVideoIdSchema,
-  keep: z.array(ReelKeepSchema).min(1).refine(isInSourceOrder, { message: "keeps must be in source order and must not overlap" }),
+  keep: ReelKeepListSchema,
 });
 
 export type ReelSpec = z.infer<typeof ReelSpecSchema>;

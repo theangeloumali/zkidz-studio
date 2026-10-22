@@ -16,14 +16,10 @@ const log = (event) =>
   );
 
 const server = new McpServer({ name: "studio", version: "0.0.0" });
-server.registerTool(
-  "ping",
-  { description: "Spike tool. Returns pong.", inputSchema: {} },
-  async () => {
-    log("ping");
-    return { content: [{ type: "text", text: "pong" }] };
-  },
-);
+server.registerTool("ping", { description: "Spike tool. Returns pong.", inputSchema: {} }, async () => {
+  log("ping");
+  return { content: [{ type: "text", text: "pong" }] };
+});
 
 await server.connect(new StdioServerTransport());
 log("started");

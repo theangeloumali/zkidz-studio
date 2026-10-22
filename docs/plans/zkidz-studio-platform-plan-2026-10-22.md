@@ -122,7 +122,7 @@ Date 2026-10-22. Author: Marcus (tech lead). Inputs: the six research files in `
 
 ### 3.3 Assumptions
 
-- ASSUMPTION: app port **4317**, Supabase ports **55320–55323** — chose these because 5173 is Vite's dev port and 54321–54323 collide with any other local Supabase project (data-layer.md §5.4).
+- ASSUMPTION: app port **4317**, Supabase ports **45320–45323** — chose these because 5173 is Vite's dev port, 54321–54323 collide with any other local Supabase project (data-layer.md §5.4), and spike 03 found Hyper-V reserving moving 54xxx/55xxx ranges on Windows (55322 failed to bind), so every default sits below 49152.
 - ASSUMPTION: env prefix **`ZKS_`** (`ZKS_HOME`, `ZKS_PORT`, `ZKS_FFMPEG`, `ZKS_CONTAINER`) — chose install-ci.md's naming over `STUDIO_*` because one prefix avoids clashes with generic names.
 - ASSUMPTION: `ZKS_HOME` defaults to the OS data dir (`~/.local/share/zkidz-studio`, `~/Library/Application Support/zkidz-studio`, `%LOCALAPPDATA%\zkidz-studio`) — chose the platform convention over `~/ZKidzStudio` because user data must survive re-clones; the README shows how to move it.
 - ASSUMPTION: terminal mode T ships in Phase 2 behind an explicit opt-in with the §6.3 disclosure, while Angelo's written-approval request to Anthropic is open. If Anthropic replies "no", mode T is removed before the next release; Angelo owns that call and records the reply in `docs/legal/anthropic-reply.md` (verbatim quote and date). Chose this because the direction is Angelo's (decision hierarchy), mode T offers no login of its own and handles no credential (§6.3), and A stays the default either way.
@@ -413,7 +413,8 @@ single-use terminal ticket from a CSRF-checked POST, valid 30 s. Any failure is 
 
 **Sign-in.** On first launch the pane shows Claude Code's own sign-in screen, or the user types `/login`. The flow is Anthropic's own;
 the app never reads `~/.claude`, the OS keychain entry, or `claude auth status`, never implements OAuth and never pastes anything into
-a login prompt. "Ready" means the `SessionStart` hook arrived.
+a login prompt. "Ready" means the `SessionStart` hook arrived. A new project folder first shows Claude Code's folder-trust dialog,
+whose default is "No, exit" (spike 07): the pane shows it to the user and the app never answers it, least of all with Enter.
 
 **Watch the AI build without parsing the TUI.** Structured events come from two sources the app already controls. The terminal bytes
 are only displayed.
@@ -426,18 +427,23 @@ are only displayed.
 | `UserPromptSubmit` HTTP hook                              | text the user typed in the pane                                          | `prompt.submitted` (new)                                                                       |
 | `Stop` HTTP hook                                          | `last_assistant_message`                                                 | `narration` (new), then `terminal.state: "ready"`                                              |
 | `Notification` HTTP hook                                  | Claude is waiting for the user                                           | `terminal.state: "waiting"` (new)                                                              |
-| `SessionStart` HTTP hook                                  | `session_id`, `source`, optional `model`                                 | `session.started` (credential "your Claude Code sign-in")                                      |
+| `SessionStart` command hook (relay, spike 07)             | `session_id`, `source`, optional `model`                                 | `session.started` (credential "your Claude Code sign-in")                                      |
 
 - Hooks are `type: "http"` entries in the per-session settings file (https://code.claude.com/docs/en/hooks): `url`
   `http://127.0.0.1:4317/api/terminal/<sessionId>/hooks`, `headers: { "Authorization": "Bearer $ZKS_HOOK_TOKEN" }`,
-  `allowedEnvVars: ["ZKS_HOOK_TOKEN"]`. The file holds no secret. If spike 7 finds HTTP hooks unusable, a command hook runs the
-  bundled `apps/server/bin/zks-hook.mjs`, which posts stdin to the same URL and exits 2 on a deny or a failed request.
+  `allowedEnvVars: ["ZKS_HOOK_TOKEN"]`. The file holds no secret. PreToolUse and UserPromptSubmit set `onFailure: "block"`, so a
+  dead bridge neither runs a tool nor silently loses prompt auditing (spike 07 decision 2).
+- **SessionStart (and Setup) are `type: "command"` hooks**: Claude Code accepts only `command` and `mcp_tool` hooks there and skips an
+  `http` SessionStart hook with no error (spike 07 decision 1). The command runs the bundled `apps/server/bin/zks-hook.mjs`, which posts
+  stdin to the same URL with the same bearer token and exits 2 on a deny or a failed request; it arrives about 3 s after spawn.
 - Hook events for `mcp__studio__*` names are used only for the policy check; the tool handler emits their events, so nothing is
   doubled.
 - The policy check reuses `decide` and `confineReads` from §6.10: Read inside the project or plugin folder, Skill, AskUserQuestion
   and catalog tools are allowed; anything else gets `permissionDecision: "deny"` with a reason. Because the hook blocks on failure,
-  no tool runs while the server is unreachable. This replaces the SDK path's `system/init` assertion, which mode T does not have; a
-  `SessionStart` that does not arrive within 30 s, or arrives with a `permission_mode` other than `default`, kills the PTY.
+  no tool runs while the server is unreachable. This replaces the SDK path's `system/init` assertion, which mode T does not have. A
+  `SessionStart` with a `permission_mode` other than `default` kills the PTY. A signed-out user lands in Claude Code's onboarding with
+  no hooks and no MCP (spike 07 decision 4), so a missing `SessionStart` after 30 s does not kill the PTY: the app emits
+  `terminal.state: "waiting"`, hands the pane to the user for sign-in, and the stdio twin refuses every call until `SessionStart` arrives.
 - Gated tools (`render_master`, `export_deliverable`, `delete_asset`) block in the stdio twin until the user decides on the app's
   approval card, the same path as `approve` in §6.7. AskUserQuestion is answered in the pane.
 
@@ -518,6 +524,8 @@ fixed in ADR 0002.
 // apps/server/src/auth/agent-env.ts
 const OS_BASICS = ["PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TMP", "TEMP", "TMPDIR", "SystemRoot", "ComSpec", "PATHEXT", "LANG"];
 const PROXY_VARS = ["HTTPS_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS"]; // only when the user opts in on the settings page
+// Empty, app-owned, 0700: modes A and B never see the user's claude.ai login (spike 01, ADR 0002).
+const AGENT_CONFIG_DIR = join(ZKS_HOME, "agent-config");
 
 // Mode B: the switch plus the provider page's non-secret variables; credentials come from the user's cloud CLI profile.
 const PROVIDER_VARS: Record<CloudProvider, string[]> = {
@@ -546,6 +554,7 @@ export function buildAgentEnv(mode: AuthMode, appVersion: string, proxyOptIn: bo
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     CLAUDE_AGENT_SDK_CLIENT_APP: `zkidz-studio/${appVersion}`,
   };
+  if (mode.kind !== "terminal") env.CLAUDE_CONFIG_DIR = AGENT_CONFIG_DIR;
   if (mode.kind === "apiKey") env.ANTHROPIC_API_KEY = mode.apiKey;
   if (mode.kind === "cloud") Object.assign(env, pick(PROVIDER_VARS[mode.provider], mode.values));
   if (mode.kind === "terminal") Object.assign(env, terminalEnv(mode.tokens)); // TERM, COLORTERM, ZKS_HOOK_TOKEN, ZKS_MCP_*
@@ -556,6 +565,15 @@ export function buildAgentEnv(mode: AuthMode, appVersion: string, proxyOptIn: bo
 Phase 2 test (vitest, kai reviews): with `ANTHROPIC_BASE_URL=http://evil`, `ANTHROPIC_AWS_API_KEY=x`, any `ZKS_*`,
 `DATABASE_URL`, `OTEL_EXPORTER_OTLP_ENDPOINT` and `BETA_TRACING_ENDPOINT` set in the parent, the child env keys are a subset of the
 allowlist for every mode. In the `terminal` kind the env also carries no `ANTHROPIC_*`, `CLAUDE_CODE_OAUTH_TOKEN` or `CLAUDE_CONFIG_DIR`.
+With a populated default config dir (and a parent `CLAUDE_CONFIG_DIR` pointing at it), the `apiKey` and `cloud` kinds always set
+`CLAUDE_CONFIG_DIR` to `AGENT_CONFIG_DIR`.
+
+- **Why `CLAUDE_CONFIG_DIR` is isolated in A and B.** Spike 01: `init.apiKeySource` is `none` for a claude.ai subscription login and
+  for mode B alike, so the §6.10 item 8 check cannot tell them apart, and a mode B session on a signed-in machine would silently use
+  the subscription. With the empty app directory that login is not visible ("Not logged in"). Untested on macOS, where the login lives
+  in the keychain: mode B ships on macOS only after spike 01 is re-run there with this isolation.
+- **Mode B startup timeout.** With no cloud credentials the SDK hangs without an error until aborted (spike 01 decision 4). No
+  `system/init` within 30 s aborts the session with `session.error` `auth_failed` and the provider's setup link.
 
 ```ts
 // apps/server/src/agent/session.ts
@@ -691,6 +709,8 @@ Errors return `isError: true` with an actionable message, e.g. "caption group 14
 
 - `plugin/.claude-plugin/plugin.json` + `plugin/skills/<name>/SKILL.md` + `references/`. Loaded with `plugins: [{type: "local", path}]`
   and `skills: "all"`; skills appear as `zkidz-studio:<skill>` (https://code.claude.com/docs/en/agent-sdk/skills).
+- A SKILL.md carries the D11 attribution on the first line after its `---` frontmatter, never above it: spike 01 showed a skill with
+  the comment on line 1 is silently not loaded. `scripts/check-attribution.mjs` already accepts that position.
 - v1 skills, ported from zkidz-films' shortform-edit skill, `docs/pipeline.md` and `docs/learnings.md`, scrubbed of client names,
   infra and personal rules: `edit-director` (the overall flow and checkpoints), `cut-spec`, `captions` (translation, swear masking,
   bleeps from isolated windows), `cues` (kinds, width caps, density), `reels`, `covers` (intro format), `qc-gates`, `style-rules`
@@ -709,8 +729,8 @@ Errors return `isError: true` with an actionable message, e.g. "caption group 14
 
 ### 6.10 Permission and sandbox policy
 
-1. Availability: `tools: ["Read", "Skill", "AskUserQuestion"]`; MCP tools stay available. Glob/Grep are added only if the Phase 0
-   spike shows they behave on Linux, WSL and macOS.
+1. Availability: `tools: ["Read", "Skill", "AskUserQuestion"]`; MCP tools stay available. Glob/Grep are added only with the item 5
+   hook in place (spike 02 passed on Linux/WSL) and once they behave on macOS.
 2. Bare deny: `Bash, Edit, Write, WebFetch, WebSearch, Agent`.
 3. Auto-approve: read-only tools and spec tools (`allowedTools`, exact names under `mcp__studio__`), plus
    `Read(//<abs STUDIO_PLUGIN_DIR>/**)` so routine skill reads never raise a card ("Use //path for an absolute filesystem path",
@@ -720,13 +740,18 @@ Errors return `isError: true` with an actionable message, e.g. "caption group 14
    card**, so users are never trained to click Approve on noise.
 5. `PreToolUse` hook (confinement helper) denies any `Read` outside the project folder or the plugin folder. It resolves the realpath,
    compares on separator boundaries (`/projects/a` never matches `/projects/a-evil`), case-folds on Windows, denies UNC, device and
-   `\\?\` paths (a network read leaks the NTLM hash), and denies when realpath fails. It also covers Glob and Grep if they are added.
+   `\\?\` paths (a network read leaks the NTLM hash), and denies when realpath fails. It also covers Glob and Grep if they are added, on every path-bearing field: `path`, Glob's
+   `pattern` and Grep's `glob` are denied when absolute, when they hold a `..` segment, or when any brace alternative starts with a
+   separator, `~`, a drive letter or a UNC prefix (spike 02: an absolute Glob pattern with `path: "."` leaked past a `path`-only check).
    Hooks apply in every permission mode (same page).
 6. `maxTurns` per prompt in modes A and B; `maxBudgetUsd` in mode A. Mode T has neither (print-mode-only flags, §6.3).
 7. Never `bypassPermissions`, never `dontAsk`.
 8. Fail closed at start: on `system/init` the session aborts unless tools are exactly {Read, Skill, AskUserQuestion,
-   `mcp__studio__*`}, `mcp_servers` = [studio], `plugins` = [zkidz-studio], skills are a subset of the bundled list,
-   `permissionMode` = default and `apiKeySource` matches the chosen mode. Managed policy settings still load under
+   `mcp__studio__*`}, `mcp_servers` = [studio], `plugins` contain `zkidz-studio@inline` and nothing besides it and `*@builtin`
+   (Claude Code bundles builtin plugins that appear even with `settingSources: []`, and their set varies by provider; spike 01),
+   skills include every bundled studio skill (`init.skills` also lists Claude Code's built-in skills, and the `skills` option does
+   not shrink it), `permissionMode` = default and `apiKeySource` matches the chosen mode (`ANTHROPIC_API_KEY` for A, `none` for B,
+   which is safe only because of the `CLAUDE_CONFIG_DIR` isolation in §6.6). Managed policy settings still load under
    `settingSources: []` (claude-access.md §1.3), so this check is the backstop.
 
 ### 6.11 Event schema for the UI
@@ -880,6 +905,7 @@ Console usage page for real billing.
 | Model unavailable                       | `model_not_found`                                                                    | Model picker filtered by `supportedModels()`                    |
 | Turn or budget limit                    | `result.subtype = error_max_turns` / `error_max_budget_usd`                          | "Continue" resumes with a higher limit                          |
 | Credential mismatch                     | `init.apiKeySource` ≠ chosen mode                                                    | Abort session, explain                                          |
+| Mode B never starts                     | no `system/init` within 30 s (spike 01)                                              | `auth_failed`; provider setup link                              |
 
 Error strings come from https://code.claude.com/docs/en/errors and claude-access.md §6.11. Classify in order: `api_retry.error`, then
 `result.is_error` + `api_error_status`, then known strings, else `unknown`.
@@ -941,7 +967,8 @@ uses today, chunked at quiet points (the existing `transcribe.py` parallelism). 
 CPU → `large-v3-turbo-q5_0` (574 MB), CI → `tiny.en`. Hashes are in engine-port.md §3.4 and go into `tools.lock.json`, next to the `whisper-cli` release assets per platform (URL and
 SHA-256 each); download
 writes `.part`, verifies SHA-256, then renames, with HTTP Range resume. The ffmpeg `whisper` filter is used only when the probe
-passes it. The "Claude"→"cloud" ASR fix becomes a per-project glossary.
+passes it. Spike 04 confirmed D6: the BtbN builds are configured with `--disable-whisper` and no pinnable build has the filter, so
+whisper.cpp is the path every install takes. The "Claude"→"cloud" ASR fix becomes a per-project glossary.
 
 ### 7.5 ffmpeg acquisition
 
@@ -1017,15 +1044,19 @@ value that `add_cue` enforces). `themes/_blueprint/` is the copy-me starter, and
 
 ## 8. Data layer
 
-Source: `claudedocs/research/data-layer.md` (PGlite path spiked; postgres.js path not yet run against a live server).
+Source: `claudedocs/research/data-layer.md`, then spike 03 (`docs/spikes/03-db-backends`): one migration set gives identical
+catalogs on PGlite and Supabase Postgres. `pnpm db:test:matrix` now applies `packages/db/migrations` to both on every run.
 
-- **Default, no Docker:** PGlite (`@electric-sql/pglite`, Postgres in WASM; version pinned in `package.json`, since the docs page states
-  none) in the server process, data in `ZKS_HOME/db`, guarded by
+- **Default, no Docker:** PGlite (`@electric-sql/pglite`, Postgres in WASM; pinned to 0.4.6, the last PG 17 line, because 0.5.x runs
+  PG 18 and Supabase runs 17 (spike 03 decision 1); the migration test asserts `PostgreSQL 17.` on both backends) in the server process, data in `ZKS_HOME/db`, guarded by
   `db/.lock` (pid + liveness) because PGlite takes no directory lock. ≈ 390 MB RSS, 26 MB on disk (https://pglite.dev/docs/).
 - **Option, Docker:** local Supabase via its CLI (Postgres 17), started as **Postgres only**: the app needs nothing else, and Studio,
   postgres-meta and Kong on loopback could be reached by any website through DNS rebinding (plausible, not tested). Studio is a
   separate, explicit command. Docker network bound to 127.0.0.1 (https://supabase.com/docs/guides/local-development: "You should never
-  expose your local development stack publicly").
+  expose your local development stack publicly"). Spike 03 found that this is not enough: under Docker Engine on WSL, `supabase start`
+  still published Postgres on `0.0.0.0` and `[::]` with the default `postgres` password, and a LAN client connected. Local mode
+  therefore generates a random database password or starts Postgres with an explicit `127.0.0.1:` port binding, and `doctor` asserts
+  the port is unreachable from a non-loopback interface and checks Windows' `excludedportrange` before starting.
 - **One schema, one ORM:** Drizzle `pg-core`, every table in Postgres schema `studio` (never `public`, so the Supabase Data API cannot
   serve it). Tables: `projects`, `media_assets`, `transcripts`, `edit_specs`, `edit_spec_versions`, `agent_sessions`, `jobs`,
   `deliverables`, `events`, `providers` (no secrets), `settings`, plus **`rules`** (`id, text, source_quote, created_at, enabled`)
@@ -1049,9 +1080,9 @@ pnpm start                                   # migrates ZKS_HOME/db on boot → 
 # Optional: local Supabase (needs Docker Desktop, OrbStack, Podman, Rancher Desktop or colima)
 docker network create -o 'com.docker.network.bridge.host_binding_ipv4=127.0.0.1' zkidz-studio
 pnpm db:supabase:start                       # npx supabase@2.121.0 start --network-id zkidz-studio -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
-echo 'DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres' >> .env.local
+echo 'DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:45322/postgres' >> .env.local
 pnpm start
-pnpm db:supabase:studio                      # optional: starts studio, kong, postgres-meta → http://127.0.0.1:55323
+pnpm db:supabase:studio                      # optional: starts studio, kong, postgres-meta → http://127.0.0.1:45323
                                              # prints: "stop it when done; any website can reach it via DNS rebinding"
 pnpm db:supabase:stop
 
@@ -1063,8 +1094,9 @@ pnpm db:rollback -- --to <NNNN>
 ```
 
 The excludable container list is from https://supabase.com/docs/reference/cli/supabase-start ("All service containers are started by
-default"). The `postgres:postgres` password is for loopback only; the README says so. Phase 7 AC: on Linux, Docker Desktop for
-Windows and macOS, `docker ps --format '{{.Ports}}'` shows only `127.0.0.1:` publishings, and only port 55322 by default (the
+default"). The `postgres:postgres` default is tolerable only while Postgres is unreachable from every non-loopback interface, which spike 03
+showed `supabase start` does not guarantee; local mode replaces it as described above. Phase 7 AC: on Linux, Docker Desktop for
+Windows and macOS, `docker ps --format '{{.Ports}}'` shows only `127.0.0.1:` publishings, and only port 45322 by default (the
 `host_binding_ipv4` option is unverified on Docker Desktop until then).
 
 ---
@@ -1264,7 +1296,7 @@ GPU is never a failure. `--json` output is meant for public bug reports, so a lo
 | Terminal pane as a remote shell (mode T)               | The PTY runs only the resolved `claude` (argv, no shell); `Bash` is removed by `--tools` and denied by the PreToolUse hook. WebSocket upgrade requires the `Host` allowlist, the exact app `Origin`, `Sec-Fetch-Site: same-origin` and a single-use 30 s ticket from a CSRF-checked POST (§6.3). Loopback only.                                                                                                                                                                                                   |
 | Spoofed hook or MCP calls (mode T)                     | Per-session random `ZKS_HOOK_TOKEN` and `ZKS_MCP_TOKEN` in the PTY env only, compared in constant time; the hook URL carries the session id; the settings and MCP config files hold no secret, sit in `ZKS_RUN` at 0600 and are deleted at session end.                                                                                                                                                                                                                                                           |
 | Malicious `.claude/` in a dropped folder               | `settingSources: []` (SDK); `--restricted` plus a server-written settings file (mode T); the agent `cwd` is the project folder under `ZKS_HOME`, never a user-supplied directory.                                                                                                                                                                                                                                                                                                                                 |
-| Supabase on the LAN, or Studio reached by rebinding    | Postgres-only start on a loopback-bound network; Studio only via the explicit `db:supabase:studio` command with a warning (§8).                                                                                                                                                                                                                                                                                                                                                                                   |
+| Supabase on the LAN, or Studio reached by rebinding    | Postgres-only start with an explicit `127.0.0.1:` port binding or a random per-install password, and `doctor` proving the port unreachable off loopback (spike 03); Studio only via the explicit `db:supabase:studio` command with a warning (§8).                                                                                                                                                                                                                                                                |
 | Contributor code on the maintainer's machine           | GPU verification hygiene (§10.3).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Third-party themes and skills                          | Repo-only themes; provenance audit; scrub-check bans hooks and MCP servers in `plugin.json` (§6.9, §7.8).                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Public-repo leaks                                      | Phase 0 order: secret scanning, push protection and private vulnerability reporting on before any file lands; `.gitignore` committed second; gitleaks over the tree before the first push; `claudedocs/` ignored; no absolute personal paths, episode content, infra notes or client names.                                                                                                                                                                                                                       |
@@ -1465,15 +1497,15 @@ Estimate: 16h with Claude | 80h without (the 14h base plus about 2h for the hard
 Goal: a user connects Claude in mode A or B, or opts in to terminal mode T, and watches Claude transcribe and propose cuts in the
 activity feed.
 
-| Slice | Owner  | Work                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2a    | ravi   | `apps/server/src/auth/**` (keyring, Windows Credential Manager only, 0600 fallback refused on DrvFs, allowlist `buildAgentEnv`, literal-URL `/v1/models` check) and `apps/server/src/agent/**` (session, inbox, mapper, deny-by-default `decide`, init assertion, `maxTurns`, stop/kill, resume, `-p` fallback runner disabled until spike 5 passes); `apps/server/src/terminal/**` (node-pty host with the argv[0] check and ring buffer, `launch-args.ts`, per-session settings and MCP config files at 0600, the WebSocket route, hooks bridge `/api/terminal/:id/hooks` with the PreToolUse policy reusing `decide`/`confineReads`, Esc/Kill, `--session-id`/`--resume`) and `apps/server/bin/zks-hook.mjs` (command-hook fallback) |
-| 2b    | rio    | `apps/server/src/tools/**`: in-process MCP server + token-authenticated stdio twin with the read-only tools, `ingest`, `transcribe`, `propose_cuts`, `set_cuts` (`assetId`-only), `validate_spec`, `job_*`; `plugin/` skeleton with `edit-director` and `cut-spec` (no hooks, no MCP servers in `plugin.json`); gated tools block in the stdio twin until the UI decides, so mode T gets the same approval cards                                                                                                                                                                                                                                                                                                                        |
-| 2c    | lena   | `/setup` (cards A and B, key entry with a non-empty check, doctor table, read-only backend row), Editor feed, prompt composer, approval cards (facts first, "Claude says" quoted) and question cards, usage meter, Stop; mode T card with disclosure tick and `claude` version; `apps/web/src/terminal/TerminalPane.tsx` (`@xterm/xterm` + `@xterm/addon-fit`, ticket fetch, reconnect, composer bracketed paste)                                                                                                                                                                                                                                                                                                                       |
-| 2d    | maya   | `tests/fixtures/agent/*.ndjson` and `tests/fixtures/hooks/*.json` recordings; the `FakeAgent` and `FakeTerminal` (stub `claude` in a real PTY) harnesses under `apps/server/test/agent-harness/**`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 2e    | elena  | `docs/user/claude-access.md` and the mode A/B/T copy, including the mode T disclosure (`apps/web/src/copy/claude.ts` is lena's; elena hands the text over in the doc)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| 2f    | kai    | `apps/server/src/security/ws-guard.ts` (Host, exact Origin, `Sec-Fetch-Site: same-origin`, single-use 30 s ticket) and `token.ts` (constant-time per-session token check for the hooks bridge and the stdio twin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 2g    | jordan | `packages/cli` doctor rows for `claude --version` ≥ 2.1.295 and `node-pty` load (Linux C++ toolchain hint); `node-pty` joins `allowBuilds` through a marcus Wave 0 contract edit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Slice | Owner  | Work                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2a    | ravi   | `apps/server/src/auth/**` (keyring, Windows Credential Manager only, 0600 fallback refused on DrvFs, allowlist `buildAgentEnv`, literal-URL `/v1/models` check) and `apps/server/src/agent/**` (session, inbox, mapper, deny-by-default `decide`, init assertion, `maxTurns`, stop/kill, resume, `-p` fallback runner disabled until spike 5 passes); `apps/server/src/terminal/**` (node-pty host with the argv[0] check and ring buffer, `launch-args.ts`, per-session settings and MCP config files at 0600, the WebSocket route, hooks bridge `/api/terminal/:id/hooks` with the PreToolUse policy reusing `decide`/`confineReads`, Esc/Kill, `--session-id`/`--resume`) and `apps/server/bin/zks-hook.mjs` (the SessionStart command-hook relay, spike 07) |
+| 2b    | rio    | `apps/server/src/tools/**`: in-process MCP server + token-authenticated stdio twin with the read-only tools, `ingest`, `transcribe`, `propose_cuts`, `set_cuts` (`assetId`-only), `validate_spec`, `job_*`; `plugin/` skeleton with `edit-director` and `cut-spec` (no hooks, no MCP servers in `plugin.json`); gated tools block in the stdio twin until the UI decides, so mode T gets the same approval cards                                                                                                                                                                                                                                                                                                                                                |
+| 2c    | lena   | `/setup` (cards A and B, key entry with a non-empty check, doctor table, read-only backend row), Editor feed, prompt composer, approval cards (facts first, "Claude says" quoted) and question cards, usage meter, Stop; mode T card with disclosure tick and `claude` version; `apps/web/src/terminal/TerminalPane.tsx` (`@xterm/xterm` + `@xterm/addon-fit`, ticket fetch, reconnect, composer bracketed paste)                                                                                                                                                                                                                                                                                                                                               |
+| 2d    | maya   | `tests/fixtures/agent/*.ndjson` and `tests/fixtures/hooks/*.json` recordings; the `FakeAgent` and `FakeTerminal` (stub `claude` in a real PTY) harnesses under `apps/server/test/agent-harness/**`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 2e    | elena  | `docs/user/claude-access.md` and the mode A/B/T copy, including the mode T disclosure (`apps/web/src/copy/claude.ts` is lena's; elena hands the text over in the doc)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 2f    | kai    | `apps/server/src/security/ws-guard.ts` (Host, exact Origin, `Sec-Fetch-Site: same-origin`, single-use 30 s ticket) and `token.ts` (constant-time per-session token check for the hooks bridge and the stdio twin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 2g    | jordan | `packages/cli` doctor rows for `claude --version` ≥ 2.1.295 and `node-pty` load (Linux C++ toolchain hint); `node-pty` joins `allowBuilds` through a marcus Wave 0 contract edit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 | Path                                                                                                                 | Owner  |
 | -------------------------------------------------------------------------------------------------------------------- | ------ |
@@ -1487,10 +1519,12 @@ activity feed.
 
 ACs: mode A rejects a bad key and stores a good one in the keychain; key validation ignores `ANTHROPIC_BASE_URL`; the child env is a
 subset of the allowlist with `ANTHROPIC_BASE_URL`, `ANTHROPIC_AWS_API_KEY`, `ZKS_*`, `DATABASE_URL` and OTEL variables set
-in the parent; an `init` mismatch (extra tool, foreign MCP server, wrong `apiKeySource`) aborts; an unknown tool is denied with no card;
+in the parent; with a populated default Claude config dir, the mode A and B child env always points `CLAUDE_CONFIG_DIR` at the
+app-owned `ZKS_HOME/agent-config` (vitest); mode B with no cloud credentials ends in `auth_failed` within 30 s; an `init` mismatch
+(extra tool, foreign MCP server, a non-builtin foreign plugin, wrong `apiKeySource`) aborts, while `*@builtin` plugins pass; an unknown tool is denied with no card;
 a spec with `source: "/etc/passwd"` fails at `set_cuts`; Stop leaves a resumable session; replayed transcripts render every event type,
 and a `</script><img src=x onerror=alert(1)>` tool label renders literally. Mode T: the PTY runs only the resolved `claude` with no
-credential env; a WebSocket upgrade with a foreign Origin, no ticket or a reused ticket gets 403; a hook or MCP call without the
+credential env; `SessionStart` reaches the bridge through the command relay; a WebSocket upgrade with a foreign Origin, no ticket or a reused ticket gets 403; a hook or MCP call without the
 session token gets 401; a `Bash` call is denied by the PreToolUse hook; with the server stopped, no tool runs; a composer prompt
 containing `ESC[201~` arrives as literal text; Stop interrupts and the session resumes with `--resume`; the server opens no file under
 `~/.claude` (fs spy).
@@ -1635,7 +1669,8 @@ Estimate: 12h with Claude | 60h without (8h base plus scrub-check and templates,
 | `README.md` (Docker section), `docs/user/docker.md`                                                                                | elena  |
 
 ACs: the full app runs on local Supabase; on Linux, Docker Desktop for Windows and macOS, `docker ps --format '{{.Ports}}'` shows only
-`127.0.0.1:` publishings and only 55322 by default; migrations up/down/up pass on both backends in CI; setup-e2e green on 3 OSes with
+`127.0.0.1:` publishings and only 45322 by default; `doctor` fails when the Postgres port answers on a non-loopback interface, and the
+default `postgres` password is never used unless Postgres is published on `127.0.0.1` only; migrations up/down/up pass on both backends in CI; setup-e2e green on 3 OSes with
 port 4317 answering after the single setup command; every §9.5 budget met; threat-model tests pass; the README Docker commands run
 as written.
 

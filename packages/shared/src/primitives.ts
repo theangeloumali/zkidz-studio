@@ -18,6 +18,9 @@ export const SourceSecondsSchema = z.number().finite().nonnegative();
 /** A word pin: source seconds after the owning cue's `at`, so it stays on its word across trimmed pauses. */
 export const PinSecondsSchema = z.number().finite().nonnegative();
 
+/** Job progress, 0..100 everywhere: events, job snapshots, the REST DTO and the `jobs.pct` column. */
+export const JobPercentSchema = z.number().min(0).max(100);
+
 /** Kept as a rational: 30000/1001 vs 29.97 decides frame identity. */
 export const FrameRateSchema = z.strictObject({ num: z.int().positive(), den: z.int().positive() });
 

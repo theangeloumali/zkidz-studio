@@ -58,6 +58,11 @@ describe("Drizzle schema (plan §8)", () => {
     expect(eventIdColumn?.generatedIdentity?.type).toBe("always");
   });
 
+  it("stores job progress as pct (0..100), the unit every event and DTO uses", () => {
+    expect(columnNames("jobs")).toContain("pct");
+    expect(columnNames("jobs")).not.toContain("progress");
+  });
+
   it("stores media paths relative to the project, never absolute", () => {
     expect(columnNames("media_assets")).toContain("rel_path");
     expect(columnNames("media_assets")).not.toContain("path");

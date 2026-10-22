@@ -11,6 +11,8 @@ import {
   ProjectSchema,
   RULE_TEXT_MAX_CHARS,
   RuleSchema,
+  SettingsSchema,
+  SettingsUpdateSchema,
   SpecSummarySchema,
   SpecVersionSchema,
 } from "./dto.ts";
@@ -116,8 +118,8 @@ export const API_ROUTES = {
   },
 
   getDoctor: { method: "GET", path: "/api/doctor", response: z.strictObject({ checks: z.array(DoctorCheckSchema) }) },
-  getSettings: { method: "GET", path: "/api/settings", response: z.record(z.string(), z.unknown()) },
-  updateSettings: { method: "PUT", path: "/api/settings", body: z.record(z.string(), z.unknown()), response: z.record(z.string(), z.unknown()) },
+  getSettings: { method: "GET", path: "/api/settings", response: SettingsSchema },
+  updateSettings: { method: "PUT", path: "/api/settings", body: SettingsUpdateSchema, response: SettingsSchema },
 
   terminalTicket: { method: "POST", path: "/api/terminal/:sessionId/ticket", body: null, response: TerminalTicketSchema },
   terminalSocket: { method: "GET", path: "/api/terminal/:sessionId/ws", query: TerminalSocketQuerySchema, response: "websocket" },

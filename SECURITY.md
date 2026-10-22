@@ -74,7 +74,8 @@ Out of scope:
   widens the exposure. Report the upstream bug upstream.
 - Attacks that already need code execution as your user, or administrator access, on the machine running the app.
 - Problems that only exist after you change the code to bind a non-loopback address or turn off a documented safeguard.
-- The documented local Supabase password (`postgres` on `127.0.0.1:55322`). It is a loopback-only development default.
+- The local Supabase default password, only while Postgres is unreachable from every non-loopback interface. If you can reach it
+  from outside loopback, that is in scope.
 - Denial of service a local user causes against their own instance, social engineering, and physical access.
 
 ## How the app handles credentials and agent permissions

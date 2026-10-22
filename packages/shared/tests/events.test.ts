@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { EPHEMERAL_EVENT_TYPES, STUDIO_EVENT_TYPES, StudioEventSchema, type StudioEvent } from "../src/index.ts";
+import { EPHEMERAL_EVENT_TYPES, JobSchema, JobSnapshotSchema, STUDIO_EVENT_TYPES, StudioEventSchema, type StudioEvent } from "../src/index.ts";
+import { EVENT_AT, JOB_ID, PROJECT_ID } from "./fixtures.ts";
 import { sampleEventByType } from "./event-samples.ts";
 
 describe("StudioEventSchema (plan §6.11)", () => {
@@ -39,6 +40,30 @@ describe("StudioEventSchema (plan §6.11)", () => {
 
   it("rejects a progress percentage above 100", () => {
     expect(StudioEventSchema.safeParse({ ...sampleEventByType["job.progress"], pct: 140 }).success).toBe(false);
+  });
+
+  it("carries job progress in one unit: a job.progress pct round-trips into JobSchema and the job snapshot", () => {
+    const progressEvent = StudioEventSchema.parse(sampleEventByType["job.progress"]);
+    if (progressEvent.type !== "job.progress") throw new Error("expected a job.progress sample");
+    const jobRow = {
+      id: JOB_ID,
+      projectId: PROJECT_ID,
+      kind: "render_master",
+      videoId: "v1",
+      lane: "gpu",
+      status: "running",
+      stage: progressEvent.stage,
+      pct: progressEvent.pct,
+      etaS: progressEvent.etaS,
+      error: null,
+      queuedAt: EVENT_AT,
+      startedAt: EVENT_AT,
+      finishedAt: null,
+    };
+
+    expect(JobSchema.parse(jobRow).pct).toBe(progressEvent.pct);
+    expect(JobSnapshotSchema.parse({ jobId: JOB_ID, status: "running", pct: progressEvent.pct, logTail: [] }).pct).toBe(progressEvent.pct);
+    expect(JobSchema.safeParse({ ...jobRow, pct: 140 }).success).toBe(false);
   });
 
   it("marks deltas and heartbeats as bus-only", () => {

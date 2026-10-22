@@ -42,6 +42,7 @@ const LINE_BY_EXTENSION = {
 /** @type {Record<string, string>} */
 const LINE_BY_FILENAME = {
   Dockerfile: HASH_LINE,
+  CODEOWNERS: HASH_LINE,
   ".gitignore": HASH_LINE,
   ".gitattributes": HASH_LINE,
   ".prettierignore": HASH_LINE,

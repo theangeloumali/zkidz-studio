@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
+import { SUPABASE_DB_PORT } from "@zks/shared";
 import { DEFAULT_SUPABASE_TEST_URL, buildMatrixLegs } from "../db-test-matrix.mjs";
 
 describe("buildMatrixLegs", () => {
@@ -12,7 +13,8 @@ describe("buildMatrixLegs", () => {
   });
 
   it("targets the loopback Supabase port by default and honours an override", () => {
-    expect(DEFAULT_SUPABASE_TEST_URL).toBe("postgresql://postgres:postgres@127.0.0.1:55322/postgres");
+    expect(DEFAULT_SUPABASE_TEST_URL).toBe("postgresql://postgres:postgres@127.0.0.1:45322/postgres");
+    expect(SUPABASE_DB_PORT).toBe(45322);
 
     const legs = buildMatrixLegs({ ZKS_TEST_DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:6543/postgres" });
 

@@ -38,6 +38,7 @@ describe("findAttributionProblems", () => {
     writeRepoFile("db/0001.down.sql", `-- ${ATTRIBUTION}\nselect 1;\n`);
     writeRepoFile(".gitignore", `# ${ATTRIBUTION}\nnode_modules/\n`);
     writeRepoFile("Dockerfile", `# ${ATTRIBUTION}\nFROM scratch\n`);
+    writeRepoFile(".github/CODEOWNERS", `# ${ATTRIBUTION}\n* @owner\n`);
 
     expect(findAttributionProblems(repoDir)).toEqual([]);
   });

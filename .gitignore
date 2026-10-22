@@ -10,11 +10,26 @@ docs/plans/*.html
 .env.*
 !.env.example
 *.secrets.json
-# Media, models and partial downloads never enter git
-*.mp4
-*.mov
-*.mkv
-*.wav
+# Media, models and partial downloads never enter git.
+# Bracket globs: case-sensitive clones must also ignore camera-native CLIP.MP4.
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[mM][kK][vV]
+*.[wW][aA][vV]
+*.[mM][tT][sS]
+*.[mM]2[tT][sS]
+*.[iI][nN][sS][vVpP]
+*.[lL][rR][vV]
+*.[wW][eE][bB][mM]
+*.[aA][vV][iI]
+*.[mM]4[aA]
+*.[mM][pP]3
+*.[aA][aA][cC]
+*.[fF][lL][aA][cC]
+*.[hH][eE][iI][cC]
+# Images stay tracked in design/; anything under media/ or raw/ is ignored
+media/
+raw/
 *.bin
 *.part
 # Models, tool downloads and local data dirs

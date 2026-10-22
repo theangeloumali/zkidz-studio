@@ -7,7 +7,10 @@ export const SSE_REPLAY_LIMIT = 500;
 export const LAST_EVENT_ID_HEADER = "last-event-id";
 
 /** `/api/events?project=a&project=b`: one EventSource per tab covers every open project. */
-export const EventsQuerySchema = z.strictObject({ project: z.array(IdSchema).min(1) });
+export const EventsQuerySchema = z.strictObject({
+  // A single `?project=<id>` reaches the server as a string, not a one-element array.
+  project: z.preprocess((project) => (typeof project === "string" ? [project] : project), z.array(IdSchema).min(1)),
+});
 
 export const LastEventIdSchema = z
   .string()

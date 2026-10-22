@@ -1,24 +1,13 @@
 // Created by The Angelo Umali.
 // Spike-only schema: enough column types to make the two backends' catalogs worth diffing.
-import {
-  pgSchema,
-  uuid,
-  text,
-  integer,
-  timestamp,
-  jsonb,
-  boolean,
-  index,
-} from "drizzle-orm/pg-core";
+import { pgSchema, uuid, text, integer, timestamp, jsonb, boolean, index } from "drizzle-orm/pg-core";
 
 export const studio = pgSchema("studio");
 
 export const projects = studio.table("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const jobs = studio.table(

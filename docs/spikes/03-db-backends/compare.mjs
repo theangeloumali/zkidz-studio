@@ -28,8 +28,7 @@ async function dumpCatalog(database) {
   const dump = {
     version: rowsOf(await database.execute(sql`select version()`))[0].version,
   };
-  for (const [name, query] of Object.entries(CATALOG_QUERIES))
-    dump[name] = rowsOf(await database.execute(query));
+  for (const [name, query] of Object.entries(CATALOG_QUERIES)) dump[name] = rowsOf(await database.execute(query));
   return dump;
 }
 
@@ -53,18 +52,8 @@ if (process.env.DATABASE_URL) {
 
 const sections = Object.keys(CATALOG_QUERIES);
 const differences = postgresDump
-  ? sections.filter(
-      (section) =>
-        JSON.stringify(pgliteDump[section]) !==
-        JSON.stringify(postgresDump[section]),
-    )
+  ? sections.filter((section) => JSON.stringify(pgliteDump[section]) !== JSON.stringify(postgresDump[section]))
   : ["no DATABASE_URL: Supabase side skipped"];
 
-console.log(
-  JSON.stringify(
-    { pglite: pgliteDump, postgres: postgresDump, differences },
-    null,
-    2,
-  ),
-);
+console.log(JSON.stringify({ pglite: pgliteDump, postgres: postgresDump, differences }, null, 2));
 process.exitCode = postgresDump && differences.length === 0 ? 0 : 1;

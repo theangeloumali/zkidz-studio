@@ -1,0 +1,7 @@
+# Created by The Angelo Umali.
+# The scan rules, CI and the security policy decide what reaches the repo, so the maintainer reviews every change to them.
+/.gitleaks.toml @theangeloumali
+/.gitleaksignore @theangeloumali
+/.github/ @theangeloumali
+/SECURITY.md @theangeloumali
+/pnpm-workspace.yaml @theangeloumali

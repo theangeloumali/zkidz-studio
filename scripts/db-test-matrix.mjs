@@ -2,9 +2,10 @@
 // Runs packages/db tests on both backends: PGlite (DATABASE_URL unset), then local Supabase Postgres (plan §8, §14 slice 0a).
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { LOOPBACK_HOST, SUPABASE_DB_PORT } from "@zks/shared";
 
 /** Loopback-only dev password from the Supabase CLI; never a real credential (plan §8). */
-export const DEFAULT_SUPABASE_TEST_URL = "postgresql://postgres:postgres@127.0.0.1:55322/postgres";
+export const DEFAULT_SUPABASE_TEST_URL = `postgresql://postgres:postgres@${LOOPBACK_HOST}:${SUPABASE_DB_PORT}/postgres`;
 
 /**
  * @param {Record<string, string | undefined>} parentEnv

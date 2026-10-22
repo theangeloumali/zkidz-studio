@@ -6,7 +6,7 @@ import { VideoIdSchema } from "../primitives.ts";
 import { CaptionEntrySchema, CaptionPhraseSchema } from "../specs/captions.ts";
 import { CueSchema } from "../specs/cues.ts";
 import { CutSpecSchema } from "../specs/cut-spec.ts";
-import { ReelKeepSchema } from "../specs/reel-spec.ts";
+import { ReelKeepListSchema } from "../specs/reel-spec.ts";
 import { SpecWriteResultSchema, defineTool } from "./define.ts";
 
 export const CUE_SHEETS = ["main", "reel", "cover"] as const;
@@ -29,7 +29,7 @@ export const setCuts = defineTool({
 });
 
 export const setReel = defineTool({
-  input: z.strictObject({ keep: z.array(ReelKeepSchema).min(1) }),
+  input: z.strictObject({ keep: ReelKeepListSchema }),
   output: SpecWriteResultSchema.extend({ reelId: VideoIdSchema, seconds: z.number().positive(), droppedCues: z.array(CueIdSchema) }),
   approval: "auto",
   isReadOnly: false,

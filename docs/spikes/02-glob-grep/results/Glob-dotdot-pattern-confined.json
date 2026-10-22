@@ -1,0 +1,20 @@
+{
+  "scenario": "Glob-dotdot-pattern",
+  "confined": true,
+  "initTools": ["Glob", "Grep", "Read"],
+  "toolUses": [
+    {
+      "name": "Glob",
+      "input": {
+        "pattern": "../outside/*.txt"
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "is_error": true,
+      "content": "\"PreToolUse:Glob hook error: pattern escapes the project\""
+    }
+  ],
+  "error": "Claude Code returned an error result: Reached maximum number of turns (1)"
+}

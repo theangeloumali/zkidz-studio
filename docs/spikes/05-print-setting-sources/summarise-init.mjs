@@ -14,18 +14,11 @@ for await (const line of createInterface({ input: process.stdin })) {
       output_style: message.output_style,
       // Counts only: the names would publish this machine's personal connectors and plugins.
       builtInTools: message.tools.filter((tool) => !tool.startsWith("mcp__")),
-      mcpToolCount: message.tools.filter((tool) => tool.startsWith("mcp__"))
-        .length,
+      mcpToolCount: message.tools.filter((tool) => tool.startsWith("mcp__")).length,
       mcpServerCount: message.mcp_servers.length,
-      claudeAiConnectorCount: message.mcp_servers.filter((server) =>
-        server.name.startsWith("claude.ai "),
-      ).length,
-      builtinPluginCount: message.plugins.filter((plugin) =>
-        plugin.source?.endsWith("@builtin"),
-      ).length,
-      userOrInlinePluginCount: message.plugins.filter(
-        (plugin) => !plugin.source?.endsWith("@builtin"),
-      ).length,
+      claudeAiConnectorCount: message.mcp_servers.filter((server) => server.name.startsWith("claude.ai ")).length,
+      builtinPluginCount: message.plugins.filter((plugin) => plugin.source?.endsWith("@builtin")).length,
+      userOrInlinePluginCount: message.plugins.filter((plugin) => !plugin.source?.endsWith("@builtin")).length,
       skillCount: message.skills.length,
       agentCount: message.agents?.length ?? 0,
     });

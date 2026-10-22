@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { STUDIO_TOOL_NAMES, STUDIO_TOOLS, findStudioTool, studioToolName } from "../src/index.ts";
+import { ProjectPathSchema, STUDIO_TOOL_NAMES, STUDIO_TOOLS, findStudioTool, studioToolName } from "../src/index.ts";
 import { ASSET_ID, JOB_ID, validCutSpec } from "./fixtures.ts";
 import { sampleCueByKind } from "./cue-samples.ts";
 
@@ -110,6 +110,25 @@ describe("tool input rejections", () => {
     expect(STUDIO_TOOLS.render_preview.input.safeParse({ at: [1, 2, 3, 4, 5] }).success).toBe(false);
   });
 
+  it.each([
+    [
+      "overlapping",
+      [
+        { at: 5, end: 14.6 },
+        { at: 14, end: 20 },
+      ],
+    ],
+    [
+      "out-of-order",
+      [
+        { at: 30, end: 40 },
+        { at: 5, end: 14.6 },
+      ],
+    ],
+  ])("set_reel rejects %s keeps, like ReelSpecSchema", (_label, keep) => {
+    expect(STUDIO_TOOLS.set_reel.input.safeParse({ keep }).success).toBe(false);
+  });
+
   it("add_cue rejects an unknown sheet", () => {
     expect(STUDIO_TOOLS.add_cue.input.safeParse({ sheet: "draft", cue: sampleCueByKind.keyword }).success).toBe(false);
   });
@@ -140,6 +159,27 @@ describe("tool outputs", () => {
       expect(STUDIO_TOOLS.export_deliverable.output.safeParse(exportOutput).success).toBe(false);
     },
   );
+
+  it.each([
+    ["a UNC path", "\\\\server\\share\\x.mp4"],
+    ["a device path", "\\\\?\\C:\\x.mp4"],
+    ["a root-relative Windows path", "\\Windows\\x.mp4"],
+    ["an alternate data stream", "out.mp4:ads"],
+    ["a reserved device name", "CON"],
+    ["a reserved name with an extension", "deliverables/nul.mp4"],
+    ["a numbered reserved name in any case", "lpt9.txt"],
+    ["a segment ending in a dot", "covers./a.png"],
+    ["a segment ending in a space", "covers /a.png"],
+    ["a NUL byte", "a\u0000.mp4"],
+    ["an empty segment", "deliverables//a.mp4"],
+    ["a trailing separator", "deliverables/"],
+  ])("ProjectPathSchema rejects %s (plan §9.4)", (_label, unsafePath) => {
+    expect(ProjectPathSchema.safeParse(unsafePath).success).toBe(false);
+  });
+
+  it.each(["deliverables/v1-full.mp4", "covers\\cover-A.png", "console.log.txt", "com10.mp4", ".hidden/a.png"])("ProjectPathSchema accepts %s", (safePath) => {
+    expect(ProjectPathSchema.safeParse(safePath).success).toBe(true);
+  });
 
   it("approve answers allow or deny", () => {
     expect(STUDIO_TOOLS.approve.output.safeParse({ behavior: "deny", message: "User declined" }).success).toBe(true);

@@ -12,7 +12,7 @@ import {
   SpecAuthorSchema,
   SpecKindSchema,
 } from "../enums.ts";
-import { FrameRateSchema, IdSchema, IsoTimestampSchema, VideoIdSchema } from "../primitives.ts";
+import { FrameRateSchema, IdSchema, IsoTimestampSchema, JobPercentSchema, VideoIdSchema } from "../primitives.ts";
 
 /** Rules panel cap (plan §6.9). */
 export const RULE_TEXT_MAX_CHARS = 500;
@@ -63,7 +63,7 @@ export const JobSchema = z.strictObject({
   lane: JobLaneSchema,
   status: JobStatusSchema,
   stage: z.string().nullable(),
-  progress: z.number().min(0).max(1).nullable(),
+  pct: JobPercentSchema.nullable(),
   etaS: z.int().nonnegative().nullable(),
   error: z.string().nullable(),
   queuedAt: IsoTimestampSchema,
@@ -96,6 +96,11 @@ export const ConnectionSchema = z.strictObject({
   claudeVersion: z.string().nullable(),
 });
 
+/** Every global setting, typed. proxyOptIn lets HTTPS_PROXY, NO_PROXY and NODE_EXTRA_CA_CERTS reach the agent and the key check (plan §6.5, §6.6). */
+export const SettingsSchema = z.strictObject({ proxyOptIn: z.boolean() });
+/** Strict, so an unknown key is a 400 rather than a silently stored value. */
+export const SettingsUpdateSchema = SettingsSchema.partial();
+
 export const DoctorCheckSchema = z.strictObject({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -108,3 +113,4 @@ export type Project = z.infer<typeof ProjectSchema>;
 export type MediaAsset = z.infer<typeof MediaAssetSchema>;
 export type Job = z.infer<typeof JobSchema>;
 export type Rule = z.infer<typeof RuleSchema>;
+export type Settings = z.infer<typeof SettingsSchema>;

@@ -12,6 +12,7 @@ import {
   PreToolUseHookPayloadSchema,
   RULE_TEXT_MAX_CHARS,
   SSE_REPLAY_LIMIT,
+  SUPABASE_DB_PORT,
   TERMINAL_TICKET_TTL_S,
   isStateChangingMethod,
 } from "../src/index.ts";
@@ -59,6 +60,10 @@ describe("security constants", () => {
     expect(CSRF_HEADER).toBe("x-zks-csrf");
   });
 
+  it("keeps the Supabase port below 49152, outside Hyper-V's shifting reserved ranges (spike 03)", () => {
+    expect(SUPABASE_DB_PORT).toBe(45322);
+  });
+
   it("treats every method but GET and HEAD as state-changing", () => {
     expect(isStateChangingMethod("GET")).toBe(false);
     expect(isStateChangingMethod("head")).toBe(false);
@@ -73,6 +78,11 @@ describe("SSE contract (plan §8, D3)", () => {
     expect(EventsQuerySchema.safeParse({ project: [] }).success).toBe(false);
   });
 
+  it("parses a single ?project=<id>, which a query parser hands over as a bare string", () => {
+    expect(EventsQuerySchema.parse({ project: PROJECT_ID })).toEqual({ project: [PROJECT_ID] });
+    expect(EventsQuerySchema.safeParse({ project: "not-a-uuid" }).success).toBe(false);
+  });
+
   it("parses Last-Event-ID as a positive event id", () => {
     expect(LastEventIdSchema.parse("42")).toBe(42);
     expect(LastEventIdSchema.safeParse("-1").success).toBe(false);
@@ -81,6 +91,23 @@ describe("SSE contract (plan §8, D3)", () => {
 
   it("replays at most 500 events before sending resync", () => {
     expect(SSE_REPLAY_LIMIT).toBe(500);
+  });
+});
+
+describe("settings (plan §6.5, §6.6)", () => {
+  it("returns every setting, typed", () => {
+    expect(API_ROUTES.getSettings.response.safeParse({ proxyOptIn: false }).success).toBe(true);
+    expect(API_ROUTES.updateSettings.response.safeParse({}).success).toBe(false);
+  });
+
+  it("accepts a partial update of known keys", () => {
+    expect(API_ROUTES.updateSettings.body.safeParse({ proxyOptIn: true }).success).toBe(true);
+    expect(API_ROUTES.updateSettings.body.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects an unknown key and a non-boolean proxy opt-in", () => {
+    expect(API_ROUTES.updateSettings.body.safeParse({ NODE_EXTRA_CA_CERTS: "/tmp/ca.pem" }).success).toBe(false);
+    expect(API_ROUTES.updateSettings.body.safeParse({ proxyOptIn: "true" }).success).toBe(false);
   });
 });
 

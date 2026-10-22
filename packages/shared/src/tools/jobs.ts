@@ -2,7 +2,7 @@
 // Job polling and the `claude -p` fallback's permission prompt tool (plan §6.7, §6.8).
 import { z } from "zod";
 import { JobStatusSchema } from "../enums.ts";
-import { IdSchema } from "../primitives.ts";
+import { IdSchema, JobPercentSchema } from "../primitives.ts";
 import { defineTool } from "./define.ts";
 
 /** One call blocks at most this long, so a tool call never holds the turn for minutes. */
@@ -15,7 +15,7 @@ export const JobSnapshotSchema = z.strictObject({
   jobId: IdSchema,
   status: JobStatusSchema,
   stage: z.string().optional(),
-  pct: z.number().min(0).max(100).optional(),
+  pct: JobPercentSchema.optional(),
   etaS: z.number().nonnegative().optional(),
   logTail: z.array(z.string()),
   result: z.unknown().optional(),

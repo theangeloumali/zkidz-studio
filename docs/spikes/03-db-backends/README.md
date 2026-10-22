@@ -2,6 +2,9 @@
 
 # Spike 3: Supabase Postgres-only and drizzle on PGlite
 
+> **Warning:** while it runs, the `supabase start` commands below publish Postgres on every interface (`0.0.0.0` and `[::]`)
+> with the default `postgres` password. Run them only on a trusted network, and stop the stack when done.
+
 **Status: PASS** for drizzle migrations: PGlite and Supabase Postgres produce identical catalogs. **FAIL** for the plan's
 §8 network assumptions: the plan's ports collide with a Windows reserved range, and Postgres binds to every interface,
 not loopback.

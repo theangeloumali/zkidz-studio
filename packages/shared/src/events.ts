@@ -2,7 +2,7 @@
 // The UI never sees raw SDK messages; the server maps them (and mode T hooks) to these events (plan §6.11).
 import { z } from "zod";
 import { JobStatusSchema, SpecAuthorSchema, SpecKindSchema } from "./enums.ts";
-import { IdSchema, IsoTimestampSchema, VideoIdSchema, sourceSpan } from "./primitives.ts";
+import { IdSchema, IsoTimestampSchema, JobPercentSchema, VideoIdSchema, sourceSpan } from "./primitives.ts";
 
 /** `id` is the persisted events row id and doubles as the SSE cursor; bus-only events carry none. */
 const eventBaseShape = { id: z.int().positive().optional(), projectId: IdSchema, at: IsoTimestampSchema };
@@ -72,7 +72,7 @@ const studioEventSchemas = [
   jobLifecycleEvent("job.queued"),
   jobLifecycleEvent("job.started"),
   jobLifecycleEvent("job.finished"),
-  studioEvent("job.progress", { jobId: IdSchema, stage: z.string().min(1), pct: z.number().min(0).max(100), etaS: z.number().nonnegative().optional() }),
+  studioEvent("job.progress", { jobId: IdSchema, stage: z.string().min(1), pct: JobPercentSchema, etaS: z.number().nonnegative().optional() }),
   studioEvent("retry", { attempt: z.int().positive(), max: z.int().positive(), delayMs: z.int().nonnegative(), reason: z.string() }),
   studioEvent("limit", {
     status: z.enum(["allowed", "allowed_warning", "rejected"]),

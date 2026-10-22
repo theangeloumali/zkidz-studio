@@ -28,12 +28,21 @@ export const EmptyInputSchema = z.strictObject({});
 
 export const TranscriptWordSchema = z.strictObject({ at: SourceSecondsSchema, end: SourceSecondsSchema, text: z.string() });
 
+// Windows opens a device for these names whatever the folder or extension (CON, nul.mp4, LPT9.txt).
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
+// Windows drops a trailing dot or space, so `a.` and `a ` alias `a`; this also rejects `.` and `..`.
+function isSafePathSegment(segment: string): boolean {
+  return segment !== "" && !segment.endsWith(".") && !segment.endsWith(" ") && !WINDOWS_RESERVED_NAME.test(segment);
+}
+
+// A leading separator covers POSIX roots, UNC, device and root-relative paths; any colon covers drives and ADS (plan §9.4).
+function isProjectRelativePath(candidatePath: string): boolean {
+  if (/^[\\/]/.test(candidatePath) || /[:\0]/.test(candidatePath)) return false;
+  return candidatePath.split(/[\\/]/).every(isSafePathSegment);
+}
+
 /** Relative to the project folder; the server never hands an absolute path to the agent. */
-export const ProjectPathSchema = z
-  .string()
-  .min(1)
-  .refine((relativePath) => !relativePath.startsWith("/") && !/^[A-Za-z]:/.test(relativePath) && !relativePath.split(/[\\/]/).includes(".."), {
-    message: "must be a path relative to the project folder",
-  });
+export const ProjectPathSchema = z.string().min(1).refine(isProjectRelativePath, { message: "must be a path relative to the project folder" });
 
 export const SpecWriteResultSchema = z.strictObject({ version: z.int().positive(), warnings: z.array(z.string()) });

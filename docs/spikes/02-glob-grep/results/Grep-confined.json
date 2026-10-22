@@ -1,11 +1,7 @@
 {
-  "tool": "Grep",
+  "scenario": "Grep",
   "confined": true,
-  "initTools": [
-    "Glob",
-    "Grep",
-    "Read"
-  ],
+  "initTools": ["Glob", "Grep", "Read"],
   "toolUses": [
     {
       "name": "Grep",

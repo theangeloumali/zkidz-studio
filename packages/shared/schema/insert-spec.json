@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "at": {
+        "type": "number",
+        "minimum": 0
+      },
+      "end": {
+        "type": "number",
+        "minimum": 0
+      },
+      "srcAssetId": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "srcAt": {
+        "type": "number",
+        "minimum": 0
+      },
+      "panel": {
+        "type": "string",
+        "enum": [
+          "portrait",
+          "landscape"
+        ]
+      },
+      "note": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "at",
+      "end",
+      "srcAssetId",
+      "srcAt"
+    ],
+    "additionalProperties": false
+  }
+}

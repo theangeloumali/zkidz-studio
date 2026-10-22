@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "baseVideoId": {
+      "type": "string",
+      "pattern": "^v[0-9]+$"
+    },
+    "keep": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "number",
+            "minimum": 0
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0
+          },
+          "pin": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at",
+          "end"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "baseVideoId",
+    "keep"
+  ],
+  "additionalProperties": false
+}

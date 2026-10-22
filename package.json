@@ -1,0 +1,33 @@
+{
+  "name": "zkidz-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.15.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.11 <27",
+      "onFail": "download"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^12",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "verify": "node scripts/check-attribution.mjs && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
+    "db:test:matrix": "node scripts/db-test-matrix.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
+  }
+}

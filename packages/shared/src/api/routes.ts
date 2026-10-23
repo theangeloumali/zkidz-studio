@@ -23,6 +23,7 @@ import {
   SpecVersionSummarySchema,
 } from "./dto.ts";
 import { HomeTemplatesSchema, StartTemplateRequestSchema, StartTemplateResponseSchema, StyleCardsSchema } from "./onboarding.ts";
+import { HardwareSchema, QcCheckSchema } from "./render.ts";
 import { EventsQuerySchema } from "./sse.ts";
 import { HookPayloadSchema, HookResponseSchema, OpenTerminalResponseSchema, TerminalSocketQuerySchema, TerminalTicketSchema } from "./terminal.ts";
 
@@ -172,6 +173,9 @@ export const API_ROUTES = {
   listTemplates: { method: "GET", path: "/api/templates", response: HomeTemplatesSchema },
   /** Stores the template's ingest mode on the project and starts the matching ingest job. */
   startTemplate: { method: "POST", path: "/api/projects/:projectId/template", body: StartTemplateRequestSchema, response: StartTemplateResponseSchema },
+  getHardware: { method: "GET", path: "/api/hardware", response: HardwareSchema },
+  listQcChecks: { method: "GET", path: "/api/projects/:projectId/qc", response: z.strictObject({ checks: z.array(QcCheckSchema) }) },
+  resumeJob: { method: "POST", path: "/api/projects/:projectId/jobs/:jobId/resume", body: null, response: z.strictObject({ job: JobSchema }) },
 } as const satisfies Record<string, ApiRoute>;
 
 export type ApiRouteName = keyof typeof API_ROUTES;

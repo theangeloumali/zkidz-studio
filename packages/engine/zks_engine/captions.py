@@ -8,7 +8,7 @@ import sys
 
 import numpy as np
 
-from .pipeline import ENERGY_WINDOW, FPS, WORK, load_cuts, load_edl, load_energy
+from .pipeline import ENERGY_WINDOW, FPS, WORK, load_cuts, load_edl, load_energy, spec_file
 from .specs import gates
 
 PAUSE_BREAK = 0.35
@@ -159,7 +159,7 @@ def check_entries(entries, phrases):
 
 def emit_cues(video):
     phrases = json.loads((WORK / "captions" / f"{video}.phrases.json").read_text(encoding="utf-8"))
-    entries = json.loads((WORK / "captions" / f"{video}.json").read_text(encoding="utf-8"))
+    entries = json.loads(spec_file(WORK, f"captions/{video}.json").read_text(encoding="utf-8"))
     try:
         gates.check_captions(entries, phrases)
     except gates.GateFailed as failure:

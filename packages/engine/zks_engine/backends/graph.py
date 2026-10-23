@@ -7,7 +7,8 @@ from ..pipeline import DROP_ROTATION, OUTPUT, chain
 GRADE = "eq=contrast=1.03:saturation=1.05"
 BT709_TV = "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"
 UHD = (2160, 3840)
-CPU_CRISP = "unsharp=5:5:0.6,unsharp=17:17:0.18"  # the OpenCL CRISP pair, on the CPU
+# The OpenCL CRISP pair on the CPU; unsharp caps the matrix at (lx/2 + ly/2) * 2 <= 25, so the wide pass is 13x13, not 17x17.
+CPU_CRISP = "unsharp=5:5:0.6,unsharp=13:13:0.18"
 
 
 def restamp(edl):

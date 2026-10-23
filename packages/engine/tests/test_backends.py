@@ -1,12 +1,13 @@
 # Created by The Angelo Umali.
 # Render backends (plan §7): the doctor's probe result picks a profile, and each profile builds an exact graph and encoder.
 import os
+import subprocess
 import unittest
 from unittest import mock
 
-from support import make_edl  # first: it sets a scratch ZKS_HOME
+from support import has_ffmpeg, make_edl  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends
+from zks_engine import backends, ffio
 from zks_engine.backends import graph
 
 PUNCHED = make_edl([(0, 30), (60, 90)], [1.0, 1.08])
@@ -127,6 +128,13 @@ class CompositeGraphTests(unittest.TestCase):
         built = graph.composite(backends.get("cpu"), PUNCHED, size=(2160, 3840))
         self.assertIn(f"eq=contrast=1.03:saturation=1.05,{graph.CPU_CRISP}[base]", built)
         self.assertIn("[1:v]scale=2160:3840:flags=lanczos", built)
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_the_cpu_sharpen_runs_in_the_pinned_ffmpeg(self):
+        # unsharp caps (lx/2 + ly/2) * 2 at 25, so the OpenCL pair's 17x17 pass cannot run on the CPU as is.
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x64", "-vf", graph.CPU_CRISP, "-frames:v", "1",
+                                 "-f", "null", "-"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_blur_runs_on_the_upright_source(self):
         built = graph.composite(backends.get("cpu"), PUNCHED, regions=[(0, 0, 64, 64, [(0, 10)])], frame_size=(432, 768))

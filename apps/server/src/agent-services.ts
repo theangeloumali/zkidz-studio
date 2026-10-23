@@ -16,7 +16,9 @@ import type { FetchFunction } from "./auth/key-check.ts";
 import { registerConnectRoutes } from "./auth/routes.ts";
 import type { SecretStore } from "./auth/secret-store.ts";
 import type { EventBus } from "./events/event-bus.ts";
+import { registerExportHandler } from "./jobs/deliverables.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
+import { snapshotRenderJobSpecs } from "./jobs/spec-snapshot.ts";
 import type { Logger } from "./logging/logger.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
 import { loadSessionSetup } from "./rules/session-setup.ts";
@@ -29,7 +31,8 @@ import { registerTerminalRoutes } from "./terminal/routes.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
-import { createStudioMcpServer, registerEngineJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
+import { describeStudioGate } from "./tools/gate-facts.ts";
+import { createStudioMcpServer, registerEngineJobHandlers, registerRenderJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
 const REQUIRED_SKILLS = ["zkidz-studio:edit-director", "zkidz-studio:cut-spec"];
 // No model: both the SDK and the terminal use the account's default.
@@ -69,7 +72,7 @@ export interface AgentServices {
 
 export function createAgentServices(deps: AgentServicesDeps): AgentServices {
   const broker = new DecisionBroker({ publish: (event) => deps.eventBus.publish(event) });
-  const cancelProjectJobs = (projectId: string) => deps.jobRunner.cancelQueued(projectId).then(() => undefined);
+  const cancelProjectJobs = (projectId: string) => deps.jobRunner.cancelProject(projectId);
   const toolContextFor = (projectId: string): ToolContext => ({
     projectId,
     studioHome: deps.studioHome,
@@ -95,6 +98,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     limits: SESSION_LIMITS,
     loadSessionSetup: (project) => loadSessionSetup(deps.database, project.id),
     studioMcpServer: printSessions === undefined ? (project) => createStudioMcpServer(toolContextFor(project.id)) : null,
+    describeGate: (project, tool, input) => describeStudioGate(toolContextFor(project.id), tool, input),
     cancelProjectJobs,
   });
   const terminalSessions = createTerminalSessions({
@@ -117,6 +121,9 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     engine: deps.engine,
     probeSource: (filePath) => probeMedia(deps.ffprobePath, filePath),
   });
+  registerRenderJobHandlers(deps.jobRunner, { db: deps.database, studioHome: deps.studioHome, engine: deps.engine });
+  snapshotRenderJobSpecs(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome });
+  registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine });
 
   const registerRoutes = (app: Hono) => {
     registerConnectRoutes(app, {

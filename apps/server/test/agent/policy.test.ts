@@ -7,7 +7,7 @@ import type { NewStudioEvent } from "../../src/events/event-bus.ts";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 
-function setup() {
+function setup(describeGate?: Parameters<typeof createToolDecider>[0]["describeGate"]) {
   const published: NewStudioEvent[] = [];
   const broker = new DecisionBroker({
     publish: (event) => {
@@ -15,7 +15,7 @@ function setup() {
       return Promise.resolve({ ...event, at: new Date().toISOString() } as StudioEvent);
     },
   });
-  const canUseTool = createToolDecider({ projectId: PROJECT_ID, broker });
+  const canUseTool = createToolDecider({ projectId: PROJECT_ID, broker, ...(describeGate === undefined ? {} : { describeGate }) });
   const signal = new AbortController().signal;
   const call = (toolName: string, input: Record<string, unknown>) => canUseTool(toolName, input, { signal, toolUseID: "tu1", requestId: "r1" });
   const nextRequestId = async () => {
@@ -51,10 +51,26 @@ describe("tool decider", () => {
     expect(published.at(-1)).toMatchObject({
       type: "approval.requested",
       tool: "render_master",
-      facts: { action: "Render the 4K master", target: "full", quality: "final" },
+      facts: { action: "Render the 1080p master", target: "full", quality: "final" },
     });
     expect(broker.settle(PROJECT_ID, { kind: "approval", requestId, decision: "deny", message: "not yet" })).toBe(true);
     expect(await pending).toEqual({ behavior: "deny", message: "not yet" });
+  });
+
+  it("shows the project-aware facts when the session can derive them", async () => {
+    const outputFacts = { action: "Render the 4K master", outputPaths: ["work/out/v1-4k.mp4"], filesToDelete: [], estimatedGpuMinutes: 1.5 };
+    const { published, broker, call, nextRequestId } = setup((tool, input) => Promise.resolve(tool === "render_master" && input !== null ? outputFacts : null));
+    const pending = call("mcp__studio__render_master", { target: "full", quality: "4k" });
+    const requestId = await nextRequestId();
+
+    expect(published.at(-1)).toMatchObject({ type: "approval.requested", facts: outputFacts });
+    broker.settle(PROJECT_ID, { kind: "approval", requestId, decision: "allow" });
+    expect(await pending).toMatchObject({ behavior: "allow" });
+  });
+
+  it("denies a gate call whose facts cannot be derived", async () => {
+    const { call } = setup(() => Promise.reject(new Error("There is no asset x in this project")));
+    expect(await call("mcp__studio__delete_asset", { assetId: "x" })).toEqual({ behavior: "deny", message: "The tool input was invalid" });
   });
 
   it("returns the user's answers to AskUserQuestion as updated input", async () => {

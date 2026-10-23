@@ -98,7 +98,7 @@ class IngestReportTests(ScratchWork):
     def test_an_engine_exit_message_becomes_a_json_error(self):
         with mock.patch.object(join_sources, "main", side_effect=SystemExit("clips at different rates: a.mp4 25/1")):
             code, payload = call_cli("ingest", "--json", "--video", "v1", "--mode", "join", "--clip", "a.mp4", "--clip", "b.mp4")
-        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertEqual(code, cli.EXIT_ENGINE_ERROR)
         self.assertEqual(payload, {"error": {"code": "engine_failed", "message": "clips at different rates: a.mp4 25/1"}})
 
     def test_module_progress_lines_stay_off_stdout(self):

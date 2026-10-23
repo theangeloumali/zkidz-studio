@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // Server-derived approval facts: the card shows these above any agent note, so an injected note cannot misdescribe the action.
 import { STUDIO_TOOLS, type ApprovalFacts } from "@zks/shared";
+import { describeRenderAction } from "../jobs/master-files.ts";
 
 type FactFields = Omit<ApprovalFacts, "action" | "outputPaths" | "filesToDelete">;
 
@@ -9,7 +10,8 @@ export function describeGateCall(tool: string, input: unknown): ApprovalFacts | 
   switch (tool) {
     case "render_master": {
       const parsed = STUDIO_TOOLS.render_master.input.safeParse(input);
-      return parsed.success ? facts("Render the 4K master", { target: parsed.data.target, quality: parsed.data.quality }) : null;
+      if (!parsed.success) return null;
+      return facts(describeRenderAction(parsed.data.quality, undefined), { target: parsed.data.target, quality: parsed.data.quality });
     }
     case "export_deliverable": {
       const parsed = STUDIO_TOOLS.export_deliverable.input.safeParse(input);

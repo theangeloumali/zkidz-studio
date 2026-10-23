@@ -1,12 +1,15 @@
 # Created by The Angelo Umali.
 # zks-engine <cmd> --json: the server's contract with the engine is JSON on stdout and the exit code.
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from support import has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
@@ -49,6 +52,17 @@ class CliTests(unittest.TestCase):
         error = json.loads(result.stdout)["error"]
         self.assertEqual(error["code"], "tool_missing")
         self.assertIn(missing, error["message"])
+
+    def test_an_unexpected_error_is_a_json_error_without_a_traceback(self):
+        def explode(_args):
+            raise KeyError("missing_field")
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "version_payload", explode), redirect_stdout(stdout), redirect_stderr(stderr):
+            code = cli.main(["version", "--json"])
+        self.assertEqual(code, cli.EXIT_ENGINE_ERROR)
+        self.assertEqual(json.loads(stdout.getvalue()), {"error": {"code": "engine_error", "message": "KeyError: 'missing_field'"}})
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg and ffprobe")
     def test_probe_prints_metadata(self):

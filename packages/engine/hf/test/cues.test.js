@@ -62,3 +62,19 @@ test("invalid JSON and a non-array file name the file", () => {
 test("a cue name cannot leave the cues folder", () => {
   assert.throws(() => loadCueSheet(workWith({}), ["../edl/v1"]), /not a cue file name/);
 });
+
+test("a job draws the cue sheet from its start snapshot (ZKS_SPECS), and derived sheets from work", () => {
+  const work = workWith({ "v1.json": [KEYWORD], "v1-cc.json": [{ kind: "caption", at: 1, end: 2, text: "hi" }] });
+  const snapshot = workWith({ "v1.json": [HOOK] });
+  const previous = process.env.ZKS_SPECS;
+  process.env.ZKS_SPECS = snapshot;
+  try {
+    assert.deepEqual(
+      loadCueSheet(work, ["v1", "v1-cc"]).map((cue) => cue.kind),
+      ["hookTitle", "caption"],
+    );
+  } finally {
+    if (previous === undefined) delete process.env.ZKS_SPECS;
+    else process.env.ZKS_SPECS = previous;
+  }
+});

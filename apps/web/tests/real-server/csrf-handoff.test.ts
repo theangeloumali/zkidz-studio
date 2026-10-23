@@ -9,9 +9,15 @@ import { connectionFrom, createTestServer, TEST_HOST, type TestServer } from "..
 const APP_ORIGIN = `http://${TEST_HOST}`;
 
 let server: TestServer;
+const openedFolders: string[] = [];
 beforeAll(async () => {
   const security = createSecurity({ appPort: APP_PORT, previewPort: PREVIEW_PORT, container: false });
-  server = await createTestServer({ security: { middleware: security.middleware, confinePath: security.confinePath } });
+  server = await createTestServer({
+    security: { middleware: security.middleware, confinePath: security.confinePath },
+    openFolder: (folderPath) => openedFolders.push(folderPath),
+  });
+  // Pays react-query's first transform here; inside a test it overran the 5 s budget under ci:local load.
+  await import("../../src/render/render-api.ts");
 }, 60_000);
 afterAll(async () => {
   await server.close();
@@ -64,6 +70,19 @@ describe("CSRF handoff through the real security middleware", () => {
 
     expect(exchanges.at(-1)).toMatch(/^POST \/api\/projects\/no-such-project\/stop (?!403)\d+$/);
     expect(String(outcome)).not.toContain("Forbidden: content-type");
+  });
+
+  it("sends a bodiless write such as Open folder as JSON, so the guard lets it through", async () => {
+    const exchanges = routeFetchToServer();
+    const { createProject } = await loadClient();
+    const project = await createProject("Open me");
+    vi.resetModules();
+    const { revealDeliverables } = await import("../../src/render/render-api.ts");
+
+    await expect(revealDeliverables(project.id)).resolves.toEqual({ ok: true });
+
+    expect(exchanges.at(-1)).toBe(`POST /api/projects/${project.id}/reveal 200`);
+    expect(openedFolders).toHaveLength(1);
   });
 
   it("is a real guard: a write carrying a stale token is refused with 403", async () => {

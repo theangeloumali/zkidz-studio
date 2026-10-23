@@ -12,6 +12,7 @@ import { projectDir } from "../src/config.ts";
 import { createSecurity } from "../src/security/index.ts";
 import type { EngineRequest } from "../src/tools/engine-jobs.ts";
 import { memoryKeyring } from "./auth/memory-keyring.ts";
+import { readJob } from "./jobs/job-test-kit.ts";
 import { connectionFrom, createTestServer, insertProject, TEST_HOST, type TestServer, type TestServerBase } from "./support/test-server.ts";
 import { writeStubClaude } from "./terminal/stub-claude.ts";
 
@@ -113,6 +114,15 @@ describe("createApp with the Phase 2 services", () => {
     await server.jobRunner.enqueue({ projectId: project.id, kind: "transcribe", videoId: "v1", lane: "cpu", params: { language: "en", model: "base" } });
     await server.jobRunner.idle();
     expect(engineRequests.map((request) => request.command)).toEqual(["transcribe"]);
+  });
+
+  it("runs export_deliverable through the registered export handler", async () => {
+    const project = await insertProject(server);
+    const job = await server.jobRunner.enqueue({ projectId: project.id, kind: "export_deliverable", videoId: "v1", lane: "cpu", params: { kinds: ["full"] } });
+    await server.jobRunner.idle();
+    // Export asks the engine's QC gate first; this stub engine refuses, so nothing is copied.
+    expect(engineRequests.at(-1)).toMatchObject({ command: "qc-status", args: ["--video", "v1"] });
+    expect((await readJob(server, job.id)).error).toMatch(/^v1 has not passed QC: engine not installed in tests/);
   });
 
   it.skipIf(isWindows)("opens a terminal in terminal mode, and shutdown kills it", async () => {

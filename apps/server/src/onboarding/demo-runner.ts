@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { ReportProgress } from "../jobs/job-runner.ts";
-import { buildEngineEnv } from "../tools/engine-runner.ts";
+import { engineParentEnv } from "../jobs/engine-process.ts";
 
 const runFile = promisify(execFile);
 const STDERR_TAIL_CHARS = 2000;
@@ -42,7 +42,7 @@ export function createDemoRunner({ engineDir, demoScript, studioHome }: DemoRunn
   return {
     run: async (projectRoot, reportProgress) => {
       const argv = ["run", "--project", engineDir, "python", demoScript, "--project", projectRoot];
-      const env = { ...buildEngineEnv({}), ZKS_HOME: studioHome };
+      const env = { ...engineParentEnv({}), ZKS_HOME: studioHome };
       const watcher = watchDemoStages(projectRoot, reportProgress);
       try {
         await runFile("uv", argv, { cwd: projectRoot, env, shell: false });

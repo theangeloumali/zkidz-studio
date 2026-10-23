@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -p . && tsc -p tests/real-server && tsc -p e2e && tsc -p e2e/harness",
-    "e2e": "pnpm build && playwright test -c e2e",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.2.8",
@@ -27,7 +27,9 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.0",
+    "@hono/node-server": "^2.1.5",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "^4.1.14",
     "@testing-library/jest-dom": "^6.9.0",
     "@testing-library/react": "^16.3.0",

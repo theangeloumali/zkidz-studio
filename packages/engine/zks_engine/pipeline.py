@@ -46,11 +46,27 @@ WORK = work_dir()
 MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
 
 
+def source_record(video):
+    """Where the edit stage notes the source file a studio cut spec names only by asset id."""
+    return WORK / "edl" / f"{video_id(video)}.source.json"
+
+
+def spec_file(work, rel):
+    """A spec as the job's start snapshot holds it (ZKS_SPECS, plan §7.6); derived files are never in it, so they come from work."""
+    snapshot = os.environ.get("ZKS_SPECS")
+    if snapshot and (Path(snapshot) / rel).is_file():
+        return Path(snapshot) / rel
+    return Path(work) / rel
+
+
 def load_cuts(video):
-    """cuts/vN.json in the engine's dict shape; a studio CutSpec (schemaVersion) is validated and converted first."""
-    spec = json.loads((WORK / "cuts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    """cuts/vN.json in the engine's dict shape; a studio CutSpec (schemaVersion) is validated and converted first, and takes
+    the source file the edit stage recorded for it, when there is one."""
+    spec = json.loads(spec_file(WORK, f"cuts/{video_id(video)}.json").read_text(encoding="utf-8"))
     if "schemaVersion" in spec:
         spec = studio_cuts_to_engine(spec)
+        if source_record(video).exists():
+            spec["source"] = json.loads(source_record(video).read_text(encoding="utf-8"))["source"]
     if "base" in spec:
         video_id(spec["base"])  # a reel reads its base's EDL, audio and mask by this name
     return spec

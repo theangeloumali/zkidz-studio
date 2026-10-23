@@ -26,7 +26,7 @@ from . import progress
 from .slots import slot
 from .specs import gates
 from .pipeline import (AUDIO_RATE, CUDA_LANCZOS, CUDA_TV_RANGE, CUDA_UPRIGHT, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, frame_to_sample,
-                       intro_track, load_cuts, load_edl, probe_video, rotation_of, source_path, split_orientation, upright_dims)
+                       intro_track, load_cuts, load_edl, probe_video, rotation_of, source_path, spec_file, split_orientation, upright_dims)
 
 # BT709_TV tags overlay_cuda's inputs alike; otherwise ffmpeg 9 inserts a CPU converter on a CUDA link and fails.
 GPU_SCALE = CUDA_LANCZOS + ":format=yuv420p," + BT709_TV  # reads the TV-range frames decode hands on
@@ -405,7 +405,7 @@ def has_opencl():
 
 def spec_files(video):
     """The spec set the master is rendered from: snapshotted at start, checked before the master replaces the old one."""
-    return [path for path in (WORK / "cuts" / f"{video}.json", WORK / "edl" / f"{video}.json", WORK / "edl" / f"{video}.sfx.json") if path.exists()]
+    return [path for path in (spec_file(WORK, f"cuts/{video}.json"), WORK / "edl" / f"{video}.json", WORK / "edl" / f"{video}.sfx.json") if path.exists()]
 
 
 def main(video, draft=False, uhd=False):

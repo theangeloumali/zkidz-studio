@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -114,6 +114,27 @@ describe("ci-local", () => {
     });
     expect(holder.stdout).toContain("waiting for another ci-local run");
     expect(holder.stdout).toContain("status=124");
+  });
+
+  // Worktrees running it at once timed out starting vitest workers, so a run waits for the machine-wide lock.
+  it("gives up when another run holds the lock past ZKS_CI_LOCK_WAIT_S", () => {
+    const lockFile = join(mkdtempSync(join(tmpdir(), "zks-ci-lock-")), "ci-local.lock");
+    const holder = spawn("flock", [lockFile, "sleep", "5"], { stdio: "ignore" });
+    let lockIsFree = true;
+    while (lockIsFree) lockIsFree = spawnSync("flock", ["-n", lockFile, "true"]).status === 0; // wait for the holder
+
+    const outcome = spawnSync("bash", [SCRIPT], { encoding: "utf8", env: { ...process.env, ZKS_CI_LOCK: lockFile, ZKS_CI_LOCK_WAIT_S: "1" } });
+    holder.kill();
+
+    expect(outcome.status).toBe(1);
+    expect(outcome.stderr).toMatch(/another ci-local run holds/);
+    expect(outcome.stdout).not.toMatch(/PASS|FAIL/);
+  });
+
+  // One cap for every test lane: ZKS_CI_JOBS workers, six by default.
+  it("caps vitest workers and runs the other packages' suites one at a time", () => {
+    const listing = spawnSync("bash", [SCRIPT, "--list-test-env"], { encoding: "utf8" });
+    expect(listing.stdout.trim()).toBe("VITEST_MAX_WORKERS=6 workspace-concurrency=1");
   });
 
   it("rejects an unknown option", () => {

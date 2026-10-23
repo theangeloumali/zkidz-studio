@@ -18,7 +18,17 @@ import { writeJobResult } from "./job-results.ts";
 import { assetFilePath } from "./project-files.ts";
 
 /** Every zks-engine subcommand the server spawns; engine-cli-contract.test.ts runs each against the real CLI. */
-export const ENGINE_COMMANDS = ["ingest", "transcribe", "cue-kinds", "validate-cue"] as const;
+export const ENGINE_COMMANDS = [
+  "ingest",
+  "transcribe",
+  "cue-kinds",
+  "validate-cue",
+  "render-master",
+  "qc-master",
+  "check-motion",
+  "make-covers",
+  "qc-status",
+] as const;
 type EngineCommand = (typeof ENGINE_COMMANDS)[number];
 
 export interface EngineRequest {
@@ -28,6 +38,8 @@ export interface EngineRequest {
   readonly workDir: string;
   /** In-place files the command reads; the engine refuses any other input outside the project. */
   readonly inPlacePaths?: readonly string[];
+  /** A job's cancel signal: aborting it kills the engine's process tree. */
+  readonly signal?: AbortSignal;
 }
 
 /** Runs one engine command and returns its parsed JSON report. */
@@ -57,17 +69,17 @@ const IngestReportSchema = z.object({
 });
 
 export function registerEngineJobHandlers(jobRunner: JobRunner, deps: EngineJobDeps): void {
-  jobRunner.registerHandler("transcribe", (job, reportProgress) => runTranscribe(deps, job, reportProgress));
-  jobRunner.registerHandler("ingest", (job, reportProgress) => runIngest(deps, job, reportProgress));
+  jobRunner.registerHandler("transcribe", (job, reportProgress, signal) => runTranscribe(deps, job, reportProgress, signal));
+  jobRunner.registerHandler("ingest", (job, reportProgress, signal) => runIngest(deps, job, reportProgress, signal));
 }
 
-async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress): Promise<void> {
+async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress, signal: AbortSignal): Promise<void> {
   const params = TranscribeParamsSchema.parse(job.params);
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "transcripts");
   await reportProgress({ stage: "transcribing", pct: 0 });
   const args = ["--video", job.videoId, "--language", params.language, "--model", params.model];
-  const report = TranscribeReportSchema.parse(await deps.engine.run({ command: "transcribe", args, workDir }));
+  const report = TranscribeReportSchema.parse(await deps.engine.run({ command: "transcribe", args, workDir, signal }));
   const mediaAssetId = await transcribedAssetId(deps.db, job.projectId);
   await deps.db.insert(transcripts).values({
     projectId: job.projectId,
@@ -81,7 +93,7 @@ async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: R
   await reportProgress({ stage: "transcribed", pct: 100 });
 }
 
-async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress): Promise<void> {
+async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress, signal: AbortSignal): Promise<void> {
   const params = IngestParamsSchema.parse(job.params);
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "sources");
@@ -100,7 +112,7 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   await reportProgress({ stage: "joining", pct: 0 });
   // --mode before the clips: the engine's argv ends with the clip list.
   const args = ["--video", job.videoId, "--mode", mode, ...insertArgs, ...clipArgs.flat()];
-  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths }));
+  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths, signal }));
 
   const relPath = workRelativePath(workDir, report.sourcePath);
   const sourcePath = join(projectRoot, relPath);
@@ -149,19 +161,19 @@ async function writeResolvedInserts(
   return insertsPath;
 }
 
-async function projectRootOfJob(deps: EngineJobDeps, job: JobRow): Promise<string> {
+export async function projectRootOfJob(deps: EngineJobDeps, job: JobRow): Promise<string> {
   const [project] = await deps.db.select({ slug: projects.slug }).from(projects).where(eq(projects.id, job.projectId));
   if (project === undefined) throw new Error("The job's project no longer exists");
   return projectDir(deps.studioHome, project.slug);
 }
 
-async function prepareWorkDir(projectRoot: string, outputDir: string): Promise<string> {
+export async function prepareWorkDir(projectRoot: string, outputDir: string): Promise<string> {
   const workDir = join(projectRoot, "work");
   await mkdir(join(workDir, outputDir), { recursive: true });
   return workDir;
 }
 
-async function projectAsset(db: StudioDatabase, ids: { projectId: string; assetId: string }) {
+export async function projectAsset(db: StudioDatabase, ids: { projectId: string; assetId: string }) {
   const [asset] = await db
     .select()
     .from(mediaAssets)
@@ -190,7 +202,7 @@ async function transcribedAssetId(db: StudioDatabase, projectId: string): Promis
 }
 
 // A report path is engine output: it must stay inside work/ before the server stores or opens it.
-function workRelativePath(workDir: string, reportedPath: string): string {
+export function workRelativePath(workDir: string, reportedPath: string): string {
   const absolutePath = join(workDir, reportedPath);
   if (!isWithinDir(absolutePath, workDir)) throw new Error("The engine reported a path outside the project");
   return join("work", reportedPath).split("\\").join("/");

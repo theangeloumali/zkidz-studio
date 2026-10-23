@@ -5,8 +5,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CUE_TIERS, CueSchema, type Cue } from "@zks/shared";
 import { z } from "zod";
+import { EngineReportedError } from "../jobs/engine-process.ts";
 import type { ToolContext } from "./context.ts";
-import { EngineReportedError } from "./engine-runner.ts";
 import { loadProject, projectRootOf } from "./project-files.ts";
 import { ToolError } from "./result.ts";
 import { readLatestWords } from "./transcript-store.ts";
@@ -76,7 +76,7 @@ async function runEngineCheck(runCheck: () => Promise<unknown>): Promise<unknown
   try {
     return await runCheck();
   } catch (error) {
-    if (error instanceof EngineReportedError) throw new ToolError(error.message);
+    if (error instanceof EngineReportedError) throw new ToolError(error.reason);
     throw error;
   }
 }

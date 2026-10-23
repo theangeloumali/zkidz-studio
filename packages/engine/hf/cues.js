@@ -8,10 +8,16 @@ const CUE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const SAME_TIME = 1e-6;
 const isPatch = (entry) => entry !== null && typeof entry === "object" && "op" in entry;
 
+// A job's start snapshot (ZKS_SPECS, plan §7.6) wins; derived sheets such as <v>-cc exist only in work.
+function cueFilePath(work, name) {
+  const snapshotFile = process.env.ZKS_SPECS && path.join(process.env.ZKS_SPECS, "cues", `${name}.json`);
+  return snapshotFile && fs.existsSync(snapshotFile) ? snapshotFile : path.join(work, "cues", `${name}.json`);
+}
+
 function readCueFile(work, name) {
   if (!CUE_NAME.test(name)) throw new Error(`${JSON.stringify(name)} is not a cue file name (letters, digits, - and _)`);
   const label = `cues/${name}.json`;
-  const file = path.join(work, "cues", `${name}.json`);
+  const file = cueFilePath(work, name);
   if (!fs.existsSync(file)) throw new Error(`${label} is missing`);
   let entries;
   try {

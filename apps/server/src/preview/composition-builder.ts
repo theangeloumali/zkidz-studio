@@ -6,8 +6,8 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { BuildComposition, PreviewBuildRequest } from "./preview-service.ts";
 
-// dry-new: tools/engine-runner.ts keeps its env allowlist private and its command union closed. A preview build runs
-// plain node with no Chrome or ffmpeg, so it needs even less of the server's env, which carries credentials (plan §11).
+// dry-new: security/parent-env.ts always passes HOME, the locale and the other OS basics. A preview build runs plain
+// node with no Chrome or ffmpeg, so it needs even less of the server's env, which carries credentials (plan §11).
 const INHERITED_ENV_NAMES = ["PATH", "SystemRoot", "TMP", "TEMP", "TMPDIR"];
 
 export interface CompositionBuilderOptions {

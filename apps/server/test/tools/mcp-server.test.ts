@@ -36,7 +36,7 @@ describe("createStudioMcpServer", () => {
 
   it("names only implemented catalog tools", () => {
     expect(STUDIO_TOOL_NAMES).toContain("mcp__studio__set_cuts");
-    expect(STUDIO_TOOL_NAMES).not.toContain("mcp__studio__render_master");
+    expect(STUDIO_TOOL_NAMES).toContain("mcp__studio__render_master");
     // The SDK path decides in canUseTool; approve is served only to `claude -p` through the twin.
     expect(STUDIO_TOOL_NAMES).not.toContain("mcp__studio__approve");
   });

@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Deny-by-default canUseTool (plan §6.10). Never bypassPermissions or dontAsk: this is the only allow path.
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
-import { AskedQuestionSchema, findStudioTool } from "@zks/shared";
+import { AskedQuestionSchema, findStudioTool, type ApprovalFacts } from "@zks/shared";
 import { z } from "zod";
 import { assertNever } from "./assert-never.ts";
 import type { DecisionBroker } from "./decisions.ts";
@@ -15,6 +15,8 @@ const AskUserQuestionInputSchema = z.object({ questions: z.array(AskedQuestionSc
 export interface ToolDeciderOptions {
   readonly projectId: string;
   readonly broker: DecisionBroker;
+  /** The project-aware facts (output paths, GPU estimate); without it the card shows only what the input says. */
+  readonly describeGate?: (tool: string, input: unknown) => Promise<ApprovalFacts | null>;
 }
 
 type DeciderCall = ToolDeciderOptions & { readonly toolName: string; readonly input: Record<string, unknown>; readonly signal: AbortSignal };
@@ -51,7 +53,8 @@ async function askQuestions(call: DeciderCall): Promise<PermissionResult> {
 
 async function askApproval(call: DeciderCall): Promise<PermissionResult> {
   const tool = bareToolName(call.toolName);
-  const facts = describeGateCall(tool, call.input);
+  const describeGate = call.describeGate ?? ((name: string, input: unknown) => Promise.resolve(describeGateCall(name, input)));
+  const facts = await describeGate(tool, call.input).catch(() => null);
   if (facts === null) return deny(call, "The tool input was invalid");
   const decision = await call.broker.ask({
     projectId: call.projectId,

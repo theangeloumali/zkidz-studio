@@ -35,11 +35,18 @@ export const checkMotion = defineTool({
   isReadOnly: true,
 });
 
+/** Instagram's caption limit, the tightest of the platforms the post goes to. */
+const MAX_POST_CAPTION_CHARS = 2200;
+
 export const makeCovers = defineTool({
   input: z.strictObject({
     variants: z.array(z.strictObject({ source: z.enum(["intro", "free"]), at: EditedSecondsSchema, cue: CueSchema.optional() })).min(1),
+    /** "reel" draws the Reels covers (reels-cover-A/B); default "full". */
+    target: RenderTargetSchema.optional(),
+    /** The post's caption and hashtags, shipped as caption.txt. */
+    postCaption: z.string().trim().min(1).max(MAX_POST_CAPTION_CHARS).optional(),
   }),
-  output: z.strictObject({ covers: z.array(z.strictObject({ path: ProjectPathSchema })) }),
+  output: z.strictObject({ covers: z.array(z.strictObject({ path: ProjectPathSchema })), postCaption: ProjectPathSchema.optional() }),
   approval: "auto",
   isReadOnly: false,
 });

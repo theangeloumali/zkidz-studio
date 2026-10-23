@@ -14,6 +14,7 @@ import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts"
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
+import { createEngineProcessRunner, pinnedEngineTools } from "./jobs/engine-process.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
 import { DEFAULT_UPLOAD_LIMITS, removeStaleParts } from "./media-io/store.ts";
@@ -25,7 +26,6 @@ import { createPreviewService } from "./preview/preview-service.ts";
 import { createSecurity } from "./security/index.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
-import { createCliEngineRunner } from "./tools/index.ts";
 
 const WEB_DIST_DIR = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   const database = await openDatabase({ dataDir: join(config.studioHome, "db"), databaseUrl: config.databaseUrl });
   await database.migrate();
   const eventBus = new EventBus(database.db);
-  const jobRunner = new JobRunner({ database: database.db, eventBus, logger });
+  const jobRunner = new JobRunner({ database: database.db, eventBus, logger, studioHome: config.studioHome });
   const interruptedJobs = await jobRunner.recoverInterrupted();
   if (interruptedJobs > 0) logger.warn("marked jobs from a previous run as interrupted", { count: interruptedJobs });
 
@@ -60,7 +60,12 @@ async function main(): Promise<void> {
   const runDir = join(config.studioHome, "run");
   await clearSessionFiles(runDir);
   const claudePath = await resolveClaudePath(process.env);
-  const engine = createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: config.studioHome });
+  const engine = createEngineProcessRunner({
+    executable: "uv",
+    prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"],
+    studioHome: config.studioHome,
+    tools: pinnedEngineTools(process.env, config.studioHome),
+  });
   const agent = createAgentServices({
     database: database.db,
     studioHome: config.studioHome,
@@ -101,6 +106,7 @@ async function main(): Promise<void> {
     uploadLimits: DEFAULT_UPLOAD_LIMITS,
     webDistDir: WEB_DIST_DIR,
     logger,
+    jobRunner,
     agent,
     runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
     onboarding,

@@ -1,8 +1,9 @@
 // Created by The Angelo Umali.
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
+import type { PtyHost, TerminalPty } from "../../src/terminal/pty-host.ts";
 import type { TerminalSession } from "../../src/terminal/terminal-sessions.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, stubReport, waitFor } from "./stub-claude.ts";
 import { CATALOG_TOOL, createTerminalFixture, PROJECT_ID, type TerminalFixture } from "./terminal-fixture.ts";
@@ -17,6 +18,33 @@ afterEach(async () => {
 
 async function openSession(overrides: { resumeSessionId?: string } = {}): Promise<TerminalSession> {
   return fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, model: "haiku", rulesText: "rules", ...overrides });
+}
+
+/** Exits the moment it is killed, so a reopen lands while the old session's files are still being removed. */
+function instantExitPtyHost(): PtyHost {
+  const ptys = new Map<string, TerminalPty>();
+  return {
+    claudePath: process.execPath,
+    launch(sessionId) {
+      const exitListeners: ((exitCode: number) => void)[] = [];
+      const pty: TerminalPty = {
+        sessionId,
+        write: () => undefined,
+        resize: () => undefined,
+        interrupt: () => undefined,
+        kill: () => exitListeners.forEach((listener) => listener(0)),
+        snapshot: () => "",
+        onData: () => () => undefined,
+        onExit: (listener) => {
+          exitListeners.push(listener);
+          return () => undefined;
+        },
+      };
+      ptys.set(sessionId, pty);
+      return pty;
+    },
+    get: (sessionId) => ptys.get(sessionId),
+  };
 }
 
 function hook(sessionId: string, fields: Record<string, unknown>) {
@@ -251,5 +279,20 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     finished.pty.write("EXIT 0");
     await waitFor(() => fixture.sessions.find(finished.sessionId) === undefined);
     expect(fixture.cancelledProjects).toEqual([PROJECT_ID]);
+  });
+
+  it("keeps a resumed session's files when the killed session's cleanup finishes after the reopen", async () => {
+    fixture = await createTerminalFixture({ ptyHost: instantExitPtyHost() });
+    const first = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
+
+    expect(fixture.sessions.kill(PROJECT_ID)).toBe(true);
+    const reopened = await openSession({ resumeSessionId: first.sessionId });
+    await waitFor(() => fixture.events.some((event) => event.type === "terminal.state" && event.state === "exited"));
+
+    expect(reopened.sessionId).toBe(first.sessionId);
+    // Each launch writes its own <sessionId>.<uuid> folder; only the reopened one's may remain.
+    const sessionFolders = (await readdir(fixture.runDir)).filter((name) => name.startsWith(`${reopened.sessionId}.`));
+    expect(sessionFolders).toHaveLength(1);
+    await Promise.all(sessionFolders.map((folder) => expect(stat(join(fixture.runDir, folder, "settings.json"))).resolves.toBeDefined()));
   });
 });

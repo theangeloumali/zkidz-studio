@@ -72,6 +72,11 @@ class BackendInsertTests(unittest.TestCase):
             self.assertNotIn("vulkan", command, name)
             self.assertNotIn("libplacebo", command, name)
 
+    def test_nvidia_without_a_vulkan_device_composes_the_panel_without_vulkan(self):
+        command = " ".join(insert_command(backend=NVIDIA))
+        self.assertNotIn("vulkan", command)
+        self.assertNotIn("libplacebo", command)
+
     def test_off_nvidia_the_rounded_panel_is_masked_and_overlaid_at_its_box(self):
         graph = insert_graph(backend=CPU, panel="landscape")
         self.assertIn("[b]scale=2048:1152:flags=bicubic[pv]", graph)

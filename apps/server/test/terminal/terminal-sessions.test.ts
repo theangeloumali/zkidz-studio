@@ -61,7 +61,7 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.sessions.isHookAuthorized(RESUMED_SESSION_ID, first.hookToken)).toBe(false);
   });
 
-  it("denies Bash, allows a project Read, and stays silent on catalog tools", async () => {
+  it("denies Bash, allows a project Read, and reports catalog tools in the feed", async () => {
     fixture = await createTerminalFixture();
     const { sessionId } = await openSession();
     const preToolUse = (toolName: string, toolInput: unknown) =>
@@ -80,7 +80,7 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
 
     const eventCount = fixture.events.length;
     expect(await preToolUse(CATALOG_TOOL, {})).toMatchObject({ hookSpecificOutput: { permissionDecision: "allow" } });
-    expect(fixture.events).toHaveLength(eventCount);
+    expect(fixture.events.slice(eventCount)).toEqual([expect.objectContaining({ type: "tool.called", name: CATALOG_TOOL })]);
   });
 
   // Spike 07 proved Claude Code blocks only when the bridge is unreachable, so an error must never reach the hook as a 500.
@@ -168,6 +168,11 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
 
     expect(fixture.sessions.stop(PROJECT_ID)).toBe(true);
     await waitFor(() => session.pty.snapshot().includes("INTERRUPTED"));
+    // Claude Code fires no Stop hook on an interrupt, so the server reports the turn over itself.
+    await waitFor(() => {
+      const latest = fixture.events.at(-1);
+      return latest?.type === "terminal.state" && latest.state === "ready";
+    });
 
     const sessionDir = join(fixture.runDir, session.sessionId);
     expect(fixture.sessions.kill(PROJECT_ID)).toBe(true);

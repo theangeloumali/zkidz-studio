@@ -5,7 +5,7 @@ import { hookToStudioEvents, SIGN_IN_CREDENTIAL } from "../../src/terminal/hook-
 
 const PROJECT_ID = "0b6f4f0e-7f43-4d8f-9a3c-5c9d7c1f2e11";
 const SESSION_ID = "6f1c2a52-1d0c-4c3e-9a51-2b7f0f6f9f10";
-const context = { projectId: PROJECT_ID, model: "haiku", isCatalogTool: false };
+const context = { projectId: PROJECT_ID, model: "haiku" };
 const base = { session_id: SESSION_ID };
 
 function eventsFor(payload: HookPayload, overrides: Partial<Parameters<typeof hookToStudioEvents>[1]> = {}) {
@@ -23,9 +23,15 @@ describe("hookToStudioEvents", () => {
     ]);
   });
 
-  it("emits nothing for catalog tools, whose handler already reports them", () => {
-    const payload: HookPayload = { ...base, hook_event_name: "PostToolUse", tool_name: "mcp__studio__render_preview", tool_input: {}, tool_response: {} };
-    expect(eventsFor(payload, { isCatalogTool: true })).toEqual([]);
+  // The hooks are mode T's only source of tool rows; studio tool handlers publish none of their own.
+  it("reports a studio tool call and its result, labelled like mode A's rows", () => {
+    const call = { ...base, tool_name: "mcp__studio__project_info", tool_input: {}, tool_use_id: "toolu_9" };
+    expect(eventsFor({ ...call, hook_event_name: "PreToolUse" })).toEqual([
+      { type: "tool.called", projectId: PROJECT_ID, toolUseId: "toolu_9", name: "mcp__studio__project_info", label: "project info", input: {} },
+    ]);
+    expect(eventsFor({ ...call, hook_event_name: "PostToolUse", tool_response: {} })).toEqual([
+      { type: "tool.finished", projectId: PROJECT_ID, toolUseId: "toolu_9", ok: true, summary: "project info finished" },
+    ]);
   });
 
   it("maps PostToolUse to tool.finished", () => {

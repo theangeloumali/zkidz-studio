@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerAgentRoutes } from "../../src/agent/routes.ts";
 import { writeConnection } from "../../src/auth/connection-store.ts";
-import { toHttpError } from "../../src/http/http-error.ts";
+import { errorBody, toHttpError } from "../../src/http/http-error.ts";
 import { registerProjectTerminalRoutes } from "../../src/terminal/project-routes.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, stubReport, waitFor } from "./stub-claude.ts";
 import { createTerminalFixture, type TerminalFixture } from "./terminal-fixture.ts";
@@ -52,7 +52,7 @@ beforeEach(async () => {
   registerProjectTerminalRoutes(app, { database: database.db, studioHome: fixture.studioHome, model: "haiku", sessions: fixture.sessions });
   app.onError((error, c) => {
     const httpError = toHttpError(error);
-    return c.json({ error: httpError.message }, httpError.status);
+    return c.json(errorBody(httpError), httpError.status);
   });
 });
 

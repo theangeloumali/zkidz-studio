@@ -16,7 +16,7 @@ import { registerAgentRoutes } from "../../src/agent/routes.ts";
 import { writeConnection } from "../../src/auth/connection-store.ts";
 import { createSecretStore } from "../../src/auth/secret-store.ts";
 import type { NewStudioEvent } from "../../src/events/event-bus.ts";
-import { toHttpError } from "../../src/http/http-error.ts";
+import { errorBody, toHttpError } from "../../src/http/http-error.ts";
 import { createLogger } from "../../src/logging/logger.ts";
 import { memoryKeyring } from "../auth/memory-keyring.ts";
 import { initMessage, REQUIRED_SKILLS, resultMessage, SDK_SESSION_ID } from "./sdk-fixtures.ts";
@@ -60,7 +60,7 @@ describe("agent routes", () => {
     registerAgentRoutes(server, { database: database.db, manager });
     server.onError((error, c) => {
       const httpError = toHttpError(error);
-      return c.json({ error: httpError.message }, httpError.status);
+      return c.json(errorBody(httpError), httpError.status);
     });
     return server;
   }

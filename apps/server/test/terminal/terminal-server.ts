@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
-import { toHttpError } from "../../src/http/http-error.ts";
+import { errorBody, toHttpError } from "../../src/http/http-error.ts";
 import { allowedHostsFor, createRequestGuard } from "../../src/security/request-guards.ts";
 import { createSessionToken } from "../../src/security/token.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "../../src/security/ws-guard.ts";
@@ -29,7 +29,10 @@ export async function startTerminalServer(
   mountRoutes: (app: Hono, fixture: TerminalFixture) => void = () => undefined,
 ): Promise<TerminalServer> {
   const app = new Hono();
-  app.onError((error, c) => c.json({ error: toHttpError(error).message }, toHttpError(error).status));
+  app.onError((error, c) => {
+    const httpError = toHttpError(error);
+    return c.json(errorBody(httpError), httpError.status);
+  });
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1", websocket: { server: new WebSocketServer({ noServer: true }) } });
   await new Promise((resolve) => server.once("listening", resolve));
   const { port } = server.address() as AddressInfo;

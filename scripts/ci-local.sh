@@ -12,6 +12,13 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 ENGINE_JOBS="${ZKS_CI_JOBS:-6}"
+# A zero or non-numeric count would leave the lane loop waiting forever.
+for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
+  if [[ -n "${!count_var:-}" && ! "${!count_var}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ci-local: $count_var must be a positive whole number, got '${!count_var}'" >&2
+    exit 2
+  fi
+done
 
 release=0
 list=0

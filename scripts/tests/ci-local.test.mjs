@@ -34,6 +34,20 @@ describe("ci-local", () => {
     expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24", ZKS_CI_LANES: "4" })).toBe("4");
   });
 
+  // A zero or non-numeric count would leave the lane loop waiting forever on a run that never starts.
+  it("refuses a lane or job count that is not a positive whole number", () => {
+    for (const [name, value] of [
+      ["ZKS_CI_LANES", "0"],
+      ["ZKS_CI_LANES", "two"],
+      ["ZKS_CI_JOBS", "0"],
+      ["ZKS_CI_JOBS", "-3"],
+    ]) {
+      const outcome = spawnSync("bash", [SCRIPT, "--list-lanes"], { encoding: "utf8", env: { ...process.env, [name]: value } });
+      expect(outcome.status, `${name}=${value}`).toBe(2);
+      expect(outcome.stderr).toContain(name);
+    }
+  });
+
   it("rejects an unknown option", () => {
     const outcome = spawnSync("bash", [SCRIPT, "--fast-please"], { encoding: "utf8" });
     expect(outcome.status).toBe(2);

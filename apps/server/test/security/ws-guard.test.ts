@@ -85,13 +85,27 @@ describe("checkWebSocketUpgrade", () => {
     ["Sec-Fetch-Site cross-site", { "sec-fetch-site": "cross-site" }],
     ["Sec-Fetch-Site same-site", { "sec-fetch-site": "same-site" }],
     ["Sec-Fetch-Site none", { "sec-fetch-site": "none" }],
-    ["missing Sec-Fetch-Site", { "sec-fetch-site": undefined }],
   ])("refuses %s with 403 and leaves the ticket unspent", (_label, headerOverrides) => {
     const tickets = createTicketStore();
     const { ticket } = tickets.issue(SESSION_ID);
     const result = checkUpgrade(upgradeRequest(ticket, headerOverrides), tickets);
     expect(result).toMatchObject({ ok: false, status: 403 });
     expect(tickets.redeem(ticket, SESSION_ID)).toBe(true);
+  });
+
+  // Chrome sends no Sec-Fetch-* headers on a WebSocket handshake (logged from Chrome 155 and 156); Origin is what it always sends.
+  it("accepts a real browser handshake: Host, exact Origin and a fresh ticket, with no Sec-Fetch-Site", () => {
+    const tickets = createTicketStore();
+    const { ticket } = tickets.issue(SESSION_ID);
+    expect(checkUpgrade(upgradeRequest(ticket, { "sec-fetch-site": undefined }), tickets)).toEqual({ ok: true });
+  });
+
+  it("still refuses a handshake with no Sec-Fetch-Site when the Origin is foreign or missing", () => {
+    for (const origin of ["https://evil.example", undefined]) {
+      const tickets = createTicketStore();
+      const { ticket } = tickets.issue(SESSION_ID);
+      expect(checkUpgrade(upgradeRequest(ticket, { "sec-fetch-site": undefined, origin }), tickets)).toMatchObject({ ok: false, status: 403 });
+    }
   });
 
   it("refuses a missing ticket", () => {

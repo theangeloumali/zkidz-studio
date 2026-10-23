@@ -86,12 +86,20 @@ describe("terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(response.status).toBe(403);
   });
 
-  it("refuses an upgrade without a ticket, from another origin, or without same-origin fetch metadata", async () => {
+  it("refuses an upgrade without a ticket, from another origin, or with cross-site fetch metadata", async () => {
     await startServer();
     const session = await openSession();
     await expect(connectSocket(session.sessionId, "not-a-ticket")).rejects.toThrow("upgrade refused 403");
     await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), { origin: FOREIGN_ORIGIN })).rejects.toThrow("upgrade refused 403");
-    await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), { fetchSite: null })).rejects.toThrow("upgrade refused 403");
+    await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), { fetchSite: "cross-site" })).rejects.toThrow("upgrade refused 403");
+  });
+
+  // Chrome's WebSocket handshake carries Host and Origin but no Sec-Fetch-* headers.
+  it("accepts a browser-shaped upgrade that sends no fetch metadata", async () => {
+    await startServer();
+    const session = await openSession();
+    const { socket } = await connectSocket(session.sessionId, await ticketFor(session.sessionId), { fetchSite: null });
+    socket.close();
   });
 
   it("refuses a reused ticket and a ticket issued for another session", async () => {

@@ -66,8 +66,10 @@ export function checkWebSocketUpgrade(request: Request, options: WebSocketUpgrad
 function findUpgradeRejection(request: Request, options: WebSocketUpgradeOptions): string | null {
   if (!isAllowedHost(request.headers.get("host") ?? undefined, options.allowedHosts)) return "host";
   if (request.headers.get("origin") !== options.allowedOrigin) return "origin";
-  // Stricter than HTTP reads: "none" and an absent header are refused, since only the app's own page opens this socket.
-  if (request.headers.get("sec-fetch-site")?.toLowerCase() !== "same-origin") return "fetch-site";
+  // Browsers send no Sec-Fetch-* on a WebSocket handshake, so the exact Origin and the ticket carry the check; a header
+  // that is present must still say same-origin.
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite !== null && fetchSite.toLowerCase() !== "same-origin") return "fetch-site";
   const ticket = new URL(request.url).searchParams.get("ticket");
   if (ticket === null || !options.tickets.redeem(ticket, options.sessionId)) return "ticket";
   return null;

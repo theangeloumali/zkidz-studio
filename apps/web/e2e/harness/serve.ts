@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import type { Cue, CutSpec, StudioEvent } from "@zks/shared";
+import { registerConnectRoutes } from "../../../server/src/auth/routes.ts";
+import { createSecretStore } from "../../../server/src/auth/secret-store.ts";
 import { createCompositionBuilder } from "../../../server/src/preview/composition-builder.ts";
 import { createPreviewOrigin } from "../../../server/src/preview/preview-origin.ts";
 import { createPreviewService } from "../../../server/src/preview/preview-service.ts";
@@ -16,6 +18,7 @@ import { STUDIO_TOOLS_BY_NAME } from "../../../server/src/tools/catalog.ts";
 import type { ToolContext } from "../../../server/src/tools/context.ts";
 import { loadProject } from "../../../server/src/tools/project-files.ts";
 import { readCurrentSpec, writeAgentSpec } from "../../../server/src/tools/spec-store.ts";
+import { memoryKeyring } from "../../../server/test/auth/memory-keyring.ts";
 import { createTestServer } from "../../../server/test/support/test-server.ts";
 import { createToolFixture, insertCameraAsset, insertTranscript, type ToolFixture } from "../../../server/test/tools/tool-fixtures.ts";
 import { CUE_CALL_TEXT, HOSTILE_CUE_TEXT, REPLAY_CALL_COUNT, SEEDED_REMOVALS, STUTTER_WORDS, TIMELINE_ITEM_COUNT, type HarnessProject } from "./script.ts";
@@ -37,6 +40,17 @@ const security = createSecurity({ appPort, previewPort, container: false });
 const server = await createTestServer((base) => ({
   security: { middleware: security.middleware, confinePath: security.confinePath },
   webDistDir: join(import.meta.dirname, "../../dist"),
+  // The editor reads the connection on load; without the route every page logged a 404.
+  agent: {
+    registerRoutes: (app) =>
+      registerConnectRoutes(app, {
+        database: base.database.db,
+        secretStore: createSecretStore({ studioHome: base.studioHome, platform: "linux", keyring: memoryKeyring(), readMounts: () => Promise.resolve("") }),
+        fetch: () => Promise.resolve(new Response("{}", { status: 200 })),
+        logger: base.logger,
+        claudeVersion: null,
+      }),
+  },
   previewService: createPreviewService({
     database: base.database.db,
     studioHome: base.studioHome,

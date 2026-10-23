@@ -73,3 +73,18 @@ export async function insertTranscript(fixture: ToolFixture, mediaAssetId: strin
 export function cutSpecFor(sourceAssetId: string, removals: readonly Record<string, unknown>[] = []) {
   return { schemaVersion: 1, sourceAssetId, durationS: 30, fps: { num: 30000, den: 1001 }, removals };
 }
+
+// What ffprobe reports for the joined source the fake engine writes.
+export const JOINED_SOURCE_PROBE = {
+  formatName: "matroska,webm",
+  kind: "camera" as const,
+  durationS: 30,
+  width: 2160,
+  height: 3840,
+  fps: { num: 30, den: 1 },
+  rotation: 0,
+  isHdr: false,
+  colorTransfer: "bt709",
+  videoCodec: "hevc",
+  audioCodec: "flac",
+};

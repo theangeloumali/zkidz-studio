@@ -1,5 +1,6 @@
 # Created by The Angelo Umali.
 # §7.2: the probe runs the render's own path (decode -> composite -> encode) on 8 testsrc2 frames, not an encode alone.
+import os
 import unittest
 from unittest import mock
 
@@ -36,6 +37,53 @@ class ProbeCommandTests(unittest.TestCase):
         self.assertEqual(encode[encode.index("-vf") + 1], "format=nv12,hwupload")
         self.assertTrue(round_trip[round_trip.index("-filter_complex") + 1].endswith(",format=nv12,hwupload[v]"))
         self.assertEqual(round_trip[round_trip.index("-c:v") + 1], "hevc_vaapi")
+
+
+class LibplaceboProbeTests(unittest.TestCase):
+    def test_libplacebo_picks_its_own_device_so_a_software_one_fails(self):
+        # WSL's only Vulkan device is llvmpipe: handed it by -init_hw_device vulkan, libplacebo runs on the CPU and
+        # passes; picking its own, it refuses it ("Found no suitable device"), as the CUDA-decoded steps did.
+        self.assertEqual(backends.libplacebo_probe_command("ffmpeg"),
+                         [*PREAMBLE, "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=30", "-frames:v", "2",
+                          "-vf", "libplacebo=w=128:h=128:upscaler=ewa_lanczos:format=yuv420p", "-f", "null", "-"])
+
+    def test_a_failed_or_hung_libplacebo_graph_means_no_vulkan(self):
+        with mock.patch.object(backends.subprocess, "run", return_value=mock.Mock(returncode=187)):
+            self.assertFalse(backends.run_libplacebo_probe())
+        with mock.patch.object(backends.subprocess, "run", side_effect=backends.subprocess.TimeoutExpired("ffmpeg", 20)):
+            self.assertFalse(backends.run_libplacebo_probe())
+        with mock.patch.object(backends.subprocess, "run", return_value=mock.Mock(returncode=0)):
+            self.assertTrue(backends.run_libplacebo_probe())
+
+
+NVIDIA_PASSED = [{"backend": name, "encoder": "x", "ok": name in ("nvidia", "cpu")} for name in backends.PROBE_ORDER]
+
+
+def with_libplacebo(found):
+    return [{**attempt, "libplacebo": found} if attempt["backend"] == "nvidia" else attempt for attempt in NVIDIA_PASSED]
+
+
+class LibplaceboSelectTests(unittest.TestCase):
+    def test_nvidia_carries_the_probes_libplacebo_result(self):
+        self.assertTrue(backends.select(with_libplacebo(True)).libplacebo)
+        self.assertFalse(backends.select(NVIDIA_PASSED).libplacebo)  # a cache without the key means no Vulkan
+
+    def test_a_pinned_nvidia_still_reads_the_probes_libplacebo_result(self):
+        for found in (True, False):
+            with mock.patch.dict(os.environ, {"ZKS_BACKEND": "nvidia"}), mock.patch.object(backends, "probe_attempts", return_value=with_libplacebo(found)):
+                self.assertIs(backends.active().libplacebo, found)
+
+    def test_libplacebo_is_probed_only_for_nvidia_and_only_once_it_encodes(self):
+        def run(command, **_):
+            return mock.Mock(returncode=1 if any("libplacebo" in arg for arg in command) else 0)
+
+        with mock.patch.object(backends, "fingerprint", return_value="abc|3.0"), mock.patch.object(backends.subprocess, "run", side_effect=run) as spy:
+            found = backends.probe_attempts(refresh=True)
+        probes = [call.args[0] for call in spy.call_args_list if any("libplacebo" in arg for arg in call.args[0])]
+        self.assertEqual(len(probes), 1)
+        by_name = {attempt["backend"]: attempt for attempt in found}
+        self.assertIs(by_name["nvidia"]["libplacebo"], False)
+        self.assertNotIn("libplacebo", by_name["cpu"])
 
 
 class RunProbeTests(unittest.TestCase):

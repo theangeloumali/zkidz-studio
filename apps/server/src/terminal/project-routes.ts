@@ -1,9 +1,7 @@
 // Created by The Angelo Umali.
 // Opens or reattaches a project's mode T terminal (plan §6.3). The folder and resume id come from the server, never the request.
 import type { StudioDatabase } from "@zks/db";
-import { rules } from "@zks/db/schema";
 import { API_ROUTES } from "@zks/shared";
-import { asc, eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { findResumeSessionId, recordCurrentSession } from "../agent/session-records.ts";
 import { readConnection } from "../auth/connection-store.ts";
@@ -11,39 +9,51 @@ import { projectDir } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
 import { HttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { loadRulesPromptBlock } from "../rules/session-setup.ts";
 import type { TerminalSession, TerminalSessions } from "./terminal-sessions.ts";
 
 const TERMINAL_AUTH_MODES = ["terminal"] as const;
 
-export interface ProjectTerminalRouteDeps {
+export interface ProjectTerminalOpenerDeps {
   readonly database: StudioDatabase;
   readonly studioHome: string;
   readonly model?: string;
   readonly sessions: Pick<TerminalSessions, "open" | "findByProject">;
 }
 
-export function registerProjectTerminalRoutes(app: Hono, deps: ProjectTerminalRouteDeps): void {
-  // Two opens racing in before the first spawn finishes share one PTY.
-  const opening = new Map<string, Promise<TerminalSession>>();
+export interface ProjectTerminalRouteDeps {
+  readonly database: StudioDatabase;
+  /** Shared with the prompt route, so a prompt and the Terminal tab never start two PTYs. */
+  readonly openTerminal: ProjectTerminalOpener;
+}
 
-  const openOnce = (project: ProjectRow): Promise<TerminalSession> => {
+export type ProjectTerminalOpener = (project: ProjectRow) => Promise<TerminalSession>;
+
+/** Reattaches to the project's live terminal or starts one; calls racing in before the first spawn finishes share it. */
+export function createProjectTerminalOpener(deps: ProjectTerminalOpenerDeps): ProjectTerminalOpener {
+  const opening = new Map<string, Promise<TerminalSession>>();
+  return async (project) => {
+    const live = deps.sessions.findByProject(project.id);
+    if (live !== undefined) return live;
     const pending = opening.get(project.id) ?? openSession(deps, project).finally(() => opening.delete(project.id));
     opening.set(project.id, pending);
     return pending;
   };
+}
 
+export function registerProjectTerminalRoutes(app: Hono, deps: ProjectTerminalRouteDeps): void {
   app.post(API_ROUTES.openTerminal.path, async (c) => {
     const project = await findProjectOrThrow(deps.database, c.req.param("projectId") ?? "");
     const connection = await readConnection(deps.database);
     if (connection?.mode !== "terminal") throw new HttpError(409, "Turn on terminal mode before opening the terminal");
-    const session = deps.sessions.findByProject(project.id) ?? (await openOnce(project));
+    const session = await deps.openTerminal(project);
     return c.json({ sessionId: session.sessionId });
   });
 }
 
-async function openSession(deps: ProjectTerminalRouteDeps, project: ProjectRow): Promise<TerminalSession> {
+async function openSession(deps: ProjectTerminalOpenerDeps, project: ProjectRow): Promise<TerminalSession> {
   const { database, model } = deps;
-  const [resumeSessionId, rulesText] = await Promise.all([findResumeSessionId(database, project.id, TERMINAL_AUTH_MODES), readEnabledRules(database)]);
+  const [resumeSessionId, rulesText] = await Promise.all([findResumeSessionId(database, project.id, TERMINAL_AUTH_MODES), loadRulesPromptBlock(database)]);
   const session = await deps.sessions.open({
     projectId: project.id,
     projectDir: projectDir(deps.studioHome, project.slug),
@@ -53,9 +63,4 @@ async function openSession(deps: ProjectTerminalRouteDeps, project: ProjectRow):
   });
   await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode: "terminal" });
   return session;
-}
-
-async function readEnabledRules(database: StudioDatabase): Promise<string> {
-  const rows = await database.select({ text: rules.text }).from(rules).where(eq(rules.enabled, true)).orderBy(asc(rules.createdAt));
-  return rows.map((row) => row.text).join("\n");
 }

@@ -65,6 +65,9 @@ export function AppShell() {
                 </NavLink>
               </>
             )}
+            <NavLink to={ROUTE_PATHS.rules} className={NAV_LINK}>
+              Rules
+            </NavLink>
             <NavLink to={ROUTE_PATHS.setup} className={NAV_LINK}>
               Setup
             </NavLink>

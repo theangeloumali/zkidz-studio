@@ -7,10 +7,12 @@ import type { ToolName } from "@zks/shared/node";
 import { createContext, resolveZksHome } from "./context.ts";
 import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
+import { runScrubCheck } from "./commands/scrub-check.ts";
 import { runSetup } from "./setup.ts";
 import { pinnedToolPath } from "./tools.ts";
 
-const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name> | zks tools path <tool>";
+const USAGE =
+  "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name> | zks tools path <tool> | zks scrub-check <path>...";
 const EXIT_USAGE = 2;
 
 async function main(argv: string[]): Promise<number> {
@@ -33,6 +35,8 @@ async function main(argv: string[]): Promise<number> {
       return runModels(context, rest, flags.has("--json"));
     case "tools":
       return printToolPath(context, rest);
+    case "scrub-check":
+      return runScrubCheck(rest, context.home);
     default:
       console.error(USAGE);
       return EXIT_USAGE;

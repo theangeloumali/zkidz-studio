@@ -51,6 +51,8 @@ export interface SessionRecord extends TerminalSession {
   readonly files: SessionFiles;
   hasStarted: boolean;
   wasKilled: boolean;
+  /** Prompts sent before SessionStart; they die with the record. */
+  readonly queuedPrompts: string[];
   sessionStartTimer?: NodeJS.Timeout;
 }
 
@@ -83,7 +85,7 @@ export async function launchSession(deps: TerminalSessionsDeps, request: OpenTer
       cwd: request.projectDir,
       env: deps.buildEnv({ ...tokens, mcpUrl: files.mcpUrl }),
     });
-    return { ...request, ...tokens, sessionId, pty, files, hasStarted: false, wasKilled: false };
+    return { ...request, ...tokens, sessionId, pty, files, hasStarted: false, wasKilled: false, queuedPrompts: [] };
   } catch (error) {
     await removeSessionFiles(files);
     throw error;

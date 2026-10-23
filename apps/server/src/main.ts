@@ -17,6 +17,8 @@ import { EventBus } from "./events/event-bus.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
 import { DEFAULT_UPLOAD_LIMITS, removeStaleParts } from "./media-io/store.ts";
+import { createDemoRunner } from "./onboarding/demo-runner.ts";
+import { createOnboardingServices } from "./onboarding/onboarding-services.ts";
 import { createSecurity } from "./security/index.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
@@ -26,6 +28,7 @@ const WEB_DIST_DIR = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
 const ENGINE_DIR = fileURLToPath(new URL("../../../packages/engine", import.meta.url));
 const CLI_ENTRY = fileURLToPath(new URL("../../../packages/cli/src/main.ts", import.meta.url));
+const DEMO_SCRIPT = fileURLToPath(new URL("../../../examples/demo/make_demo.py", import.meta.url));
 const PACKAGE_JSON_URL = new URL("../package.json", import.meta.url);
 /** Plan §6.3: a terminal frame is keystrokes or a resize, never bulk data. */
 const WS_MAX_PAYLOAD_BYTES = 256 * 1024;
@@ -67,7 +70,19 @@ async function main(): Promise<void> {
     claudeVersion: await readClaudeVersion(claudePath),
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
     query,
+    ffprobePath: config.ffprobePath,
     engine: createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: config.studioHome }),
+  });
+
+  const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome });
+  const onboarding = createOnboardingServices({
+    database: database.db,
+    studioHome: config.studioHome,
+    eventBus,
+    jobRunner,
+    demoRunner,
+    ffprobePath: config.ffprobePath,
+    uploadLimits: DEFAULT_UPLOAD_LIMITS,
   });
 
   const app = createApp({
@@ -81,6 +96,7 @@ async function main(): Promise<void> {
     logger,
     agent,
     runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
+    onboarding,
   });
   const websocket = { server: new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES }) };
   const server = serve({ fetch: app.fetch, hostname: bindHost, port: config.port, websocket }, (address) => {

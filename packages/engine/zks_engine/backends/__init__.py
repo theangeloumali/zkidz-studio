@@ -1,6 +1,7 @@
 # Created by The Angelo Umali.
 # Render backends (plan §7): the GPU probe's result picks one profile, which every render stage decodes and encodes with.
 # A backend counts only after it encodes frames; results are cached per ffmpeg build and driver version.
+import dataclasses
 import hashlib
 import json
 import os
@@ -18,8 +19,9 @@ PROBE_ORDER = ("nvidia", "videotoolbox", "qsv", "amf", "vaapi", "cpu")
 BACKENDS = {module.BACKEND.name: module.BACKEND for module in (nvidia, videotoolbox, qsv, amf, vaapi, cpu)}
 PROBE_TIMEOUT_S = 20
 PROBE_FRAMES = 8
-PROBE_REVISION = "round-trip-1"  # part of the cache key, so a cached pass from an older, weaker probe runs again
+PROBE_REVISION = "libplacebo-2"  # part of the cache key, so a cached pass from an older, weaker probe runs again
 PROBE_SIZE = (320, 240)
+LIBPLACEBO_USERS = {"nvidia"}  # join_sources and showcase run libplacebo only on these
 PROBE_EDL = {"fps_num": 30, "fps_den": 1, "segments": [{"in": 0, "out": PROBE_FRAMES, "target": 0, "zoom": 1.0}],
              "punch_crop": "crop=w=296:h=222"}
 
@@ -28,10 +30,16 @@ def get(name):
     return BACKENDS[name]
 
 
+def with_probed_libplacebo(backend, attempts):
+    """The backend as the probe found it: libplacebo only where its graph ran (a cache without the key never ran it)."""
+    found = any(attempt.get("libplacebo") for attempt in attempts if attempt["backend"] == backend.name)
+    return dataclasses.replace(backend, libplacebo=found)
+
+
 def select(attempts):
     """The first backend, in probe order, whose test encode passed; cpu when none did."""
     passed = {attempt["backend"] for attempt in attempts if attempt.get("ok")}
-    return get(next((name for name in PROBE_ORDER if name in passed), "cpu"))
+    return with_probed_libplacebo(get(next((name for name in PROBE_ORDER if name in passed), "cpu")), attempts)
 
 
 def from_doctor(check):
@@ -51,6 +59,20 @@ def probe_commands(backend, ffmpeg, sample):
                   "-filter_complex", graph.composite(backend, PROBE_EDL, size=PROBE_SIZE), "-map", "[v]",
                   "-frames:v", str(PROBE_FRAMES), "-c:v", backend.probe_encoder, "-f", "null", "-"]
     return encode, round_trip
+
+
+def libplacebo_probe_command(ffmpeg):
+    """join_sources' upscaler on a tiny frame. No -init_hw_device: handed WSL's llvmpipe it would pass on the CPU, while
+    choosing its own device libplacebo refuses software ones, as the CUDA-decoded steps do."""
+    return [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=30",
+            "-frames:v", "2", "-vf", "libplacebo=w=128:h=128:upscaler=ewa_lanczos:format=yuv420p", "-f", "null", "-"]
+
+
+def run_libplacebo_probe():
+    try:
+        return subprocess.run(libplacebo_probe_command(ffio.ffmpeg_bin()), capture_output=True, timeout=PROBE_TIMEOUT_S).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def fingerprint():
@@ -87,6 +109,9 @@ def probe_attempts(refresh=False):
     if not refresh and key in known:
         return known[key]
     attempts = [{"backend": name, "encoder": get(name).probe_encoder, "ok": run_probe(get(name))} for name in PROBE_ORDER]
+    for attempt in attempts:
+        if attempt["backend"] in LIBPLACEBO_USERS and attempt["ok"]:
+            attempt["libplacebo"] = run_libplacebo_probe()
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({key: attempts}, indent=2), encoding="utf-8")
     return attempts
@@ -97,7 +122,7 @@ def active():
     if pin := os.environ.get("ZKS_BACKEND"):
         if pin not in BACKENDS:
             sys.exit(f"ZKS_BACKEND={pin} is not one of {', '.join(PROBE_ORDER)}")
-        return get(pin)
+        return with_probed_libplacebo(get(pin), probe_attempts()) if pin in LIBPLACEBO_USERS else get(pin)
     return select(probe_attempts())
 
 

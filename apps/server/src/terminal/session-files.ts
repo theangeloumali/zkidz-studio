@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-// Per-session --settings, --mcp-config and rules files for mode T (plan §6.3). They hold no secret: tokens stay in the child env.
+// Per-session --settings, --mcp-config and rules files for mode T (plan §6.3) and claude -p (§6.7). They hold no secret: tokens stay in the child env.
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -36,30 +36,29 @@ export interface SessionFiles {
   readonly hookUrl: string;
 }
 
-export type PrintSessionFilesRequest = Omit<SessionFilesRequest, "hookRelayPath" | "rulesText">;
-export type PrintSessionFiles = Omit<SessionFiles, "rulesPath">;
+export type PrintSessionFilesRequest = Omit<SessionFilesRequest, "hookRelayPath">;
 
 export async function writeSessionFiles(request: SessionFilesRequest): Promise<SessionFiles> {
   for (const commandPath of [request.nodePath, request.hookRelayPath]) {
     if (commandPath.includes('"')) throw new Error("A hook command path must not contain a quote.");
   }
   const files = await createSessionDir(request);
-  const rulesPath = join(files.dir, "rules.md");
   await Promise.all([
     writeOwnerOnly(files.settingsPath, JSON.stringify(buildHookSettings(request, files.hookUrl), null, 2)),
     writeOwnerOnly(files.mcpConfigPath, JSON.stringify(buildMcpConfig(request), null, 2)),
-    writeOwnerOnly(rulesPath, request.rulesText),
+    writeOwnerOnly(files.rulesPath, request.rulesText),
   ]);
-  return { ...files, rulesPath };
+  return files;
 }
 
 /** The `claude -p` run (plan §6.7): the same MCP twin, and one hook, the deny-only Read backstop of §6.10. */
-export async function writePrintSessionFiles(request: PrintSessionFilesRequest): Promise<PrintSessionFiles> {
+export async function writePrintSessionFiles(request: PrintSessionFilesRequest): Promise<SessionFiles> {
   const files = await createSessionDir(request);
   const settings = { hooks: { PreToolUse: [{ matcher: "Read", hooks: [{ ...httpHook(files.hookUrl), onFailure: "block" }] }] } };
   await Promise.all([
     writeOwnerOnly(files.settingsPath, JSON.stringify(settings, null, 2)),
     writeOwnerOnly(files.mcpConfigPath, JSON.stringify(buildMcpConfig(request), null, 2)),
+    writeOwnerOnly(files.rulesPath, request.rulesText),
   ]);
   return files;
 }
@@ -72,7 +71,7 @@ export async function removeSessionFiles(files: Pick<SessionFiles, "dir">): Prom
   await rm(files.dir, { recursive: true, force: true });
 }
 
-async function createSessionDir(request: PrintSessionFilesRequest): Promise<PrintSessionFiles> {
+async function createSessionDir(request: Pick<SessionFilesRequest, "runDir" | "sessionId" | "appPort">): Promise<SessionFiles> {
   const sessionId = IdSchema.parse(request.sessionId);
   // One folder per launch: a reopen resumes the same session id while the killed launch's cleanup may still be running.
   const dir = join(request.runDir, `${sessionId}.${randomUUID()}`);
@@ -81,6 +80,7 @@ async function createSessionDir(request: PrintSessionFilesRequest): Promise<Prin
     dir,
     settingsPath: join(dir, "settings.json"),
     mcpConfigPath: join(dir, "mcp.json"),
+    rulesPath: join(dir, "rules.md"),
     mcpUrl: studioMcpUrl(request.appPort, sessionId),
     hookUrl: `http://${LOOPBACK_HOST}:${request.appPort}${API_ROUTES.terminalHooks.path.replace(":sessionId", sessionId)}`,
   };

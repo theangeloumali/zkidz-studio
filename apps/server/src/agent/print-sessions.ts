@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // `claude -p` runs (plan §6.7): each gets its own MCP twin session and hook token, valid only while the child runs.
 import { randomUUID } from "node:crypto";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { HookPayload, HookResponse } from "@zks/shared";
 import { MCP_SERVER_PATH, removeSessionFiles, writePrintSessionFiles } from "../terminal/session-files.ts";
 import { answerRead, type ReadRoots } from "./confine-reads.ts";
@@ -61,6 +61,7 @@ export function createPrintSessions(deps: PrintSessionsDeps): PrintSessions {
         appPort: deps.appPort,
         nodePath: process.execPath,
         mcpServerPath: MCP_SERVER_PATH,
+        rulesText: appendedSystemPrompt(options.systemPrompt) ?? "",
       });
       records.set(sessionId, record);
       try {
@@ -109,4 +110,8 @@ export function createPrintSessions(deps: PrintSessionsDeps): PrintSessions {
       return answerRead(record.roots, payload.tool_name, payload.tool_input);
     },
   };
+}
+
+function appendedSystemPrompt(systemPrompt: Options["systemPrompt"]): string | undefined {
+  return typeof systemPrompt === "object" && !Array.isArray(systemPrompt) && systemPrompt.type === "preset" ? systemPrompt.append : undefined;
 }

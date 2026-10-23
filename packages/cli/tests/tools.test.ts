@@ -1,14 +1,20 @@
 // Created by The Angelo Umali.
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ZksContext } from "../src/context.ts";
 import { loadToolsLock, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
 import { chromeDownloadUrl, installTool, tarExecutable, toolExecutablePath } from "../src/tools.ts";
 
+const homes: string[] = [];
+afterEach(() => {
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
+});
+
 function contextFor(platform: PlatformKey): ZksContext {
   const home = mkdtempSync(path.join(tmpdir(), "zks-tools-"));
+  homes.push(home);
   return { home, toolsDir: path.join(home, "tools"), modelsDir: path.join(home, "models"), platform, lock: loadToolsLock() };
 }
 

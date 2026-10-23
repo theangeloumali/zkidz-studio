@@ -26,6 +26,9 @@ CUDA_UPRIGHT = {0: "", 270: "transpose_cuda=dir=clock", 90: "transpose_cuda=dir=
 # TV luma has 20 codes over one pass's ~18; chroma and blur.py's second pass measured 0 wraps on this footage (QC r7).
 CUDA_TV_RANGE = "colorspace_cuda=range=tv"
 CUDA_LANCZOS = "scale_cuda={}:{}:interp_algo=lanczos"  # only ever after CUDA_TV_RANGE
+# One CUDA context for NVDEC, hwupload and the _cuda filters: a second (hwupload_cuda) context raced overlay_cuda (QC r5).
+CUDA_DEVICE = ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu"]
+CUDA_HWACCEL = ["-hwaccel", "cuda", "-hwaccel_device", "cu"]
 
 
 def work_dir():

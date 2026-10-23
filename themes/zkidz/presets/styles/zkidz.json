@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "zkidz",
+  "name": "ZKidz",
+  "description": "Gold hook title, steel cards, captions on a dark plate, light SFX. The default.",
+  "theme": "zkidz",
+  "cardTiers": ["core", "accent"],
+  "sfx": "light",
+  "intro": true,
+  "guidance": "Open on a hookTitle with intro: true: a kicker, one white line and one gold line. Caption every spoken line on the plate at bottom 1750. Add about one card per 10 seconds, from the core and accent tiers only, each on the word it echoes. Sound effects stay light and land on cards, never on every cut.",
+  "sample": [
+    { "kind": "hookTitle", "at": 0.2, "end": 3.2, "kicker": "NEW SETUP", "lines": ["I let AI", "edit this"], "accentLine": 1 },
+    { "kind": "caption", "at": 0.4, "end": 4.8, "text": "Captions at the bottom.", "bottom": 1750 }
+  ]
+}

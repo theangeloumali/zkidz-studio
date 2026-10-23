@@ -7,6 +7,8 @@ import { EditorRoute } from "./routes/editor.tsx";
 import { HomeRoute } from "./routes/home.tsx";
 import { RenderRoute } from "./routes/render.tsx";
 import { SetupRoute } from "./routes/setup.tsx";
+import { StyleRoute } from "./onboarding/style-route.tsx";
+import { RulesRoute } from "./rules/rules-route.tsx";
 
 // The SSE stream invalidates what changes, so polling-style refetches would only duplicate it.
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } } });
@@ -19,6 +21,8 @@ const router = createBrowserRouter([
       { path: ROUTE_PATHS.setup, element: <SetupRoute /> },
       { path: ROUTE_PATHS.editor, element: <EditorRoute /> },
       { path: ROUTE_PATHS.render, element: <RenderRoute /> },
+      { path: ROUTE_PATHS.rules, element: <RulesRoute /> },
+      { path: ROUTE_PATHS.style, element: <StyleRoute /> },
     ],
   },
 ]);

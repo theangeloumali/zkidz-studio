@@ -4,7 +4,8 @@
 # Usage (from the work dir): python -m zks_engine.showcase v11 ../raw.mp4   (reads inserts/v11.json, writes sources/v11.mkv)
 #   inserts/vN.json = [{"at": 119.3, "end": 134.2, "src": "media/deliverables/07-.../07-...-4k.mp4", "src_at": 1.0}]  (seconds; src repo-relative)
 #   A wider-than-tall file plays in the landscape panel ("panel" overrides). An HDR raw is tone-mapped like a joined clip.
-#   The panel is libplacebo (a Vulkan device) on NVIDIA only; other hosts may have no Vulkan, so they round it with CPU filters.
+#   NVIDIA rounds the panel with libplacebo when the probe found a Vulkan GPU, else with scale_cuda and overlay_cuda (WSL);
+#   other hosts may have no Vulkan, so they round it with CPU filters.
 import json
 import shutil
 import subprocess
@@ -12,12 +13,12 @@ import sys
 
 from . import backends, ffio
 from .backends.graph import BT709_TV, restamp
-from .join_sources import audio_command, gpu_frames, piece_command, probe, run_all
-from .pipeline import (CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, project_input, rotation_of, split_orientation,
+from .join_sources import NVDEC_CODECS, audio_command, cuda_route, gpu_frames, piece_command, probe, run_all
+from .pipeline import (CUDA_DEVICE, CUDA_HWACCEL, CUDA_LANCZOS, CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, project_input, rotation_of, split_orientation,
                        upright_dims)
 from .slots import slot
 from .specs.paths import video_id
-from .render_final import BT709_TAGS, count_frames, frame_times
+from .render_final import BT709_TAGS, GPU_SCALE, count_frames, frame_times
 
 SIZE = (2160, 3840)
 # x, y, w, h. Portrait: 1080-space x 253-827, y 380-1400, under the label chip at y ~300. Landscape: 1080-space y 500-1076,
@@ -28,6 +29,11 @@ BASE_PIECE_FRAMES = 1800
 FILL = ("libplacebo=w=270:h=480:downscaler=mitchell:format=yuv420p,libplacebo=w=36:h=64:downscaler=mitchell:format=yuv420p,"
         f"libplacebo=w={SIZE[0]}:h={SIZE[1]}:upscaler=bicubic:brightness=-0.25:saturation=0.7:format=yuv420p")
 CPU_FILL = f"scale=270:480:flags=bicubic,scale=36:64:flags=bicubic,scale={SIZE[0]}:{SIZE[1]}:flags=bicubic,eq=brightness=-0.25:saturation=0.7"
+TO_CUDA = f"format=yuv420p,hwupload,{CUDA_TV_RANGE}"
+# FILL on CUDA; eq is per pixel, so grading the 36x64 step on the CPU costs nothing.
+CUDA_FILL = ("scale_cuda=270:480:interp_algo=bicubic,scale_cuda=36:64:interp_algo=bicubic,hwdownload,format=yuv420p,eq=brightness=-0.25:saturation=0.7,"
+             f"hwupload,scale_cuda={SIZE[0]}:{SIZE[1]}:interp_algo=bicubic:format=yuv420p,{BT709_TV}")
+STILL_TO_YUV = "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p"  # same size; format= alone would use BT.601
 
 
 def grid(fps):
@@ -53,11 +59,12 @@ def base_run(first, last):
 
 
 def base_command(clip, first, count, out, backend):
-    """Upright TV-range frames straight from NVDEC to NVENC; seeks between real frame times like render_final."""
+    """Upright TV-range 4K frames straight from NVDEC to NVENC (a 1080 raw is scaled on CUDA to match the inserts);
+    seeks between real frame times like render_final."""
     times = frame_times(clip.path)
     seek = (times[first - 1] + times[first]) / 2 if first else 0.0
     turn, _ = split_orientation(CUDA_UPRIGHT[clip.rotation])
-    graph = chain(turn, CUDA_TV_RANGE, BT709_TV, grid(clip.fps))
+    graph = chain(turn, CUDA_TV_RANGE, GPU_SCALE.format(*SIZE), grid(clip.fps))
     return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *decode_args(True), "-ss", f"{seek:.6f}", *ffio.user_input_args(clip.path),
             "-vf", graph, "-frames:v", str(count), "-r", f"{clip.fps[0]}/{clip.fps[1]}", "-fps_mode", "cfr", *backend.mezzanine, "-an", str(out)]
 
@@ -72,14 +79,28 @@ def panel_passes(box):
     return rounded, compose
 
 
-def cpu_panel(box, fps):
+def rounded_mask(box, fps):
     """libplacebo's corner_rounding=0.1 as a mask drawn once and looped: geq on every 4K frame would dominate the encode."""
-    x, y, w, h = box
+    _, _, w, h = box
     radius = round(0.1 * min(w, h) / 2)
     outside = f"hypot(max(max({radius}-X,X-(W-1-{radius})),0),max(max({radius}-Y,Y-(H-1-{radius})),0))"
-    mask = f"color=c=black:s={w}x{h}:r={fps[0]}/{fps[1]}:d={fps[1] / fps[0]:.6f},format=gray,geq=lum='255*lte({outside},{radius})',loop=loop=-1:size=1"
-    return (f"[b]scale={w}:{h}:flags=bicubic[pv];{mask},{grid(fps)}[mask];[pv][mask]alphamerge[panel];"
+    return f"color=c=black:s={w}x{h}:r={fps[0]}/{fps[1]}:d={fps[1] / fps[0]:.6f},format=gray,geq=lum='255*lte({outside},{radius})',loop=loop=-1:size=1,{grid(fps)}"
+
+
+def cpu_panel(box, fps):
+    x, y, w, h = box
+    return (f"[b]scale={w}:{h}:flags=bicubic[pv];{rounded_mask(box, fps)}[mask];[pv][mask]alphamerge[panel];"
             f"[fill][panel]overlay={x}:{y},format=yuv420p,{BT709_TV}")
+
+
+def cuda_panel(box, fps):
+    """Every scale and the blend on CUDA; the alpha merge is a plane copy. overlay_cuda pads a scale_cuda frame's width
+    to 2176, so the composite downloads and crops (no pixels move) for NVENC."""
+    x, y, w, h = box
+    return (f"[a]{TO_CUDA},{CUDA_FILL}[fill];"
+            f"[b]{TO_CUDA},{CUDA_LANCZOS.format(w, h)}:format=yuv420p,hwdownload,format=yuv420p[pv];{rounded_mask(box, fps)}[mask];"
+            f"[pv][mask]alphamerge,format=yuva420p,hwupload,{BT709_TV}[panel];"
+            f"[fill][panel]overlay_cuda=x={x}:y={y},hwdownload,format=yuv420p,crop={SIZE[0]}:{SIZE[1]}:0:0,{BT709_TV}")
 
 
 def panel_for(size):
@@ -91,7 +112,7 @@ def panel_for(size):
 def base_piece(clip, first, count, out, backend):
     """HDR frames need join_sources' tone-map; the CUDA-only seek path would leave HLG washed out. A half turn is a CPU
     filter, so it takes join_sources' piece too."""
-    if clip.hdr or clip.rotation == 180 or not gpu_frames(backend, clip.rotation):
+    if clip.hdr or clip.rotation == 180 or not gpu_frames(backend, clip.rotation, clip.nvdec):
         return piece_command(clip, first, count, out, backend)
     return base_command(clip, first, count, out, backend)
 
@@ -103,32 +124,38 @@ def insert_command(insert, first, count, out, backend, fps):
     box = PANELS[insert.get("panel") or panel_for(upright_dims(stream))]
     if src.lower().endswith(".png"):
         # Bounded like every looping input (gates.check_looping_inputs); -frames:v below ends the piece on its count.
-        source, decode = ["-loop", "1", "-framerate", f"{fps[0]}/{fps[1]}", "-t", f"{count * fps[1] / fps[0]:.6f}", *ffio.user_input_args(src)], ""
+        source = ["-loop", "1", "-framerate", f"{fps[0]}/{fps[1]}", "-t", f"{count * fps[1] / fps[0]:.6f}", *ffio.user_input_args(src)]
+        decode = f"{STILL_TO_YUV}," if cuda_route(backend) else ""
     else:
         seek = insert["src_at"] + first * fps[1] / fps[0] - insert["at"]
         rotation = rotation_of(stream) % 360
-        if gpu_frames(backend, rotation):
+        if gpu_frames(backend, rotation, stream.get("codec_name") in NVDEC_CODECS):
             on_gpu, on_cpu = split_orientation(CUDA_UPRIGHT[rotation])
             depth = "p010le" if "10" in stream.get("pix_fmt", "") else "nv12"  # hwdownload cannot convert bit depth
-            hardware, decode = decode_args(True), chain(on_gpu, f"hwdownload,format={depth}", on_cpu) + ","
+            hardware = [*CUDA_HWACCEL, "-hwaccel_output_format", "cuda"] if cuda_route(backend) else decode_args(True)
+            decode = chain(on_gpu, f"hwdownload,format={depth}", on_cpu) + ","
         else:
-            hardware, decode = [*backend.device, *backend.decode], ""  # system frames, autorotated
+            hardware, decode = CUDA_HWACCEL if cuda_route(backend) else [*backend.device, *backend.decode], ""  # system frames, autorotated
         source = [*hardware, "-ss", f"{seek:.4f}", *ffio.user_input_args(src)]
-    if backend.name == "nvidia":
+    if cuda_route(backend):
+        devices, panel = CUDA_DEVICE, cuda_panel(box, fps)
+    elif backend.name == "nvidia":
         rounded, compose = panel_passes(box)
-        vulkan, panel = ["-init_hw_device", "vulkan"], f"[a]{FILL}[fill];[b]{rounded}[panel];[fill][panel]{compose}"
+        devices, panel = ["-init_hw_device", "vulkan"], f"[a]{FILL}[fill];[b]{rounded}[panel];[fill][panel]{compose}"
     else:
-        vulkan, panel = [], f"[a]{CPU_FILL}[fill];{cpu_panel(box, fps)}"
+        devices, panel = [], f"[a]{CPU_FILL}[fill];{cpu_panel(box, fps)}"
     graph = f"[0:v]{decode}{grid(fps)},split[a][b];{panel}{backend.upload}[v]"
-    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *vulkan, *source, "-filter_complex", graph,
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *devices, *source, "-filter_complex", graph,
             "-map", "[v]", "-frames:v", str(count), "-r", f"{fps[0]}/{fps[1]}", "-fps_mode", "cfr", *backend.mezzanine, "-an", str(out)]
 
 
-def main(video, raw):
+def main(video, raw, inserts=None):
+    """`inserts` in place of reading inserts/<video>.json (the CLI hands them in, translated from the server's file)."""
     clip = probe(raw)
     backend = backends.active()
     jobs = backends.render_jobs(backend)
-    inserts = json.loads((WORK / "inserts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    if inserts is None:
+        inserts = json.loads((WORK / "inserts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
     target = WORK / "sources" / f"{video}.mkv"
     work = target.with_name(f"{video}-pieces")
     shutil.rmtree(work, ignore_errors=True)
@@ -154,6 +181,7 @@ def main(video, raw):
     assert_upright(target, SIZE)
     shutil.rmtree(work)
     print(f"wrote {target} ({clip.frames} frames)")
+    return clip
 
 
 if __name__ == "__main__":

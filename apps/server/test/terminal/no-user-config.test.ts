@@ -11,7 +11,7 @@ import { registerAgentRoutes } from "../../src/agent/routes.ts";
 import { registerConnectRoutes } from "../../src/auth/routes.ts";
 import { createSecretStore } from "../../src/auth/secret-store.ts";
 import { createLogger } from "../../src/logging/logger.ts";
-import { registerProjectTerminalRoutes } from "../../src/terminal/project-routes.ts";
+import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "../../src/terminal/project-routes.ts";
 import { memoryKeyring } from "../auth/memory-keyring.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, waitFor } from "./stub-claude.ts";
 import { startTerminalServer, type TerminalServer } from "./terminal-server.ts";
@@ -59,8 +59,14 @@ beforeAll(async () => {
       claudeVersion: "2.1.300",
     });
     const sdkManager = { submit: () => Promise.resolve(), stop: () => Promise.resolve(), kill: () => Promise.resolve(), decide: () => false };
-    registerAgentRoutes(app, { database: database.db, manager: sdkManager, terminal: fixture.sessions });
-    registerProjectTerminalRoutes(app, { database: database.db, studioHome: fixture.studioHome, model: "haiku", sessions: fixture.sessions });
+    const openProjectTerminal = createProjectTerminalOpener({
+      database: database.db,
+      studioHome: fixture.studioHome,
+      model: "haiku",
+      sessions: fixture.sessions,
+    });
+    registerAgentRoutes(app, { database: database.db, manager: sdkManager, terminal: { sessions: fixture.sessions, open: openProjectTerminal } });
+    registerProjectTerminalRoutes(app, { database: database.db, openTerminal: openProjectTerminal });
   });
   const [project] = await database.db.insert(projects).values({ slug: "demo", title: "Demo" }).returning();
   projectId = project?.id ?? "";

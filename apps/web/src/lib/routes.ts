@@ -4,6 +4,8 @@ export const ROUTE_PATHS = {
   setup: "/setup",
   editor: "/p/:projectId",
   render: "/p/:projectId/render",
+  rules: "/rules",
+  style: "/setup/style",
 } as const;
 
 export function editorPath(projectId: string): string {

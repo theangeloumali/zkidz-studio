@@ -3,13 +3,14 @@ import { CircleX } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ExternalLink } from "../components/external-link.tsx";
+import { INLINE_LINK_CLASS } from "../components/link-class.ts";
 import { CLAUDE_LINKS } from "../copy/claude.ts";
 import type { EventOf } from "./feed-notes.ts";
 
 type ErrorKind = EventOf<"session.error">["kind"];
 
 const SETUP_LINK = (
-  <Link to="/setup" className="font-semibold text-accent underline underline-offset-2 hover:text-accent-strong">
+  <Link to="/setup" className={INLINE_LINK_CLASS}>
     Re-enter key
   </Link>
 );
@@ -28,7 +29,7 @@ const ERROR_VIEW: Record<ErrorKind, { title: string; fix: ReactNode }> = {
   credential_mismatch: {
     title: "Claude is signed in differently from your setup",
     fix: (
-      <Link to="/setup" className="font-semibold text-accent underline underline-offset-2 hover:text-accent-strong">
+      <Link to="/setup" className={INLINE_LINK_CLASS}>
         Check your connection
       </Link>
     ),

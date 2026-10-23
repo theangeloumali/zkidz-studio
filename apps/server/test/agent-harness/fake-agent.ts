@@ -3,7 +3,15 @@
 import { readFileSync } from "node:fs";
 import { AbortError, type Options, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
-export const AGENT_TRANSCRIPT_NAMES = ["init-text-result", "studio-tools", "permission-gate", "auth-failed", "rate-limit", "init-foreign-mcp"] as const;
+export const AGENT_TRANSCRIPT_NAMES = [
+  "init-text-result",
+  "studio-tools",
+  "permission-gate",
+  "auth-failed",
+  "rate-limit",
+  "init-foreign-mcp",
+  "edit-director-openings",
+] as const;
 export type AgentTranscriptName = (typeof AGENT_TRANSCRIPT_NAMES)[number];
 
 const AGENT_FIXTURE_DIR = new URL("../../../../tests/fixtures/agent/", import.meta.url);

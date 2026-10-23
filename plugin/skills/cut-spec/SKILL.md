@@ -47,4 +47,4 @@ field you want to keep.
 - The opening line is the hook you agreed with the user.
 - Then call `validate_spec` and fix whatever it reports.
 
-Hands to next: a stored `CutSpec` version → cue sheet and captions (later skills).
+Hands to next: a stored `CutSpec` version → `style-rules`, then `cues` (the cue sheet) and `captions`.

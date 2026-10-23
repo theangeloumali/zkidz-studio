@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // The Phase 2 graph (plan §6): one broker, the SDK manager, mode T sessions and the studio tools, mounted by createApp.
 import { join } from "node:path";
+import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
 import type { Hono } from "hono";
 import { DecisionBroker } from "./agent/decisions.ts";
@@ -17,10 +18,12 @@ import type { SecretStore } from "./auth/secret-store.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
 import type { Logger } from "./logging/logger.ts";
+import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
+import { loadSessionSetup } from "./rules/session-setup.ts";
 import { allowedHostsFor } from "./security/request-guards.ts";
 import { createSessionToken, tokensMatch } from "./security/token.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts";
-import { registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
+import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
 import { createPtyHost } from "./terminal/pty-host.ts";
 import { registerTerminalRoutes } from "./terminal/routes.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
@@ -29,8 +32,8 @@ import type { ToolContext } from "./tools/context.ts";
 import { createStudioMcpServer, registerEngineJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
 const REQUIRED_SKILLS = ["zkidz-studio:edit-director", "zkidz-studio:cut-spec"];
-// ASSUMPTION: defaults until §6b's per-project settings land. No model: both the SDK and the terminal use the account's default.
-const SESSION_LIMITS: SessionLimits = { maxTurns: 40, maxBudgetUsd: 5 };
+// No model: both the SDK and the terminal use the account's default.
+const SESSION_LIMITS: SessionLimits = { maxTurns: DEFAULT_PROJECT_SETTINGS.maxTurns, maxBudgetUsd: DEFAULT_PROJECT_SETTINGS.budgetUsd };
 /** No claude on PATH: pty-host still needs an absolute path, and this one makes every open fail as claude_missing. */
 const MISSING_CLAUDE_NAME = "claude-not-installed";
 
@@ -52,6 +55,7 @@ export interface AgentServicesDeps {
   /** Without the SDK's bundled binary, sessions run through `claude -p` (plan §6.7). */
   readonly hasSdkBinary?: () => boolean;
   readonly engine: EngineRunner;
+  readonly ffprobePath: string;
   readonly fetch?: FetchFunction;
 }
 
@@ -88,6 +92,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     query: printSessions?.query ?? deps.query,
     broker,
     limits: SESSION_LIMITS,
+    loadSessionSetup: (project) => loadSessionSetup(deps.database, project.id),
     studioMcpServer: printSessions === undefined ? (project) => createStudioMcpServer(toolContextFor(project.id)) : null,
     cancelProjectJobs,
   });
@@ -105,7 +110,12 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     cancelProjectJobs,
     logger: deps.logger,
   });
-  registerEngineJobHandlers(deps.jobRunner, { db: deps.database, studioHome: deps.studioHome, engine: deps.engine });
+  registerEngineJobHandlers(deps.jobRunner, {
+    db: deps.database,
+    studioHome: deps.studioHome,
+    engine: deps.engine,
+    probeSource: (filePath) => probeMedia(deps.ffprobePath, filePath),
+  });
 
   const registerRoutes = (app: Hono) => {
     registerConnectRoutes(app, {
@@ -116,8 +126,14 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       claudeVersion: deps.claudeVersion,
       onConnectionChanged: () => manager.closeAll(),
     });
-    registerAgentRoutes(app, { database: deps.database, manager, terminal: terminalSessions });
-    registerProjectTerminalRoutes(app, { database: deps.database, studioHome: deps.studioHome, model: SESSION_LIMITS.model, sessions: terminalSessions });
+    const openTerminal = createProjectTerminalOpener({
+      database: deps.database,
+      studioHome: deps.studioHome,
+      model: SESSION_LIMITS.model,
+      sessions: terminalSessions,
+    });
+    registerAgentRoutes(app, { database: deps.database, manager, terminal: { sessions: terminalSessions, open: openTerminal } });
+    registerProjectTerminalRoutes(app, { database: deps.database, openTerminal });
     registerTerminalRoutes(app, {
       sessions: {
         find: (sessionId) => terminalSessions.find(sessionId),

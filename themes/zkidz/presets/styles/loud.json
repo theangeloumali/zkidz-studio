@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "loud",
+  "name": "Loud",
+  "description": "Oversized hook words and a sound on every cut. For fast talking-head clips.",
+  "theme": "zkidz",
+  "cardTiers": ["core", "accent", "special"],
+  "sfx": "every-cut",
+  "intro": true,
+  "guidance": "Open on a hookTitle with intro: true and at most two short words per line. Caption every spoken line at bottom 1750. Put a card on every beat, any tier, each on the word it echoes, and a slamStamp on each verdict. A sound effect lands on every cut. Still one message per card.",
+  "sample": [
+    { "kind": "hookTitle", "at": 0.2, "end": 2.6, "lines": ["WAIT", "FOR IT"], "accentLine": 0 },
+    { "kind": "slamStamp", "at": 2.8, "end": 4.6, "text": "YES" },
+    { "kind": "caption", "at": 0.4, "end": 4.8, "text": "Big words, every beat.", "bottom": 1750 }
+  ]
+}

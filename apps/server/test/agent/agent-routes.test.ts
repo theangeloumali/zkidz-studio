@@ -100,6 +100,25 @@ describe("agent routes", () => {
     expect(scripted.calls).toHaveLength(0);
   });
 
+  it("answers 409 in mode T when the terminal exits between opening and the prompt write", async () => {
+    const openedProjects: string[] = [];
+    const exitedTerminal = { submitPrompt: () => false, stop: () => false, kill: () => false };
+    app = new Hono();
+    app.onError((error, c) => c.json(errorBody(toHttpError(error)), toHttpError(error).status));
+    registerAgentRoutes(app, {
+      database: database.db,
+      manager,
+      terminal: { sessions: exitedTerminal, open: (project) => Promise.resolve(void openedProjects.push(project.id)) },
+    });
+    await writeConnection(database.db, { mode: "terminal" });
+
+    const response = await post("prompt", { text: "Make a cut" });
+    expect(response.status).toBe(409);
+    expect(await response.text()).toContain("Open it again");
+    expect(openedProjects).toEqual([projectId]);
+    expect(scripted.calls).toHaveLength(0);
+  });
+
   it("answers 404 for an unknown project and 400 for an empty prompt", async () => {
     const unknown = await app.request(`/api/projects/${crypto.randomUUID()}/prompt`, { method: "POST", body: '{"text":"x"}' });
     expect(unknown.status).toBe(404);

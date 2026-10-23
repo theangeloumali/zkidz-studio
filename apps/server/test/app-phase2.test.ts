@@ -45,6 +45,7 @@ function servicesFor(base: TestServerBase, claudePath: string | null): AgentServ
     },
     // Pinned so the runner never depends on which optional SDK binary this machine installed.
     hasSdkBinary: () => true,
+    ffprobePath: "ffprobe",
     engine: {
       run: (request) => {
         engineRequests.push(request);

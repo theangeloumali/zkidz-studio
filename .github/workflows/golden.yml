@@ -71,11 +71,16 @@ jobs:
       - name: videotoolbox diagnosis
         if: always() && runner.os == 'macOS'
         run: |
+          set +e
           clip=fixtures/parity/clip-2997.mp4
           up="scale=1080:1920:flags=lanczos,format=yuv420p"
+          pair="[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[a][b]ssim"
           ssim() { "$ZKS_FFMPEG" -hide_banner -nostats "$@" 2>&1 | grep -o 'All:[0-9.]*' | tail -1; }
-          echo "vt decode vs cpu decode: $(ssim -hwaccel videotoolbox -i "$clip" -i "$clip" -lavfi "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[a][b]ssim" -f null -)"
-          "$ZKS_FFMPEG" -v error -hwaccel videotoolbox -i "$clip" -vf showinfo -frames:v 1 -f null - 2>&1 | grep -o 'color_range:[a-z]*\|colorspace:[a-z0-9]*' | sort -u
+          echo "vt decode vs cpu decode: $(ssim -hwaccel videotoolbox -i "$clip" -i "$clip" -lavfi "$pair" -f null -)"
+          echo "vt decode (vld + hwdownload) vs cpu: $(ssim -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i "$clip" -i "$clip" -lavfi "[0:v]hwdownload,format=nv12,format=yuv420p[a];[1:v]format=yuv420p[b];[a][b]ssim" -f null -)"
+          echo "cpu decode vs itself: $(ssim -i "$clip" -i "$clip" -lavfi "$pair" -f null -)"
+          "$ZKS_FFMPEG" -hide_banner -hwaccel videotoolbox -i "$clip" -vf showinfo -frames:v 1 -f null - 2>&1 | grep -E -o 'fmt:[a-z0-9]+|range:[a-z]+|color_range:[a-z]+|colorspace:[a-z0-9]+' | sort -u
+          "$ZKS_FFMPEG" -hide_banner -i "$clip" -vf showinfo -frames:v 1 -f null - 2>&1 | grep -E -o 'fmt:[a-z0-9]+|range:[a-z]+|color_range:[a-z]+|colorspace:[a-z0-9]+' | sort -u
           for args in "-c:v libx264 -crf 18" "-c:v h264_videotoolbox -b:v 12M" "-c:v h264_videotoolbox -b:v 40M" "-c:v h264_videotoolbox -q:v 65" "-c:v h264_videotoolbox -q:v 85"; do
             # shellcheck disable=SC2086
             "$ZKS_FFMPEG" -v error -y -i "$clip" -vf "$up" $args "$RUNNER_TEMP/enc.mp4" || { echo "encode failed: $args"; continue; }

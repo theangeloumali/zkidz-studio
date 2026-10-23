@@ -169,7 +169,8 @@ class EncoderTests(unittest.TestCase):
 
     def test_decode_hands_back_system_frames_so_autorotate_turns_them(self):
         decodes = {name: backends.get(name).decode for name in backends.PROBE_ORDER}
-        self.assertEqual(decodes, {"nvidia": ["-hwaccel", "cuda"], "videotoolbox": ["-hwaccel", "videotoolbox"], "qsv": ["-hwaccel", "qsv"],
+        # videotoolbox decodes on the CPU: its decode on the macOS runner is not bit-exact (SSIM 0.991 at the source, 0.94 by the master).
+        self.assertEqual(decodes, {"nvidia": ["-hwaccel", "cuda"], "videotoolbox": [], "qsv": ["-hwaccel", "qsv"],
                                    "amf": ["-hwaccel", "d3d11va"], "vaapi": ["-hwaccel", "vaapi", "-hwaccel_device", "va"], "cpu": []})
 
     def test_vaapi_opens_its_render_node_for_the_upload(self):

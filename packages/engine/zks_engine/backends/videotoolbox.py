@@ -12,7 +12,9 @@ BACKEND = Backend(
     name="videotoolbox",
     hardware_tested=False,
     probe_encoder="hevc_videotoolbox",
-    decode=["-hwaccel", "videotoolbox"],
+    # The CPU decodes: VideoToolbox's decode on the macOS runner is not bit-exact (SSIM 0.991 at the source), so the master
+    # missed the CPU render's parity bar; its encode matches (0.998 at 12M), so encoding stays on VideoToolbox.
+    decode=[],
     master=master,
     uhd=["-c:v", "hevc_videotoolbox", "-b:v", "40M", *UHD_CAP, *HEVC_TAGS],
     mezzanine=["-c:v", "hevc_videotoolbox", "-b:v", "80M", *HEVC_TAGS],

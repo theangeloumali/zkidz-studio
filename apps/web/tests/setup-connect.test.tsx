@@ -52,6 +52,19 @@ describe("SetupRoute", () => {
     expect(await screen.findByRole("radio", { name: /Use my cloud provider/ })).toBeChecked();
   });
 
+  // The server caches the doctor's results, since some checks launch tools; only an explicit refresh runs them again.
+  it("runs the doctor again for real when asked, not from the cache", async () => {
+    const rerun: DoctorCheck[] = [{ ...CHECKS[1]!, status: "pass", detail: "Chrome for Testing 155", fix: undefined }];
+    const fetchMock = stubSetup(NOT_CONNECTED, { "GET /api/doctor?refresh=1": () => jsonResponse({ checks: rerun }) });
+    renderWithProviders(<SetupRoute />);
+    await screen.findByText("7.1 with NVENC");
+
+    await userEvent.click(screen.getByRole("button", { name: "Run checks again" }));
+
+    expect(await screen.findByText("Chrome for Testing 155")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toContain("/api/doctor?refresh=1");
+  });
+
   it("asks for a key before checking it", async () => {
     const fetchMock = stubSetup();
     renderWithProviders(<SetupRoute />);

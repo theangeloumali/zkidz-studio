@@ -26,8 +26,10 @@ export function connectTerminal() {
   return requestJson(API_ROUTES.connectTerminal.response, API_ROUTES.connectTerminal.path, { method: "POST", body: { hasAcceptedDisclosure: true } });
 }
 
-export async function fetchDoctorChecks() {
-  const { checks } = await requestJson(API_ROUTES.getDoctor.response, API_ROUTES.getDoctor.path);
+/** The server caches the results, since some checks launch tools; `refresh` runs every check again. */
+export async function fetchDoctorChecks({ refresh = false }: { refresh?: boolean } = {}) {
+  const path = refresh ? `${API_ROUTES.getDoctor.path}?refresh=1` : API_ROUTES.getDoctor.path;
+  const { checks } = await requestJson(API_ROUTES.getDoctor.response, path);
   return checks;
 }
 

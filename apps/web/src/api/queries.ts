@@ -16,4 +16,4 @@ export const projectsQuery = () => queryOptions({ queryKey: queryKeys.projects, 
 export const projectQuery = (projectId: string) => queryOptions({ queryKey: queryKeys.project(projectId), queryFn: () => fetchProject(projectId) });
 export const mediaQuery = (projectId: string) => queryOptions({ queryKey: queryKeys.media(projectId), queryFn: () => fetchMedia(projectId) });
 export const connectionQuery = () => queryOptions({ queryKey: queryKeys.connection, queryFn: fetchConnection });
-export const doctorQuery = () => queryOptions({ queryKey: queryKeys.doctor, queryFn: fetchDoctorChecks });
+export const doctorQuery = () => queryOptions({ queryKey: queryKeys.doctor, queryFn: () => fetchDoctorChecks() });

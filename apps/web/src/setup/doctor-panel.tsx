@@ -1,8 +1,8 @@
 // Created by The Angelo Umali.
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, CircleX, Database } from "lucide-react";
 import { useId } from "react";
-import type { DoctorCheck } from "../api/agent-client.ts";
+import { fetchDoctorChecks, type DoctorCheck } from "../api/agent-client.ts";
 import { doctorQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 
@@ -54,23 +54,29 @@ function DatabaseRow() {
 export function DoctorPanel() {
   const headingId = useId();
   const checks = useQuery(doctorQuery());
+  const queryClient = useQueryClient();
+  const rerun = useMutation({
+    mutationFn: () => fetchDoctorChecks({ refresh: true }),
+    onSuccess: (fresh) => queryClient.setQueryData(doctorQuery().queryKey, fresh),
+  });
+  const isRunning = checks.isFetching || rerun.isPending;
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-card border border-line bg-bg-elevated p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id={headingId} className="text-panel-title font-semibold text-copy">
           This computer
         </h2>
-        <button type="button" className={buttonClass("quiet")} onClick={() => void checks.refetch()} disabled={checks.isFetching}>
+        <button type="button" className={buttonClass("quiet")} onClick={() => rerun.mutate()} disabled={isRunning}>
           Run checks again
         </button>
       </div>
-      {checks.isError ? (
+      {checks.isError || rerun.isError ? (
         <p role="alert" className="text-ui text-danger">
-          The checks could not run: {checks.error.message}
+          The checks could not run: {(rerun.error ?? checks.error)?.message}
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table aria-labelledby={headingId} aria-busy={checks.isFetching} className="w-full min-w-[32rem] border-collapse">
+        <table aria-labelledby={headingId} aria-busy={isRunning} className="w-full min-w-[32rem] border-collapse">
           <thead className="sr-only">
             <tr>
               <th scope="col">Check</th>

@@ -7,6 +7,7 @@ import { DecisionBroker } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
 import { createPrintSessions, type PrintSessions } from "./agent/print-sessions.ts";
 import type { QueryFunction } from "./agent/query-function.ts";
+import type { SessionLimits } from "./agent/query-options.ts";
 import { registerAgentRoutes } from "./agent/routes.ts";
 import { hasBundledClaudeBinary } from "./agent/sdk-binary.ts";
 import { buildAgentEnv } from "./auth/agent-env.ts";
@@ -28,9 +29,8 @@ import type { ToolContext } from "./tools/context.ts";
 import { createStudioMcpServer, registerEngineJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
 const REQUIRED_SKILLS = ["zkidz-studio:edit-director", "zkidz-studio:cut-spec"];
-// ASSUMPTION: defaults until §6b's per-project settings land.
-const SESSION_LIMITS = { maxTurns: 40, maxBudgetUsd: 5 };
-const TERMINAL_MODEL = "sonnet";
+// ASSUMPTION: defaults until §6b's per-project settings land. No model: both the SDK and the terminal use the account's default.
+const SESSION_LIMITS: SessionLimits = { maxTurns: 40, maxBudgetUsd: 5 };
 /** No claude on PATH: pty-host still needs an absolute path, and this one makes every open fail as claude_missing. */
 const MISSING_CLAUDE_NAME = "claude-not-installed";
 
@@ -117,7 +117,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       onConnectionChanged: () => manager.closeAll(),
     });
     registerAgentRoutes(app, { database: deps.database, manager, terminal: terminalSessions });
-    registerProjectTerminalRoutes(app, { database: deps.database, studioHome: deps.studioHome, model: TERMINAL_MODEL, sessions: terminalSessions });
+    registerProjectTerminalRoutes(app, { database: deps.database, studioHome: deps.studioHome, model: SESSION_LIMITS.model, sessions: terminalSessions });
     registerTerminalRoutes(app, {
       sessions: {
         find: (sessionId) => terminalSessions.find(sessionId),

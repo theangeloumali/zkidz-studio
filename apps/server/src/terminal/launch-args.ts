@@ -9,7 +9,8 @@ export interface TerminalRun {
   readonly rulesPath: string;
   readonly pluginDir: string;
   readonly studioToolNames: readonly string[];
-  readonly model: string;
+  /** Unset: no --model, so Claude Code picks the signed-in account's default. */
+  readonly model?: string;
 }
 
 const TERMINAL_TOOLS = "Read,Skill,AskUserQuestion";
@@ -40,7 +41,6 @@ export function buildTerminalArgs(run: TerminalRun): string[] {
     "default",
     "--append-system-prompt-file",
     run.rulesPath,
-    "--model",
-    run.model,
+    ...(run.model === undefined ? [] : ["--model", run.model]),
   ];
 }

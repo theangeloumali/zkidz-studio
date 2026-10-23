@@ -61,4 +61,8 @@ describe("hookToStudioEvents", () => {
     ]);
     expect(eventsFor({ ...base, hook_event_name: "SessionStart" })[0]).toMatchObject({ model: "haiku" });
   });
+
+  it('labels the model "default" when neither the hook nor the launch named one', () => {
+    expect(eventsFor({ ...base, hook_event_name: "SessionStart" }, { model: undefined })[0]).toMatchObject({ model: "default" });
+  });
 });

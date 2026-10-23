@@ -32,7 +32,7 @@ export interface TerminalSessionsDeps {
 export interface OpenTerminalRequest {
   readonly projectId: string;
   readonly projectDir: string;
-  readonly model: string;
+  readonly model?: string;
   readonly rulesText: string;
   readonly resumeSessionId?: string;
 }
@@ -41,7 +41,7 @@ export interface TerminalSession {
   readonly sessionId: string;
   readonly projectId: string;
   readonly projectDir: string;
-  readonly model: string;
+  readonly model?: string;
   readonly hookToken: string;
   readonly mcpToken: string;
   readonly pty: TerminalPty;

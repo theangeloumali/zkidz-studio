@@ -7,11 +7,13 @@ import type { TerminalToolDecision } from "./hook-policy.ts";
 
 /** Mode T never sees a credential; the session runs on whatever the user signed in with. */
 export const SIGN_IN_CREDENTIAL = "your Claude Code sign-in";
+/** Neither the launch nor the hook named a model, so Claude Code chose its own. */
+const UNNAMED_MODEL_LABEL = "default";
 
 export interface HookEventContext {
   readonly projectId: string;
   /** Reported when SessionStart omits the model. */
-  readonly model: string;
+  readonly model?: string;
   /** Catalog tool handlers emit their own events, so the hooks stay silent to avoid doubles. */
   readonly isCatalogTool: boolean;
   readonly decision?: TerminalToolDecision;
@@ -48,7 +50,7 @@ export function hookToStudioEvents(payload: HookPayload, context: HookEventConte
           type: "session.started",
           projectId,
           sessionId: payload.session_id,
-          model: payload.model ?? context.model,
+          model: payload.model ?? context.model ?? UNNAMED_MODEL_LABEL,
           credential: SIGN_IN_CREDENTIAL,
           skills: [],
         },

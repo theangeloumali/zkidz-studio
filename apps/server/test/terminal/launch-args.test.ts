@@ -46,6 +46,10 @@ describe("buildTerminalArgs", () => {
     expect(valueAfter(args, "--model")).toBe("haiku");
   });
 
+  it("omits --model when none is configured, so Claude Code's own default applies", () => {
+    expect(buildTerminalArgs({ ...baseRun, model: undefined })).not.toContain("--model");
+  });
+
   it("allows every catalog tool so the pane never double-prompts", () => {
     const args = buildTerminalArgs(baseRun);
     const allowedStart = args.indexOf("--allowedTools") + 1;

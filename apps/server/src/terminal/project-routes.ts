@@ -18,7 +18,7 @@ const TERMINAL_AUTH_MODES = ["terminal"] as const;
 export interface ProjectTerminalRouteDeps {
   readonly database: StudioDatabase;
   readonly studioHome: string;
-  readonly model: string;
+  readonly model?: string;
   readonly sessions: Pick<TerminalSessions, "open" | "findByProject">;
 }
 
@@ -51,7 +51,7 @@ async function openSession(deps: ProjectTerminalRouteDeps, project: ProjectRow):
     rulesText,
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
   });
-  await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model, authMode: "terminal" });
+  await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode: "terminal" });
   return session;
 }
 

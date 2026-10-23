@@ -25,7 +25,7 @@ export async function findResumeSessionId(database: StudioDatabase, projectId: s
 export interface CurrentSessionRecord {
   readonly projectId: string;
   readonly sdkSessionId: string;
-  readonly model: string;
+  readonly model: string | null;
   readonly authMode: AuthMode;
 }
 

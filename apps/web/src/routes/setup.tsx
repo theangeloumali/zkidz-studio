@@ -36,7 +36,8 @@ const CARDS: readonly { mode: Mode; title: string; badges: readonly string[]; de
 ];
 
 function ConnectChoices({ connection }: { readonly connection: Connection }) {
-  const [chosen, setChosen] = useState<Mode>(connection.mode ?? "api_key");
+  // No default: a fresh install picks nothing until the user does (plan: setup never auto-selects a mode).
+  const [chosen, setChosen] = useState<Mode | null>(connection.mode);
   const controls: Record<Mode, ReactNode> = {
     api_key: <ApiKeyControls connection={connection} />,
     cloud: <CloudControls connection={connection} />,

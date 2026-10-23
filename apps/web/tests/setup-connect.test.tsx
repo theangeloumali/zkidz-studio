@@ -22,6 +22,10 @@ function stubSetup(connection: Connection = NOT_CONNECTED, extra: Parameters<typ
   });
 }
 
+async function chooseApiKey(): Promise<void> {
+  await userEvent.click(await screen.findByRole("radio", { name: /Paste an Anthropic API key/ }));
+}
+
 describe("SetupRoute", () => {
   it("offers the three ways in, recommended first", async () => {
     stubSetup();
@@ -34,10 +38,25 @@ describe("SetupRoute", () => {
     expect(within(group).getByText("Pending Anthropic approval")).toBeInTheDocument();
   });
 
+  it("selects no way in on a fresh install", async () => {
+    stubSetup();
+    renderWithProviders(<SetupRoute />);
+    const group = await screen.findByRole("group", { name: "How should the studio reach Claude?" });
+    expect(within(group).queryAllByRole("radio", { checked: true })).toEqual([]);
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+  });
+
+  it("shows the saved way in as the current choice", async () => {
+    stubSetup({ ...NOT_CONNECTED, mode: "cloud", provider: "bedrock" });
+    renderWithProviders(<SetupRoute />);
+    expect(await screen.findByRole("radio", { name: /Use my cloud provider/ })).toBeChecked();
+  });
+
   it("asks for a key before checking it", async () => {
     const fetchMock = stubSetup();
     renderWithProviders(<SetupRoute />);
-    await userEvent.click(await screen.findByRole("button", { name: "Check key" }));
+    await chooseApiKey();
+    await userEvent.click(screen.getByRole("button", { name: "Check key" }));
     expect(screen.getByText("Paste a key first.")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/connect/api-key")).toBe(false);
   });
@@ -53,7 +72,8 @@ describe("SetupRoute", () => {
       });
     });
     renderWithProviders(<SetupRoute />);
-    await userEvent.type(await screen.findByLabelText("API key"), "sk-ant-test-1234");
+    await chooseApiKey();
+    await userEvent.type(screen.getByLabelText("API key"), "sk-ant-test-1234");
     await userEvent.click(screen.getByRole("button", { name: "Check key" }));
     expect(await screen.findByText("Checking key…")).toBeInTheDocument();
     release();
@@ -63,7 +83,8 @@ describe("SetupRoute", () => {
   it("says Anthropic rejected the key on a 401", async () => {
     stubSetup(NOT_CONNECTED, { "POST /api/connect/api-key": () => jsonResponse({ error: "invalid x-api-key" }, 401) });
     renderWithProviders(<SetupRoute />);
-    await userEvent.type(await screen.findByLabelText("API key"), "sk-ant-bad");
+    await chooseApiKey();
+    await userEvent.type(screen.getByLabelText("API key"), "sk-ant-bad");
     await userEvent.click(screen.getByRole("button", { name: "Check key" }));
     expect(await screen.findByText(/Anthropic rejected this key \(401\)/)).toBeInTheDocument();
   });

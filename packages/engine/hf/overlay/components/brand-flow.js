@@ -3,7 +3,7 @@
 // Item `at`s (steps, pills, swapAt) are source seconds after the cue's `at`; timemap.js maps them onto the edit.
 
 // Timeline: dated steps joined by a gold rule that grows node to node as each step lands (the card's one gold).
-const TIMELINE = { dateFont: { ...TYPE.mono, size: 40 }, dateDrop: 34, subSize: 34, subLine: 42, node: 12, hotNode: 16 };
+const TIMELINE = themed(() => ({ dateFont: { ...TYPE.mono, size: 40 }, dateDrop: 34, subSize: 34, subLine: 42, node: 12, hotNode: 16 }));
 
 // Dates and sub lines fit their slot; subs wrap and are never cut, so the card grows instead.
 function timelineLayout(cue) {
@@ -138,8 +138,8 @@ SFX_OF.titleSwap = (cue, duration) =>
 
 // Dashboard status pills: all start unlit, then each lights on its word and its dot pops.
 // tone: steel (default), gold (the win: an ink pill with goldBright text), negative or muted.
-const PILL = { height: 70, gap: 16, font: { ...TYPE.mono, size: 36 }, dot: 8 };
-const PILL_DOTS = { steel: BRAND.steel, gold: BRAND.goldBright, negative: BRAND.negative, muted: BRAND.muted };
+const PILL = themed(() => ({ height: 70, gap: 16, font: { ...TYPE.mono, size: 36 }, dot: 8 }));
+const PILL_DOTS = themed(() => ({ steel: BRAND.steel, gold: BRAND.goldBright, negative: BRAND.negative, muted: BRAND.muted }));
 
 function pillsLayout(cue) {
   const head = headLayout(null, cue.text);

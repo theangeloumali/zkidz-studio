@@ -33,6 +33,9 @@ const ASSETS = {
 };
 const CSS = `${fontFaceCss()}
 ${fs.readFileSync(path.join(__dirname, "brand", "brand.css"), "utf8")}`;
+// Read per page: the applied theme sets the colours brand.css takes from custom properties.
+const pageCss = () => `${CSS}
+:root { --glow: ${canvasBrand().scope.BRAND.goldBright}; }`;
 const isKnownKind = (kind) => Object.hasOwn(REGISTRY, kind);
 
 // The edit's brand pre-roll, from its one hookTitle with `intro: true`. It goes in when that hook ends, or after a vlog-style
@@ -85,7 +88,7 @@ const introEvents = (intro) => sfxEvents([intro.clip], brandIntro.sfx);
 
 // One clip alone on its own page, `frames` long at the frame rate in `fps` (an EDL, or just its fps_num and fps_den).
 const clipPage = (fps, frames, clip, component, compositionId, size) =>
-  composeDocument({ edl: { ...fps, frames, segments: [] }, cues: [clip], registry: { [clip.kind]: component }, compositionId, css: CSS, size }).html;
+  composeDocument({ edl: { ...fps, frames, segments: [] }, cues: [clip], registry: { [clip.kind]: component }, compositionId, css: pageCss(), size }).html;
 
 function writeComposition(dir, html, images = {}) {
   fs.mkdirSync(dir, { recursive: true });
@@ -182,7 +185,14 @@ function build(target, { guides = false, events = false, variant = "", layer = "
   const moved = insert ? aroundInsert(cues, insert, edl.fps_num / edl.fps_den) : cues;
   const { clips, images } = withImages(moved.filter((cue) => (cue.kind === "brandSplit" ? !behind : inLayer(cue, layer))));
   const registry = insert ? { ...REGISTRY, brandSplit } : REGISTRY;
-  const { html, placed } = composeDocument({ edl, cues: clips, registry, compositionId: behind ? `${compositionId}-behind` : compositionId, css: CSS, guides });
+  const { html, placed } = composeDocument({
+    edl,
+    cues: clips,
+    registry,
+    compositionId: behind ? `${compositionId}-behind` : compositionId,
+    css: pageCss(),
+    guides,
+  });
   writeComposition(dir, html, images);
   fs.writeFileSync(path.join(dir, "cues.json"), JSON.stringify(placed, null, 1));
 

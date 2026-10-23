@@ -45,8 +45,29 @@ const TYPE = {
   mono: { family: FONT.mono, size: 32, weight: 600 },
 };
 
+// A table of BRAND/TYPE values rebuilt on every read: a theme (applyTheme) changes them after the files that hold the
+// table load, so a plain const would keep the zkidz defaults. Read-only; spread it to get a plain object.
+function themed(build) {
+  return new Proxy(
+    {},
+    {
+      get: (_, key) => build()[key],
+      has: (_, key) => key in build(),
+      ownKeys: () => Reflect.ownKeys(build()),
+      // configurable: a proxy may not report a non-configurable key its empty target lacks (an array's length).
+      getOwnPropertyDescriptor: (_, key) => {
+        const own = Reflect.getOwnPropertyDescriptor(build(), key);
+        return own && { ...own, configurable: true, writable: false };
+      },
+      set: () => {
+        throw new TypeError("a themed table is read-only");
+      },
+    },
+  );
+}
+
 // drawTerminal palette; `block` keeps the kit's #E07A5F (5.44:1 on ink).
-const TERMINAL_BRAND = {
+const TERMINAL_BRAND = themed(() => ({
   background: BRAND.ink,
   edge: BRAND.lineStrong,
   bar: "#121922", // site dark bg-elevated
@@ -57,4 +78,4 @@ const TERMINAL_BRAND = {
     warn: BRAND.goldBright,
     pass: BRAND.steelOnInk,
   },
-};
+}));

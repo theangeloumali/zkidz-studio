@@ -5,7 +5,7 @@ const PW = 1080;
 const PH = 1920;
 const PANEL_W = SAFE.right - SAFE.left;
 const safeRight = (y) => (y >= SAFE.columnTop ? SAFE.columnRight : SAFE.right);
-const TEAM = { bad: BRAND.negative };
+const TEAM = themed(() => ({ bad: BRAND.negative }));
 const COMPONENTS = {};
 // SFX_OF[kind](cue, duration) -> [{ at, sound, pan, gain, dur }]; declared before any component registers.
 const SFX_OF = {};

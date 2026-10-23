@@ -9,7 +9,16 @@ const { odometer } = require("../fx/kinetic");
 const { spring } = require("../fx/springs");
 const { k, still, drawn, join, NOTHING, idOf, card, panelCard, head, risingText } = require("./parts");
 
-const STACK = { font: { ...k.TYPE.display, size: 64 }, maxText: 760, padX: 56, minWidth: 420, overlap: 0.08, slack: 24, nudge: 50, tilt: [1.5, 3.5] };
+const STACK = k.themed(() => ({
+  font: { ...k.TYPE.display, size: 64 },
+  maxText: 760,
+  padX: 56,
+  minWidth: 420,
+  overlap: 0.08,
+  slack: 24,
+  nudge: 50,
+  tilt: [1.5, 3.5],
+}));
 
 // Slips overlap down the band, each nudged and tilted from the cue seed (mulberry32), so a rebuild lands them the same.
 function stackLayout(cue) {
@@ -96,7 +105,13 @@ const headlineStack = {
   },
 };
 
-const CHART = { plotHeight: 260, valueRoom: 70, labelGap: 44, labelFont: { ...k.TYPE.mono, size: 28 }, valueFont: { ...k.TYPE.display, size: 44 } };
+const CHART = k.themed(() => ({
+  plotHeight: 260,
+  valueRoom: 70,
+  labelGap: 44,
+  labelFont: { ...k.TYPE.mono, size: 28 },
+  valueFont: { ...k.TYPE.display, size: 44 },
+}));
 const DRAW = { at: 0.5, duration: 1.2, ease: "power2.inOut" };
 // power2.inOut solved for time: when the drawing stroke reaches `progress` of its length.
 const drawTimeOf = (progress) => DRAW.at + DRAW.duration * (progress < 0.5 ? Math.sqrt(progress / 2) : 1 - Math.sqrt((1 - progress) / 2));

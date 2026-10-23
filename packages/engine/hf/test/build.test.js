@@ -43,6 +43,14 @@ test("the minimal theme draws its own palette and never adds the brand intro", (
   assert.equal(canvasBrand().scope.BRAND.ink, "#111418");
 });
 
+test("a card's glow takes the theme's goldBright, not the zkidz gold", () => {
+  const glowOf = (html) => /--glow:\s*([^;]+);/.exec(html)?.[1];
+  sheet("glow", [{ kind: "chapterCard", at: 1, end: 4, index: "01", kicker: "Track", title: "Clients", sub: "Sub" }]);
+  assert.equal(glowOf(htmlOf(build("glow", { theme: "minimal" }).dir)), "#6f9cf5");
+  assert.equal(glowOf(htmlOf(build("glow").dir)), "#d5b13a");
+  assert.doesNotMatch(htmlOf(build("glow", { theme: "minimal" }).dir), /rgba\(213, 177, 58/);
+});
+
 test("a kind outside the theme's manifest fails the build", () => {
   sheet("staged", [{ kind: "pipeline", at: 1, end: 4, labels: ["a", "b", "c"] }]);
   assert.throws(() => build("staged", { theme: "minimal" }), /theme minimal does not draw pipeline/);

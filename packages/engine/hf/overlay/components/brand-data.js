@@ -4,7 +4,7 @@
 
 // Stat tile (spec §3.3.6): an ink tile whose number counts up on the counter spring, a goldBright suffix popping
 // in after it (the tile's one gold), a tracked label above and an optional sub line.
-const STAT = { size: 150, countFrom: 0.25, suffixAt: 0.65, subAt: 0.9, labelFont: { ...TYPE.kicker, size: 34 } };
+const STAT = themed(() => ({ size: 150, countFrom: 0.25, suffixAt: 0.65, subAt: 0.9, labelFont: { ...TYPE.kicker, size: 34 } }));
 // Where the counter spring passes 0.99: countUp lands the exact value there, and the count SFX plucks.
 const COUNTER_SETTLE = settleTime(SPRING.counter);
 // A short tile counts faster, so the exact value always holds for 0.35 s before the exit starts.
@@ -74,7 +74,7 @@ SFX_OF.statTile = (cue, duration) => {
 };
 
 // Funnel: stacked bands narrowing downward, each rising in on its word; the last band is the gold one.
-const FUNNEL = { gap: 10, minWidth: 260, labelFont: { ...TYPE.kicker, size: 36 } };
+const FUNNEL = themed(() => ({ gap: 10, minWidth: 260, labelFont: { ...TYPE.kicker, size: 36 } }));
 const funnelAt = (tier, index) => itemAt(tier, index, 1 / 3, 0.4);
 const tierValue = (value) => (typeof value === "number" ? formatCount(value) : String(value));
 

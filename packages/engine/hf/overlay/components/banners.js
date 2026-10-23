@@ -114,7 +114,7 @@ SFX_OF.comment = (cue, duration) => cardSfx(duration);
 // `scale` shrinks it about its top centre (`y`) so a compact card clears the face; the CTA keeps ctaMinPx on screen.
 // The sign shrinks with it: at 72 px its ink is ~92 px tall, too tall for the band between his chin and y 1248.
 const END_CARD = { y: 330, w: 850, h: 650, signGap: 80, signSize: 72, ctaSize: 40, ctaMinPx: 36, markHeight: 220, markAt: 0.1, ctaAt: 1.1, cps: 20 };
-const WORDMARK_FONT = { ...TYPE.display, size: 84, tracking: 84 * 0.02 };
+const WORDMARK_FONT = themed(() => ({ ...TYPE.display, size: 84, tracking: 84 * 0.02 }));
 
 // Card-space places (the card is centre-anchored at the top, `scale`d) and the sign-off under it in page space.
 function endCardLayout(cue) {

@@ -12,6 +12,7 @@ import unittest
 from support import ENGINE, HYPERFRAMES_SKIP, hf_installed, make_edl, needs_renderer, scratch_work  # first: it sets a scratch ZKS_HOME
 from test_hf_bridge import assert_seek_safe, build, clip_markup, tweens
 from test_hf_render import hyperframes_ready, rgba
+from zks_engine import ffio
 
 LAYER_CUES = [
     {"kind": "keyword", "at": 0.2, "end": 1.6, "text": "Front", "tone": "paper"},
@@ -120,7 +121,7 @@ class BehindRenderTests(unittest.TestCase):
         cls.folder = tempfile.TemporaryDirectory()
         cls.work = scratch_work(cls.folder.name, "depth", make_edl([(0, 150)]), LAYER_CUES)
         (cls.work / "mezz").mkdir()
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=5.1",
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=5.1",
                         "-c:v", "libx264", "-preset", "ultrafast", str(cls.work / "mezz" / "depth.mp4")], check=True)
 
     @classmethod

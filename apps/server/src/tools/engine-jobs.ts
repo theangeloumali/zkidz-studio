@@ -1,0 +1,166 @@
+// Created by The Angelo Umali.
+// Job handlers for the engine steps the Phase 2 tools start: ingest (join + prepare) and transcribe.
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { StudioDatabase } from "@zks/db";
+import { mediaAssets, projects, transcripts } from "@zks/db/schema";
+import { IdSchema, InsertSpecSchema, SourceSecondsSchema } from "@zks/shared";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { z } from "zod";
+import { projectDir } from "../config.ts";
+import type { JobRow } from "../dto.ts";
+import { isWithinDir } from "../fs/path-policy.ts";
+import type { JobRunner, ReportProgress } from "../jobs/job-runner.ts";
+import { writeJobResult } from "./job-results.ts";
+import { assetFilePath } from "./project-files.ts";
+
+type EngineCommand = "ingest" | "transcribe";
+
+export interface EngineRequest {
+  readonly command: EngineCommand;
+  readonly args: readonly string[];
+  /** The project's work/ folder; the engine resolves every relative path it prints against it. */
+  readonly workDir: string;
+}
+
+/** Runs one engine command and returns its parsed JSON report. */
+export interface EngineRunner {
+  readonly run: (request: EngineRequest) => Promise<unknown>;
+}
+
+export interface EngineJobDeps {
+  readonly db: StudioDatabase;
+  readonly studioHome: string;
+  readonly engine: EngineRunner;
+}
+
+const WorkPathSchema = z.string().min(1);
+const TranscribeParamsSchema = z.object({ language: z.string(), model: z.string() });
+const TranscribeReportSchema = z.object({ wordsPath: WorkPathSchema, words: z.int().nonnegative(), chunks: z.int().positive() });
+const IngestParamsSchema = z.object({
+  clips: z.array(z.object({ assetId: IdSchema, zoom: z.number().positive().optional() })).min(1),
+  inserts: InsertSpecSchema.optional(),
+});
+const IngestReportSchema = z.object({
+  sourcePath: WorkPathSchema,
+  frames: z.int().positive(),
+  joins: z.array(z.object({ clip: z.int().nonnegative(), at: SourceSecondsSchema })),
+});
+
+export function registerEngineJobHandlers(jobRunner: JobRunner, deps: EngineJobDeps): void {
+  jobRunner.registerHandler("transcribe", (job, reportProgress) => runTranscribe(deps, job, reportProgress));
+  jobRunner.registerHandler("ingest", (job, reportProgress) => runIngest(deps, job, reportProgress));
+}
+
+async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress): Promise<void> {
+  const params = TranscribeParamsSchema.parse(job.params);
+  const projectRoot = await projectRootOfJob(deps, job);
+  const workDir = await prepareWorkDir(projectRoot, "transcripts");
+  await reportProgress({ stage: "transcribing", pct: 0 });
+  const args = ["--video", job.videoId, "--language", params.language, "--model", params.model];
+  const report = TranscribeReportSchema.parse(await deps.engine.run({ command: "transcribe", args, workDir }));
+  const mediaAssetId = await transcribedAssetId(deps.db, job.projectId);
+  await deps.db.insert(transcripts).values({
+    projectId: job.projectId,
+    mediaAssetId,
+    model: params.model,
+    language: params.language,
+    wordsRelPath: workRelativePath(workDir, report.wordsPath),
+    wordCount: report.words,
+  });
+  await writeJobResult(projectRoot, job.id, { words: report.words, chunks: report.chunks });
+  await reportProgress({ stage: "transcribed", pct: 100 });
+}
+
+async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress): Promise<void> {
+  const params = IngestParamsSchema.parse(job.params);
+  const projectRoot = await projectRootOfJob(deps, job);
+  const workDir = await prepareWorkDir(projectRoot, "sources");
+  const resolvePath = async (assetId: string) => assetFilePath(projectRoot, await projectAsset(deps.db, { projectId: job.projectId, assetId }));
+  const clipArgs = await Promise.all(
+    params.clips.map(async (clip) => ["--clip", clip.zoom === undefined ? await resolvePath(clip.assetId) : `${await resolvePath(clip.assetId)}@${clip.zoom}`]),
+  );
+  const insertArgs =
+    params.inserts === undefined ? [] : ["--inserts", await writeResolvedInserts({ workDir, videoId: job.videoId, inserts: params.inserts }, resolvePath)];
+  await reportProgress({ stage: "joining", pct: 0 });
+  const args = ["--video", job.videoId, ...insertArgs, ...clipArgs.flat()];
+  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir }));
+
+  const relPath = workRelativePath(workDir, report.sourcePath);
+  const sourceStat = await stat(join(projectRoot, relPath));
+  const [source] = await deps.db
+    .insert(mediaAssets)
+    .values({
+      projectId: job.projectId,
+      kind: "source",
+      name: `${job.videoId} source`,
+      relPath,
+      bytes: sourceStat.size,
+      mtimeMs: Math.round(sourceStat.mtimeMs),
+    })
+    .onConflictDoUpdate({ target: [mediaAssets.projectId, mediaAssets.relPath], set: { bytes: sourceStat.size, mtimeMs: Math.round(sourceStat.mtimeMs) } })
+    .returning();
+  if (source === undefined) throw new Error("source asset upsert returned no row");
+  const joins = report.joins.map((join) => ({ assetId: params.clips[join.clip]?.assetId, at: join.at }));
+  await writeJobResult(projectRoot, job.id, { sourceAssetId: source.id, frames: report.frames, joins });
+  await reportProgress({ stage: "joined", pct: 100 });
+}
+
+/** The engine reads inserts by path, so the server writes them with each assetId resolved. */
+async function writeResolvedInserts(
+  target: { workDir: string; videoId: string; inserts: z.infer<typeof InsertSpecSchema> },
+  resolvePath: (assetId: string) => Promise<string>,
+): Promise<string> {
+  const resolvedInserts = await Promise.all(target.inserts.map(async (insert) => ({ ...insert, srcPath: await resolvePath(insert.srcAssetId) })));
+  const insertsPath = join(target.workDir, "inserts", `${target.videoId}.json`);
+  await mkdir(join(target.workDir, "inserts"), { recursive: true });
+  await writeFile(insertsPath, JSON.stringify(resolvedInserts), { mode: 0o600 });
+  return insertsPath;
+}
+
+async function projectRootOfJob(deps: EngineJobDeps, job: JobRow): Promise<string> {
+  const [project] = await deps.db.select({ slug: projects.slug }).from(projects).where(eq(projects.id, job.projectId));
+  if (project === undefined) throw new Error("The job's project no longer exists");
+  return projectDir(deps.studioHome, project.slug);
+}
+
+async function prepareWorkDir(projectRoot: string, outputDir: string): Promise<string> {
+  const workDir = join(projectRoot, "work");
+  await mkdir(join(workDir, outputDir), { recursive: true });
+  return workDir;
+}
+
+async function projectAsset(db: StudioDatabase, ids: { projectId: string; assetId: string }) {
+  const [asset] = await db
+    .select()
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.id, ids.assetId), eq(mediaAssets.projectId, ids.projectId)));
+  if (asset === undefined) throw new Error(`Asset ${ids.assetId} is not part of this project`);
+  return asset;
+}
+
+/** The joined source when there is one, else the first clip. */
+async function transcribedAssetId(db: StudioDatabase, projectId: string): Promise<string> {
+  const [source] = await db
+    .select({ id: mediaAssets.id })
+    .from(mediaAssets)
+    .where(and(eq(mediaAssets.projectId, projectId), eq(mediaAssets.kind, "source")))
+    .orderBy(desc(mediaAssets.createdAt))
+    .limit(1);
+  if (source !== undefined) return source.id;
+  const [firstClip] = await db
+    .select({ id: mediaAssets.id })
+    .from(mediaAssets)
+    .where(eq(mediaAssets.projectId, projectId))
+    .orderBy(asc(mediaAssets.createdAt))
+    .limit(1);
+  if (firstClip === undefined) throw new Error("The project has no media to transcribe");
+  return firstClip.id;
+}
+
+// A report path is engine output: it must stay inside work/ before the server stores or opens it.
+function workRelativePath(workDir: string, reportedPath: string): string {
+  const absolutePath = join(workDir, reportedPath);
+  if (!isWithinDir(absolutePath, workDir)) throw new Error("The engine reported a path outside the project");
+  return join("work", reportedPath).split("\\").join("/");
+}

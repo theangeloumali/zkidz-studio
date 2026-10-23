@@ -9,7 +9,7 @@ import type { EventBus } from "../events/event-bus.ts";
 import type { Logger } from "../logging/logger.ts";
 import { redactSecrets } from "../logging/redact.ts";
 
-export interface JobProgress {
+interface JobProgress {
   readonly stage: string;
   readonly pct: number;
   readonly etaS?: number;
@@ -72,6 +72,17 @@ export class JobRunner {
   /** Resolves once every lane has run out of queued work. */
   async idle(): Promise<void> {
     while (this.#drains.size > 0) await Promise.allSettled([...this.#drains]);
+  }
+
+  /** Stop's job half: queued work is dropped; a running handler takes no signal, so it finishes. */
+  async cancelQueued(projectId: string): Promise<number> {
+    const cancelled = await this.#database
+      .update(jobs)
+      .set({ status: "cancelled", finishedAt: new Date() })
+      .where(and(eq(jobs.projectId, projectId), eq(jobs.status, "queued")))
+      .returning();
+    for (const job of cancelled) await this.#publishLifecycle("job.finished", job);
+    return cancelled.length;
   }
 
   /** A row still `running` at startup belongs to a server that died; its process is gone. */

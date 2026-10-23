@@ -2,7 +2,7 @@
 // Preview, render, QC and delivery tools (plan §6.8, §7.6).
 import { z } from "zod";
 import { DeliverableKindSchema } from "../enums.ts";
-import { AssetIdSchema, CanvasXSchema, CanvasYSchema, sourceSpan } from "../primitives.ts";
+import { IdSchema, CanvasXSchema, CanvasYSchema, sourceSpan } from "../primitives.ts";
 import { CueSchema } from "../specs/cues.ts";
 import { JobHandleSchema, ProjectPathSchema, defineTool } from "./define.ts";
 
@@ -74,7 +74,7 @@ export const exportDeliverable = defineTool({
 });
 
 export const deleteAsset = defineTool({
-  input: z.strictObject({ assetId: AssetIdSchema }),
+  input: z.strictObject({ assetId: IdSchema }),
   output: z.strictObject({ ok: z.literal(true) }),
   approval: "gate",
   isReadOnly: false,

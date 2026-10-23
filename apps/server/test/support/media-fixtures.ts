@@ -54,3 +54,17 @@ export async function makeMediaFixtures(): Promise<MediaFixtures> {
   ]);
   return fixtures;
 }
+
+const CHUNK_BYTES = 1024 * 1024;
+
+/** A body with no Content-Length, like a non-browser client streaming chunked, so only the streaming cap can stop it. */
+export function chunkedBody(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream({
+    pull(controller) {
+      if (offset >= bytes.length) return controller.close();
+      controller.enqueue(bytes.subarray(offset, offset + CHUNK_BYTES));
+      offset += CHUNK_BYTES;
+    },
+  });
+}

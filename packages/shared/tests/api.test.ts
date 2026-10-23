@@ -10,6 +10,8 @@ import {
   LastEventIdSchema,
   PREVIEW_PORT,
   PreToolUseHookPayloadSchema,
+  PROJECT_TITLE_MAX_CHARS,
+  ProjectTitleSchema,
   RULE_TEXT_MAX_CHARS,
   SSE_REPLAY_LIMIT,
   SUPABASE_DB_PORT,
@@ -50,6 +52,12 @@ describe("API_ROUTES", () => {
     expect(RULE_TEXT_MAX_CHARS).toBe(500);
     expect(createRuleBody.safeParse({ text: "x".repeat(500) }).success).toBe(true);
     expect(createRuleBody.safeParse({ text: "x".repeat(501) }).success).toBe(false);
+  });
+
+  it("caps a project title at 255 characters, so a title taken from any file name still fits", () => {
+    expect(PROJECT_TITLE_MAX_CHARS).toBe(255);
+    expect(ProjectTitleSchema.safeParse(`  ${"x".repeat(255)}  `).success).toBe(true);
+    expect(ProjectTitleSchema.safeParse("x".repeat(256)).success).toBe(false);
   });
 });
 
@@ -127,6 +135,12 @@ describe("decisions", () => {
 });
 
 describe("terminal mode contract (plan §6.3)", () => {
+  it("opens a project's terminal with a CSRF-checked POST that answers its session id", () => {
+    expect(API_ROUTES.openTerminal).toMatchObject({ method: "POST", path: "/api/projects/:projectId/terminal", body: null });
+    expect(API_ROUTES.openTerminal.response.safeParse({ sessionId: "0b6f3c1e-8a2d-4c5b-9e7f-1a2b3c4d5e6f" }).success).toBe(true);
+    expect(API_ROUTES.openTerminal.response.safeParse({ sessionId: "not-a-session" }).success).toBe(false);
+  });
+
   it("issues single-use tickets valid for 30 s", () => {
     expect(TERMINAL_TICKET_TTL_S).toBe(30);
     expect(API_ROUTES.terminalTicket.response.safeParse({ ticket: "t".repeat(43), expiresAt: "2026-10-22T12:00:30.000Z" }).success).toBe(true);

@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // cuts/vN.json in object form (plan §7.7). No path fields: media is named by assetId only (plan §6.8).
 import { z } from "zod";
-import { AssetIdSchema, BaseVideoIdSchema, CANVAS, CanvasPointSchema, CanvasXSchema, CanvasYSchema, FrameRateSchema, sourceSpan } from "../primitives.ts";
+import { IdSchema, BaseVideoIdSchema, CANVAS, CanvasPointSchema, CanvasXSchema, CanvasYSchema, FrameRateSchema, sourceSpan } from "../primitives.ts";
 
 /** Mirrors engine edl.py ZOOM_PRESETS. */
 export const ZOOM_PRESETS = ["snap", "push", "reveal", "through-out", "through-in", "portal"] as const;
@@ -43,7 +43,7 @@ export const CutawaySchema = sourceSpan({ title: z.string().min(1), sub: z.strin
 
 export const CutSpecSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  sourceAssetId: AssetIdSchema,
+  sourceAssetId: IdSchema,
   durationS: z.number().positive(),
   fps: FrameRateSchema,
   removals: z.array(RemovalSchema),

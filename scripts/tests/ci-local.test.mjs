@@ -13,7 +13,7 @@ describe("ci-local", () => {
   it("runs the setup steps in turn, then the independent checks side by side", () => {
     const listing = listSteps([]);
     expect(listing.status, listing.stderr).toBe(0);
-    expect(listing.stdout.trim().split("\n")).toEqual(["actionlint", "gitleaks", "install", "parallel: format lint typecheck test-server test-other engine"]);
+    expect(listing.stdout.trim().split("\n")).toEqual(["actionlint", "gitleaks", "install", "parallel: engine lint test-server typecheck test-other format"]);
   });
 
   it("adds the fresh-machine setup and the doctor for a release merge", () => {
@@ -23,6 +23,31 @@ describe("ci-local", () => {
   it("splits the engine suite over ZKS_CI_JOBS workers, six by default", () => {
     expect(spawnSync("bash", [SCRIPT, "--list-jobs"], { encoding: "utf8" }).stdout.trim()).toBe("6");
     expect(spawnSync("bash", [SCRIPT, "--list-jobs"], { encoding: "utf8", env: { ...process.env, ZKS_CI_JOBS: "3" } }).stdout.trim()).toBe("3");
+  });
+
+  // Starting every lane on an already busy machine starved vitest of workers ("Failed to start forks worker").
+  it("runs every lane at once on an idle machine and fewer when the load already exceeds the cores", () => {
+    const lanes = (/** @type {Record<string, string>} */ env) =>
+      spawnSync("bash", [SCRIPT, "--list-lanes"], { encoding: "utf8", env: { ...process.env, ...env } }).stdout.trim();
+    expect(lanes({ ZKS_CI_LOAD: "2", ZKS_CI_CORES: "24" })).toBe("6");
+    expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24" })).toBe("2");
+    expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24", ZKS_CI_LANES: "4" })).toBe("4");
+  });
+
+  // A zero or non-numeric count would leave the lane loop waiting forever on a run that never starts.
+  it("refuses a lane or job count that is not a positive whole number", () => {
+    /** @type {[string, string][]} */
+    const cases = [
+      ["ZKS_CI_LANES", "0"],
+      ["ZKS_CI_LANES", "two"],
+      ["ZKS_CI_JOBS", "0"],
+      ["ZKS_CI_JOBS", "-3"],
+    ];
+    for (const [name, value] of cases) {
+      const outcome = spawnSync("bash", [SCRIPT, "--list-lanes"], { encoding: "utf8", env: { ...process.env, [name]: value } });
+      expect(outcome.status, `${name}=${value}`).toBe(2);
+      expect(outcome.stderr).toContain(name);
+    }
   });
 
   it("rejects an unknown option", () => {

@@ -1,9 +1,10 @@
 // Created by The Angelo Umali.
-// Every route failure becomes `{ error }` with a status; nothing else (stacks, SQL, paths) reaches a client.
+// Every route failure becomes `{ error, code? }` with a status; nothing else (stacks, SQL, paths) reaches a client.
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { hasErrorCode } from "@zks/db";
+import type { ApiErrorBody, ApiErrorCode } from "@zks/shared";
 import type { z } from "zod";
 import { UserPathError } from "../fs/path-policy.ts";
 import { MediaRejectedError } from "../media-io/probe.ts";
@@ -13,14 +14,20 @@ import { PathEscapeError } from "../security/index.ts";
 export class HttpError extends Error {
   override readonly name = "HttpError";
   readonly status: ContentfulStatusCode;
+  readonly code: ApiErrorCode | undefined;
 
-  constructor(status: ContentfulStatusCode, message: string) {
+  constructor(status: ContentfulStatusCode, message: string, code?: ApiErrorCode) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
 export const notFound = () => new HttpError(404, "Not found");
+
+export function errorBody(error: HttpError): ApiErrorBody {
+  return error.code === undefined ? { error: error.message } : { error: error.message, code: error.code };
+}
 
 export function toHttpError(error: unknown): HttpError {
   if (error instanceof HttpError) return error;

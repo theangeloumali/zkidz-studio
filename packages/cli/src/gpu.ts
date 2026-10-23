@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import type { CommandRunner } from "./exec.ts";
 
-export type GpuBackend = "nvidia" | "videotoolbox" | "qsv" | "amf" | "vaapi" | "cpu";
+type GpuBackend = "nvidia" | "videotoolbox" | "qsv" | "amf" | "vaapi" | "cpu";
 
 const PROBE_ORDER: readonly { backend: GpuBackend; encoders: readonly string[] }[] = [
   { backend: "nvidia", encoders: ["hevc_nvenc", "h264_nvenc"] },
@@ -14,7 +14,7 @@ const PROBE_ORDER: readonly { backend: GpuBackend; encoders: readonly string[] }
 const VAAPI_RENDER_NODE = "/dev/dri/renderD128";
 const TEST_ENCODE_TIMEOUT_MS = 20_000;
 
-export interface EncodeAttempt {
+interface EncodeAttempt {
   backend: GpuBackend;
   encoder: string;
   ok: boolean;

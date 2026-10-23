@@ -11,9 +11,9 @@ const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 const SUBPROCESS_TIMEOUT_MS = 30_000;
 const tempHomes: string[] = [];
 
-function runCli(args: string[], home = mkdtempSync(path.join(tmpdir(), "zks-cli-"))) {
+function runCli(args: string[], home = mkdtempSync(path.join(tmpdir(), "zks-cli-")), env: Record<string, string | undefined> = {}) {
   tempHomes.push(home);
-  return spawnSync(process.execPath, [MAIN, ...args], { encoding: "utf8", env: { ...process.env, ZKS_HOME: home } });
+  return spawnSync(process.execPath, [MAIN, ...args], { encoding: "utf8", env: { ...process.env, ZKS_HOME: home, ...env } });
 }
 
 describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
@@ -48,6 +48,20 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
     const found = runCli(["tools", "path", "chrome-headless-shell"], home);
     expect(found.status, found.stderr).toBe(0);
     expect(found.stdout.trim()).toBe(expected);
+  });
+
+  // CI and the render recipe export ZKS_FFMPEG from this command, so echoing an exported value back would keep a stale one.
+  it("prints the pinned ffmpeg even when ZKS_FFMPEG points somewhere else", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
+    const missing = runCli(["tools", "path", "ffmpeg"], home, { ZKS_FFMPEG: undefined });
+    const pinned = missing.stderr.match(/not installed at (.+)\. Run/)?.[1] ?? "";
+    expect(pinned.startsWith(path.join(home, "tools", "ffmpeg"))).toBe(true);
+    mkdirSync(path.dirname(pinned), { recursive: true });
+    writeFileSync(pinned, "");
+
+    const found = runCli(["tools", "path", "ffmpeg"], home, { ZKS_FFMPEG: "/usr/bin/ffmpeg" });
+    expect(found.status, found.stderr).toBe(0);
+    expect(found.stdout.trim()).toBe(pinned);
   });
 
   it("rejects an unknown tool name with usage and exit 2", () => {

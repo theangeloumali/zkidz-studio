@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Server settings from the environment (plan §3.3). ZKS_HOME holds the database, keys and projects, so it is owner-only.
 import { constants } from "node:fs";
-import { access, chmod, mkdir } from "node:fs/promises";
+import { access, chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { APP_PORT, ENV } from "@zks/shared";
@@ -54,9 +54,16 @@ export function projectDir(studioHome: string, slug: string): string {
   return join(studioHome, "projects", slug);
 }
 
-export async function ensureProjectDirs(studioHome: string, slug: string): Promise<void> {
+/** The root is made without `recursive`, so a folder already there fails with EEXIST instead of being adopted. */
+export async function createProjectDirs(studioHome: string, slug: string): Promise<void> {
   const root = projectDir(studioHome, slug);
-  await Promise.all(PROJECT_DIRS.map((dir) => mkdir(join(root, dir), { recursive: true, mode: OWNER_ONLY_MODE })));
+  await mkdir(root, { mode: OWNER_ONLY_MODE });
+  try {
+    await Promise.all(PROJECT_DIRS.map((dir) => mkdir(join(root, dir), { mode: OWNER_ONLY_MODE })));
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function parsePort(rawPort: string | undefined): number {

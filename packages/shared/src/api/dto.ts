@@ -16,6 +16,8 @@ import { FrameRateSchema, IdSchema, IsoTimestampSchema, JobPercentSchema, VideoI
 
 /** Rules panel cap (plan §6.9). */
 export const RULE_TEXT_MAX_CHARS = 500;
+/** A title comes from a dropped file name, and file names stop at 255 on every desktop filesystem. */
+export const PROJECT_TITLE_MAX_CHARS = 255;
 
 export const ProjectSchema = z.strictObject({
   id: IdSchema,
@@ -109,8 +111,15 @@ export const DoctorCheckSchema = z.strictObject({
   fix: z.string().optional(),
 });
 
+/** Codes a client branches on instead of the status; append-only, because old clients match on these strings. */
+export const ApiErrorCodeSchema = z.enum(["key_rejected"]);
+/** Every API failure body. */
+export const ApiErrorBodySchema = z.strictObject({ error: z.string(), code: ApiErrorCodeSchema.optional() });
+
 export type Project = z.infer<typeof ProjectSchema>;
 export type MediaAsset = z.infer<typeof MediaAssetSchema>;
 export type Job = z.infer<typeof JobSchema>;
 export type Rule = z.infer<typeof RuleSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
+export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
+export type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;

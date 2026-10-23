@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import { existsSync, mkdtempSync, readFileSync, rmSync, statfsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -7,13 +8,13 @@ import { APP_PORT, ENV, LOOPBACK_HOST } from "@zks/shared";
 import { findOnPath } from "@zks/shared/node";
 import type { ZksContext } from "./context.ts";
 import { sha256File } from "./download.ts";
-import { bootstrapDirs, runCommand } from "./exec.ts";
+import { bootstrapDirs, runCommand, type CommandRunner } from "./exec.ts";
 import { listsEncoder, probeGpuBackend } from "./gpu.ts";
 import { listModels } from "./models.ts";
 import { isWslDrvfsPath } from "./platform.ts";
 import { toolExecutablePath } from "./tools.ts";
 
-export type CheckStatus = "ok" | "warn" | "fail";
+type CheckStatus = "ok" | "warn" | "fail";
 export interface CheckResult {
   id: string;
   status: CheckStatus;
@@ -29,6 +30,10 @@ const MIN_FREE_GB = 20;
 const BYTES_PER_GB = 1024 ** 3;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const RENDER_TIMEOUT_MS = 60_000;
+// 2.1.295 added onFailure on HTTP hooks, which terminal mode relies on (plan §6.3).
+const MIN_CLAUDE_VERSION = [2, 1, 295] as const;
+const CLAUDE_INSTALL_URL = "https://code.claude.com/docs/en/setup";
+const CLAUDE_UPDATE_FIX = `terminal mode needs Claude Code ${MIN_CLAUDE_VERSION.join(".")}+: run claude update`;
 const HEVC_FAMILY = ["hevc_nvenc", "h264_nvenc", "hevc_videotoolbox", "hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265", "libx264"];
 
 function firstLine(text: string): string {
@@ -121,7 +126,10 @@ export function checkWhisper(context: ZksContext): CheckResult {
 
 /** Renders a real page to PNG: a binary that starts but cannot draw (missing libs) fails here. */
 export function checkChromeRender(context: ZksContext, executable = toolExecutablePath(context, "chrome-headless-shell")): CheckResult {
-  if (!executable || !existsSync(executable)) return { id: "chrome", status: "fail", required: true, detail: "not installed", fix: SETUP_FIX };
+  if (!executable || !existsSync(executable)) {
+    const fix = process.env[ENV.chrome] ? `${ENV.chrome} does not exist; unset it or point it at a chrome-headless-shell` : SETUP_FIX;
+    return { id: "chrome", status: "fail", required: true, detail: "not installed", fix };
+  }
   const scratchDir = mkdtempSync(path.join(os.tmpdir(), "zks-doctor-"));
   const screenshotPath = path.join(scratchDir, "render.png");
   try {
@@ -154,10 +162,66 @@ export function checkModels(context: ZksContext): CheckResult {
 }
 
 /** Version only: auth state belongs to the user's Claude Code login, never to doctor output. */
-export function checkClaude(): CheckResult {
-  const version = runCommand("claude", ["--version"]);
-  if (version.code !== 0) return { id: "claude", status: "warn", required: false, detail: "claude not found", fix: "install Claude Code for agent features" };
-  return { id: "claude", status: "ok", required: false, detail: firstLine(version.stdout) };
+export function checkClaude(runner: CommandRunner = runCommand): CheckResult {
+  const version = runner("claude", ["--version"]);
+  if (version.code !== 0)
+    return {
+      id: "claude",
+      status: "warn",
+      required: false,
+      detail: "claude not found",
+      fix: `needed only for terminal mode; install Claude Code: ${CLAUDE_INSTALL_URL}`,
+    };
+  const detail = firstLine(version.stdout);
+  const installed = parseVersion(detail);
+  if (!installed) return { id: "claude", status: "warn", required: false, detail: `unrecognised version: ${detail}`, fix: CLAUDE_UPDATE_FIX };
+  if (compareVersions(installed, MIN_CLAUDE_VERSION) < 0)
+    return { id: "claude", status: "warn", required: false, detail: `${installed.join(".")} is below ${MIN_CLAUDE_VERSION.join(".")}`, fix: CLAUDE_UPDATE_FIX };
+  return { id: "claude", status: "ok", required: false, detail };
+}
+
+function parseVersion(text: string): number[] | undefined {
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
+  return match ? match.slice(1).map(Number) : undefined;
+}
+
+function compareVersions(left: readonly number[], right: readonly number[]): number {
+  for (const [index, part] of left.entries()) if (part !== right[index]) return part - (right[index] ?? 0);
+  return 0;
+}
+
+export interface NodePtyCheckOptions {
+  loadNodePty?: () => unknown;
+  platform?: NodeJS.Platform;
+}
+
+// node-pty is the server's dependency, so it is resolved from there; it ships prebuilds for win32 and darwin only.
+const requireFromServer = createRequire(new URL("../../../apps/server/package.json", import.meta.url));
+
+const NOT_INSTALLED = "node-pty is not installed";
+const REINSTALL_FIX = "terminal mode needs node-pty: run pnpm install";
+const TOOLCHAIN_FIX =
+  "terminal mode needs a C++ toolchain to build node-pty: sudo apt install build-essential python3 (or your distro's equivalent), then pnpm rebuild node-pty";
+
+function exposesSpawn(module: unknown): boolean {
+  return typeof module === "object" && module !== null && "spawn" in module && typeof module.spawn === "function";
+}
+
+export function checkNodePty({
+  loadNodePty = (): unknown => requireFromServer("node-pty"),
+  platform = process.platform,
+}: NodePtyCheckOptions = {}): CheckResult {
+  let failure: string;
+  try {
+    if (exposesSpawn(loadNodePty())) return { id: "node-pty", status: "ok", required: false, detail: "loads (terminal mode available)" };
+    failure = "loaded without a spawn function";
+  } catch (error) {
+    const message = firstLine(error instanceof Error ? error.message : String(error));
+    failure = message === "Cannot find module 'node-pty'" ? NOT_INSTALLED : message;
+  }
+  // Only a missing native build on Linux needs the toolchain; elsewhere a reinstall fetches the prebuild.
+  const fix = platform === "linux" && failure !== NOT_INSTALLED ? TOOLCHAIN_FIX : REINSTALL_FIX;
+  return { id: "node-pty", status: "warn", required: false, detail: failure, fix };
 }
 
 /** ZKS_HOME does not exist before setup, but the disk it will land on does. */

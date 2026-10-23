@@ -39,6 +39,9 @@ export const ApprovalFactsSchema = z.strictObject({
   filesToDelete: z.array(z.string()),
 });
 
+/** An approval card as the server builds it; the broker adds the requestId. */
+export const ApprovalCardSchema = z.strictObject({ tool: z.string().min(1), facts: ApprovalFactsSchema, agentNote: z.string().optional() });
+
 /** The AskUserQuestion tool's question shape. */
 export const AskedQuestionSchema = z.strictObject({
   question: z.string().min(1),
@@ -60,7 +63,7 @@ const studioEventSchemas = [
   studioEvent("tool.heartbeat", { toolUseId: z.string().min(1), elapsedS: z.number().nonnegative() }),
   studioEvent("tool.denied", { name: z.string().min(1), reason: z.string().min(1) }),
   studioEvent("question.asked", { requestId: z.string().min(1), questions: z.array(AskedQuestionSchema).min(1) }),
-  studioEvent("approval.requested", { requestId: z.string().min(1), tool: z.string().min(1), facts: ApprovalFactsSchema, agentNote: z.string().optional() }),
+  studioEvent("approval.requested", { requestId: z.string().min(1), ...ApprovalCardSchema.shape }),
   studioEvent("spec.version", {
     videoId: VideoIdSchema,
     kind: SpecKindSchema,
@@ -104,3 +107,4 @@ export type StudioEvent = z.infer<typeof StudioEventSchema>;
 export type StudioEventType = StudioEvent["type"];
 export type CutCandidate = z.infer<typeof CutCandidateSchema>;
 export type ApprovalFacts = z.infer<typeof ApprovalFactsSchema>;
+export type ApprovalCard = z.infer<typeof ApprovalCardSchema>;

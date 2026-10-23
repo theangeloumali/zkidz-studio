@@ -1,0 +1,8 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000002",
+  "transcript_path": "/studio/.claude/projects/-studio-projects-demo/00000000-0000-4000-8000-000000000002.jsonl",
+  "cwd": "/studio/projects/demo",
+  "hook_event_name": "SessionStart",
+  "source": "startup",
+  "model": "claude-haiku-5-5"
+}

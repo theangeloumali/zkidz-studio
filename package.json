@@ -21,7 +21,7 @@
     "start": "pnpm -F @zks/web build && pnpm -F @zks/server start",
     "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
     "zks": "node packages/cli/src/main.ts",
-    "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
+    "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r --workspace-concurrency=1 test",
     "ci:local": "bash scripts/ci-local.sh",
     "verify:gpu": "node scripts/verify-gpu.mjs",
     "db:test:matrix": "node scripts/db-test-matrix.mjs",
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@opentelemetry/api": "1.9.1",
     "eslint": "^10.12.0",
     "prettier": "^3.9.10",
     "typescript": "~6.0.3",

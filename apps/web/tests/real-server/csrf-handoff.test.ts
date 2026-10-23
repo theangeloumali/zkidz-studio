@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // @vitest-environment node
 // End to end against the real server: Kai's createSecurity guard in front of the real project routes, no mock guard.
-import { APP_PORT, CSRF_HEADER, isStateChangingMethod, PREVIEW_PORT } from "@zks/shared";
+import { API_ROUTES, APP_PORT, CSRF_HEADER, isStateChangingMethod, PREVIEW_PORT } from "@zks/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createSecurity } from "../../../server/src/security/index.ts";
 import { connectionFrom, createTestServer, TEST_HOST, type TestServer } from "../../../server/test/support/test-server.ts";
@@ -36,7 +36,10 @@ function routeFetchToServer(): string[] {
 // A fresh module per test, so the token cache starts empty like a freshly loaded page.
 async function loadClient() {
   vi.resetModules();
-  return import("../../src/api/client.ts");
+  const client = await import("../../src/api/client.ts");
+  const createProject = (title: string) =>
+    client.requestJson(API_ROUTES.createProject.response, API_ROUTES.createProject.path, { method: "POST", body: { title } });
+  return { ...client, createProject };
 }
 
 describe("CSRF handoff through the real security middleware", () => {
@@ -49,6 +52,18 @@ describe("CSRF handoff through the real security middleware", () => {
     expect(project).toMatchObject({ title: "Beach day" });
     expect(exchanges).toEqual(["GET /api/projects 200", "POST /api/projects 201"]);
     expect((await fetchProjects()).map(({ id }) => id)).toContain(project.id);
+  });
+
+  // Stop, the terminal ticket and opening the terminal send no body; the guard still needs the JSON content type on them.
+  it("lets a write with no body through the guard (Stop)", async () => {
+    const exchanges = routeFetchToServer();
+    vi.resetModules();
+    const { stopTurn } = await import("../../src/api/agent-client.ts");
+
+    const outcome = await stopTurn("no-such-project").catch((error: unknown) => error);
+
+    expect(exchanges.at(-1)).toMatch(/^POST \/api\/projects\/no-such-project\/stop (?!403)\d+$/);
+    expect(String(outcome)).not.toContain("Forbidden: content-type");
   });
 
   it("is a real guard: a write carrying a stale token is refused with 403", async () => {

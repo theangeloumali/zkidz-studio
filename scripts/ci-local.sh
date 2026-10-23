@@ -6,27 +6,55 @@
 # over ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
 set -uo pipefail
 
-USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
+USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=scripts/lib/ci-lanes.sh
+source "$REPO_ROOT/scripts/lib/ci-lanes.sh"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 ENGINE_JOBS="${ZKS_CI_JOBS:-6}"
+# A zero or non-numeric count would leave the lane loop waiting forever.
+for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
+  if [[ -n "${!count_var:-}" && ! "${!count_var}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ci-local: $count_var must be a positive whole number, got '${!count_var}'" >&2
+    exit 2
+  fi
+done
 
 release=0
 list=0
+list_lanes=0
 for arg in "$@"; do
   case "$arg" in
     --release) release=1 ;;
     --list) list=1 ;;
     --list-jobs) echo "$ENGINE_JOBS" && exit 0 ;;
+    --list-lanes) list_lanes=1 ;;
     *) echo "$USAGE" >&2 && exit 2 ;;
   esac
 done
 
 serial_steps=(actionlint gitleaks install)
-# The server suite keeps its own lane: each of its files boots a PGlite, and beside the other suites that ran out of memory.
-parallel_steps=(format lint typecheck test-server test-other engine)
+# Heaviest first, so with fewer lanes the long steps never wait behind the short ones. The server suite keeps its own
+# lane: each of its files boots a PGlite, and beside the other suites that ran out of memory.
+parallel_steps=(engine lint test-server typecheck test-other format)
+
+# Every lane at once on an idle machine; on one already busier than its cores, two, or vitest cannot start its workers.
+lane_count() {
+  local load="${ZKS_CI_LOAD:-$(cut -d' ' -f1 /proc/loadavg)}" cores="${ZKS_CI_CORES:-$(nproc)}"
+  if [[ -n "${ZKS_CI_LANES:-}" ]]; then
+    echo "$ZKS_CI_LANES"
+  elif awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
+    echo 2
+  else
+    echo "${#parallel_steps[@]}"
+  fi
+}
+if ((list_lanes)); then
+  lane_count
+  exit 0
+fi
 if ((list)); then
   printf '%s\n' "${serial_steps[@]}" "parallel: ${parallel_steps[*]}"
   ((release)) && echo "setup-doctor"
@@ -117,8 +145,10 @@ step_setup-doctor() {
 }
 
 failed=()
+reported=()
 report() {
   local step=$1 status=$2 seconds=$3
+  reported+=("$step")
   if ((status == 0)); then
     printf 'PASS  %-12s %4ss\n' "$step" "$seconds"
   else
@@ -134,18 +164,14 @@ for step in "${serial_steps[@]}"; do
   report "$step" $? "$((SECONDS - started))"
 done
 
-declare -A step_of_pid
-lane_started=$SECONDS
-for step in "${parallel_steps[@]}"; do
-  "step_$step" >"$log_dir/$step.log" 2>&1 &
-  step_of_pid[$!]=$step
-done
-while ((${#step_of_pid[@]})); do
-  wait -n -p finished_pid "${!step_of_pid[@]}"
-  status=$?
-  report "${step_of_pid[$finished_pid]}" "$status" "$((SECONDS - lane_started))"
-  unset "step_of_pid[$finished_pid]"
-done
+lanes=$(lane_count)
+echo "lanes: $lanes"
+run_lanes "$lanes" "$log_dir" "${parallel_steps[@]}"
+# Every step must have reported; a scheduler fault that skips one must never read as a pass.
+if ((${#reported[@]} != ${#serial_steps[@]} + ${#parallel_steps[@]})); then
+  echo "ci-local: only ${#reported[@]} of $((${#serial_steps[@]} + ${#parallel_steps[@]})) steps reported" >&2
+  failed+=(scheduler)
+fi
 
 if ((release)); then
   started=$SECONDS

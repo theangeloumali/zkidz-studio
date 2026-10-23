@@ -1,9 +1,10 @@
 // Created by The Angelo Umali.
 // Browser-facing request guards (plan §11): Host allowlist, fetch metadata, and Origin + CSRF + JSON on writes.
-import { timingSafeEqual } from "node:crypto";
 import { API_ROUTES, CSRF_HEADER, isStateChangingMethod, LOOPBACK_HOST } from "@zks/shared";
 import type { Context, MiddlewareHandler } from "hono";
+import { STUDIO_MCP_ROUTES } from "../tools/mcp-paths.ts";
 import { applySecurityHeaders, buildSecurityHeaders } from "./security-headers.ts";
+import { tokensMatch } from "./token.ts";
 
 export interface RequestGuardConfig {
   readonly appPort: number;
@@ -11,7 +12,7 @@ export interface RequestGuardConfig {
   readonly csrfToken: string;
 }
 
-type RejectionReason = "host" | "framed" | "fetch-site" | "origin" | "csrf" | "content-type";
+type RejectionReason = "host" | "framed" | "fetch-site" | "origin" | "csrf" | "content-type" | "bearer";
 
 const FRAME_DESTINATIONS: ReadonlySet<string> = new Set(["iframe", "frame", "embed", "object", "fencedframe"]);
 const ALWAYS_ALLOWED_FETCH_SITES: ReadonlySet<string> = new Set(["same-origin", "none"]);
@@ -19,15 +20,33 @@ const FOREIGN_FETCH_SITES: ReadonlySet<string> = new Set(["cross-site", "same-si
 const STREAMED_UPLOAD_ROUTES = Object.values(API_ROUTES)
   .filter((route) => "body" in route && route.body === "binary")
   .map((route) => ({ method: route.method, pattern: new RegExp(`^${route.path.replace(/:[A-Za-z]+/g, "[^/]+")}$`) }));
+const SESSION_ID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+// The hook relay and the MCP twin are not browsers: they carry a per-session bearer, which the route checks, instead
+// of Origin + CSRF.
+const BEARER_ROUTES = [
+  { method: "POST", path: API_ROUTES.terminalHooks.path },
+  { method: "GET", path: STUDIO_MCP_ROUTES.listTools },
+  { method: "POST", path: STUDIO_MCP_ROUTES.callTool },
+].map((route) => ({ method: route.method, pattern: new RegExp(`^${route.path.replace(":sessionId", SESSION_ID_PATTERN)}$`) }));
+const BEARER_PREFIX = "Bearer ";
+
+/** The Host values a browser may send for the app (DNS rebinding guard, plan §11). */
+export function allowedHostsFor(appPort: number): readonly string[] {
+  return [`${LOOPBACK_HOST}:${appPort}`, `localhost:${appPort}`, `[::1]:${appPort}`];
+}
+
+export function isAllowedHost(hostHeader: string | undefined, allowedHosts: readonly string[]): boolean {
+  return hostHeader !== undefined && allowedHosts.includes(hostHeader.toLowerCase());
+}
 
 export function createRequestGuard(config: RequestGuardConfig): MiddlewareHandler {
-  const allowedHosts: ReadonlySet<string> = new Set([`${LOOPBACK_HOST}:${config.appPort}`, `localhost:${config.appPort}`, `[::1]:${config.appPort}`]);
+  const allowedHosts = allowedHostsFor(config.appPort);
   const securityHeaders = buildSecurityHeaders(config.previewPort);
 
   return async (c, next) => {
     const rejectionReason = findRejectionReason(c, { allowedHosts, csrfToken: config.csrfToken });
     if (rejectionReason !== null) {
-      const rejection = c.json({ error: `Forbidden: ${rejectionReason}` }, 403);
+      const rejection = rejectionReason === "bearer" ? c.json({ error: "Unauthorized" }, 401) : c.json({ error: `Forbidden: ${rejectionReason}` }, 403);
       applySecurityHeaders(rejection.headers, securityHeaders);
       return rejection;
     }
@@ -38,17 +57,31 @@ export function createRequestGuard(config: RequestGuardConfig): MiddlewareHandle
   };
 }
 
-function findRejectionReason(c: Context, guard: { allowedHosts: ReadonlySet<string>; csrfToken: string }): RejectionReason | null {
+function findRejectionReason(c: Context, guard: { allowedHosts: readonly string[]; csrfToken: string }): RejectionReason | null {
   const host = c.req.header("host")?.toLowerCase();
-  if (host === undefined || !guard.allowedHosts.has(host)) return "host";
+  if (host === undefined || !isAllowedHost(host, guard.allowedHosts)) return "host";
   if (FRAME_DESTINATIONS.has(c.req.header("sec-fetch-dest")?.toLowerCase() ?? "")) return "framed";
   if (!isFetchSiteAllowed(c)) return "fetch-site";
+  if (isBearerRoute(c)) return findBearerRejection(c, host);
   if (!isStateChangingMethod(c.req.method)) return null;
 
   // Exact same-origin: the scheme and the Host the browser actually used.
   if (c.req.header("origin") !== `http://${host}`) return "origin";
-  if (!isLaunchToken(c.req.header(CSRF_HEADER), guard.csrfToken)) return "csrf";
+  if (!tokensMatch(guard.csrfToken, c.req.header(CSRF_HEADER))) return "csrf";
   if (mediaTypeOf(c.req.header("content-type")) !== expectedMediaType(c)) return "content-type";
+  return null;
+}
+
+function isBearerRoute(c: Context): boolean {
+  return BEARER_ROUTES.some((route) => route.method === c.req.method && route.pattern.test(c.req.path));
+}
+
+/** No Origin is fine (node callers send none), but a browser's foreign one never is. */
+function findBearerRejection(c: Context, host: string): RejectionReason | null {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== `http://${host}`) return "origin";
+  if (!c.req.header("authorization")?.startsWith(BEARER_PREFIX)) return "bearer";
+  if (isStateChangingMethod(c.req.method) && mediaTypeOf(c.req.header("content-type")) !== "application/json") return "content-type";
   return null;
 }
 
@@ -61,13 +94,6 @@ function isFetchSiteAllowed(c: Context): boolean {
   if (c.req.path.toLowerCase().startsWith("/api")) return false;
   // A link from another site may open the app page, but never load it as a subresource.
   return c.req.header("sec-fetch-mode") === "navigate" && c.req.header("sec-fetch-dest") === "document";
-}
-
-function isLaunchToken(presentedToken: string | undefined, csrfToken: string): boolean {
-  if (presentedToken === undefined) return false;
-  const presentedBytes = Buffer.from(presentedToken);
-  const expectedBytes = Buffer.from(csrfToken);
-  return presentedBytes.length === expectedBytes.length && timingSafeEqual(presentedBytes, expectedBytes);
 }
 
 function mediaTypeOf(contentType: string | undefined): string | undefined {

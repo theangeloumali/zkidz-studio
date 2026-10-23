@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Project, media and transcript tools (plan §6.8).
 import { z } from "zod";
-import { AssetIdSchema, FrameRateSchema, SourceSecondsSchema, sourceSpan } from "../primitives.ts";
+import { IdSchema, FrameRateSchema, SourceSecondsSchema, sourceSpan } from "../primitives.ts";
 import { InsertSpecSchema } from "../specs/inserts.ts";
 import { EmptyInputSchema, JobHandleSchema, TranscriptWordSchema, defineTool } from "./define.ts";
 
@@ -17,7 +17,7 @@ export const projectInfo = defineTool({
   output: z.strictObject({
     videoId: z.string(),
     clips: z.array(
-      z.strictObject({ assetId: AssetIdSchema, name: z.string(), durationS: z.number(), fps: FrameRateSchema, rotation: RotationSchema, hdr: z.boolean() }),
+      z.strictObject({ assetId: IdSchema, name: z.string(), durationS: z.number(), fps: FrameRateSchema, rotation: RotationSchema, hdr: z.boolean() }),
     ),
     theme: z.string(),
     rules: z.array(z.string()),
@@ -38,7 +38,7 @@ export const getCapabilities = defineTool({
 });
 
 export const probeMedia = defineTool({
-  input: z.strictObject({ assetId: AssetIdSchema }),
+  input: z.strictObject({ assetId: IdSchema }),
   output: z.strictObject({
     durationS: z.number().nonnegative(),
     fps: FrameRateSchema,
@@ -53,14 +53,14 @@ export const probeMedia = defineTool({
 });
 
 export const IngestResultSchema = z.strictObject({
-  sourceAssetId: AssetIdSchema,
+  sourceAssetId: IdSchema,
   frames: z.int().positive(),
-  joins: z.array(z.strictObject({ assetId: AssetIdSchema, at: SourceSecondsSchema })),
+  joins: z.array(z.strictObject({ assetId: IdSchema, at: SourceSecondsSchema })),
 });
 
 export const ingest = defineTool({
   input: z.strictObject({
-    clips: z.array(z.strictObject({ assetId: AssetIdSchema, zoom: z.number().positive().optional() })).min(1),
+    clips: z.array(z.strictObject({ assetId: IdSchema, zoom: z.number().positive().optional() })).min(1),
     inserts: InsertSpecSchema.optional(),
   }),
   output: JobHandleSchema,

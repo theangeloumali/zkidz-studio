@@ -27,3 +27,10 @@ export function stubFetch(handlers: Readonly<Record<string, Handler>>) {
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
+
+/** The parsed JSON body of the first stubbed request to `url`. */
+export function requestBody(fetchMock: ReturnType<typeof stubFetch>, url: string): unknown {
+  const body = fetchMock.mock.calls.find(([calledUrl]) => calledUrl === url)?.[1]?.body;
+  if (typeof body !== "string") throw new Error(`No JSON body was sent to ${url}`);
+  return JSON.parse(body);
+}

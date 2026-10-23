@@ -1,6 +1,14 @@
 // Created by The Angelo Umali.
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { EPHEMERAL_EVENT_TYPES, JobSchema, JobSnapshotSchema, STUDIO_EVENT_TYPES, StudioEventSchema, type StudioEvent } from "../src/index.ts";
+import {
+  ApprovalCardSchema,
+  EPHEMERAL_EVENT_TYPES,
+  JobSchema,
+  JobSnapshotSchema,
+  STUDIO_EVENT_TYPES,
+  StudioEventSchema,
+  type StudioEvent,
+} from "../src/index.ts";
 import { EVENT_AT, JOB_ID, PROJECT_ID } from "./fixtures.ts";
 import { sampleEventByType } from "./event-samples.ts";
 
@@ -73,5 +81,14 @@ describe("StudioEventSchema (plan §6.11)", () => {
   it("narrows on type", () => {
     expectTypeOf<Extract<StudioEvent, { type: "spec.version" }>["author"]>().toEqualTypeOf<"agent" | "user" | "system">();
     expectTypeOf<Extract<StudioEvent, { type: "terminal.state" }>["state"]>().toEqualTypeOf<"starting" | "ready" | "working" | "waiting" | "exited">();
+  });
+});
+
+describe("ApprovalCardSchema", () => {
+  it("is the approval.requested payload minus its envelope, so the server and web share one card shape", () => {
+    const { type: _type, id: _id, projectId: _projectId, at: _at, requestId: _requestId, ...card } = sampleEventByType["approval.requested"];
+
+    expect(ApprovalCardSchema.parse(card)).toEqual(card);
+    expect(ApprovalCardSchema.safeParse({ ...card, requestId: "a-1" }).success).toBe(false);
   });
 });

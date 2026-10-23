@@ -5,8 +5,11 @@ import { join, relative } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
+import type { AgentServices } from "./agent-services.ts";
+import { registerDoctorRoutes } from "./doctor/routes.ts";
+import type { DoctorRunner } from "./doctor/runner.ts";
 import type { EventBus } from "./events/event-bus.ts";
-import { notFound, toHttpError } from "./http/http-error.ts";
+import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import type { Logger } from "./logging/logger.ts";
 import type { UploadLimits } from "./media-io/store.ts";
 import { registerEventRoutes } from "./routes/events.ts";
@@ -26,6 +29,10 @@ export interface AppDependencies {
   readonly uploadLimits: UploadLimits;
   readonly webDistDir: string;
   readonly logger: Logger;
+  /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
+  readonly agent?: Pick<AgentServices, "registerRoutes">;
+  /** GET /api/doctor; main.ts always passes it. */
+  readonly runDoctor?: DoctorRunner;
 }
 
 export function createApp(deps: AppDependencies): Hono {
@@ -38,6 +45,8 @@ export function createApp(deps: AppDependencies): Hono {
   registerFsRoutes(app, deps);
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus);
+  deps.agent?.registerRoutes(app);
+  if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
   app.all("/api/*", () => {
     throw notFound();
   });
@@ -52,7 +61,7 @@ export function createApp(deps: AppDependencies): Hono {
   app.onError((error, c) => {
     const httpError = toHttpError(error);
     if (httpError.status >= 500) deps.logger.error("request failed", { method: c.req.method, path: c.req.path, error });
-    return c.json({ error: httpError.message }, httpError.status);
+    return c.json(errorBody(httpError), httpError.status);
   });
   return app;
 }

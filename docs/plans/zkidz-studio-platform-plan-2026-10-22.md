@@ -1196,7 +1196,10 @@ Google Fonts CDN. Icons lucide. Dark navy default; the preview stage stays dark 
    uses `sandbox="allow-scripts"` without `allow-same-origin`, and the preview origin sends
    `Content-Security-Policy: default-src 'self'; connect-src 'none'; frame-ancestors http://127.0.0.1:4317`. `compose.js` escapes
    `<!--` as well as `</` (today only `</`, zkidz-films `engine/hf/compose.js:63`).
-3. Audio clock: `audio/vN_edit.wav` (already in edited time) drives playback; video follows it, which removes drift across swaps.
+3. Clock: the playing proxy leads, read per presented frame (`requestVideoFrameCallback`), and the overlay follows it, so
+   overlays stay on the picture across swaps. Deviation (Phase 4): the plan named `audio/vN_edit.wav` as the clock, but that
+   file exists only after `audio.py`, which Phase 5's render runs; the preview plays the proxies' own audio until a cut-time
+   audio build lands, and switching the clock to it is a change to `playback-clock.ts` alone.
 4. Update loop: `spec.version` → `edl.py` (ms) → composition rebuild (seconds, no Chrome) → `preview.ready` → re-seek at the same time.
 5. Fallback for cut-heavy edits: a 540p edited proxy rendered on CPU `ultrafast`.
 

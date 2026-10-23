@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { buttonClass } from "../components/button-class.ts";
 import { FIELD_CLASS } from "../components/field-class.ts";
-import { addRule, removeRule, rulesQuery, rulesQueryKey } from "./rules-client.ts";
+import { addRule, removeRule, rulesQuery, rulesQueryKey, setRuleEnabled } from "./rules-client.ts";
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -25,7 +25,7 @@ export function RulesRoute() {
       <p role="status" className="text-ui text-copy-muted empty:hidden">
         {notice}
       </p>
-      <RuleList onDeleted={() => setNotice("Rule deleted.")} />
+      <RuleList onDeleted={() => setNotice("Rule deleted.")} onToggled={setNotice} />
     </div>
   );
 }
@@ -86,7 +86,12 @@ function NewRuleForm({ onAdded }: { readonly onAdded: () => void }) {
   );
 }
 
-function RuleList({ onDeleted }: { readonly onDeleted: () => void }) {
+interface RuleListProps {
+  readonly onDeleted: () => void;
+  readonly onToggled: (notice: string) => void;
+}
+
+function RuleList({ onDeleted, onToggled }: RuleListProps) {
   const rules = useQuery(rulesQuery());
 
   if (rules.isPending) return <p className="text-ui text-copy-muted">Loading rules…</p>;
@@ -111,7 +116,7 @@ function RuleList({ onDeleted }: { readonly onDeleted: () => void }) {
   return (
     <ol aria-label="Your rules" className="flex flex-col divide-y divide-line rounded-card border border-line bg-bg-elevated">
       {rules.data.map((rule, index) => (
-        <RuleRow key={rule.id} rule={rule} position={index + 1} onDeleted={onDeleted} />
+        <RuleRow key={rule.id} rule={rule} position={index + 1} onDeleted={onDeleted} onToggled={onToggled} />
       ))}
     </ol>
   );
@@ -121,9 +126,10 @@ interface RuleRowProps {
   readonly rule: Rule;
   readonly position: number;
   readonly onDeleted: () => void;
+  readonly onToggled: (notice: string) => void;
 }
 
-function RuleRow({ rule, position, onDeleted }: RuleRowProps) {
+function RuleRow({ rule, position, onDeleted, onToggled }: RuleRowProps) {
   const queryClient = useQueryClient();
   const remove = useMutation({
     mutationFn: () => removeRule(rule.id),
@@ -132,14 +138,23 @@ function RuleRow({ rule, position, onDeleted }: RuleRowProps) {
       return queryClient.invalidateQueries({ queryKey: rulesQueryKey });
     },
   });
+  const toggle = useMutation({
+    mutationFn: (isEnabled: boolean) => setRuleEnabled(rule.id, isEnabled),
+    onSuccess: (updated) => {
+      onToggled(`Rule ${position} turned ${updated.isEnabled ? "on" : "off"}.`);
+      return queryClient.invalidateQueries({ queryKey: rulesQueryKey });
+    },
+  });
+  const error = remove.error ?? toggle.error;
 
   return (
-    <li className="flex items-start gap-4 px-5 py-3">
+    <li className="flex items-start gap-2 px-5 py-3 sm:gap-4">
       <span className="w-6 shrink-0 pt-2.5 font-mono text-ui-sm text-copy-muted tabular-nums">{position}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-1 py-2.5">
-        <p className="text-ui break-words">{rule.text}</p>
-        {remove.isError && <p className="text-ui-sm text-danger">{errorText(remove.error)}</p>}
+        <p className={`text-ui break-words ${rule.isEnabled ? "" : "text-copy-muted line-through decoration-copy-dim"}`}>{rule.text}</p>
+        {error && <p className="text-ui-sm text-danger">{errorText(error)}</p>}
       </div>
+      <RuleSwitch position={position} isEnabled={rule.isEnabled} isBusy={toggle.isPending} onToggle={() => toggle.mutate(!rule.isEnabled)} />
       <button
         type="button"
         aria-label={`Delete rule ${position}`}
@@ -150,5 +165,41 @@ function RuleRow({ rule, position, onDeleted }: RuleRowProps) {
         <Trash2 aria-hidden="true" className="size-4" />
       </button>
     </li>
+  );
+}
+
+interface RuleSwitchProps {
+  readonly position: number;
+  readonly isEnabled: boolean;
+  readonly isBusy: boolean;
+  readonly onToggle: () => void;
+}
+
+/** The On/Off word sits outside the button so its name stays "Use rule N" (WCAG 2.5.3) and state is not colour-only. */
+function RuleSwitch({ position, isEnabled, isBusy, onToggle }: RuleSwitchProps) {
+  return (
+    <span className="flex shrink-0 items-center">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isEnabled}
+        aria-label={`Use rule ${position}`}
+        className={buttonClass("quiet", "px-3")}
+        disabled={isBusy}
+        onClick={onToggle}
+      >
+        <span
+          aria-hidden="true"
+          className={`flex h-5 w-9 items-center rounded-pill border p-0.5 transition-colors duration-(--dur-1) ${isEnabled ? "border-accent bg-accent" : "border-line-strong bg-surface"}`}
+        >
+          <span
+            className={`size-3.5 rounded-pill transition-transform duration-(--dur-1) ease-out ${isEnabled ? "translate-x-4 bg-on-accent" : "bg-copy-dim"}`}
+          />
+        </span>
+      </button>
+      <span aria-hidden="true" className="w-7 text-ui-sm font-semibold text-copy-muted">
+        {isEnabled ? "On" : "Off"}
+      </span>
+    </span>
   );
 }

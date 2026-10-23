@@ -2,7 +2,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { API_ROUTES, RULE_TEXT_MAX_CHARS, type Rule } from "@zks/shared";
 import { RulesRoute } from "../../src/rules/rules-route.tsx";
 import { jsonResponse } from "../fakes.ts";
@@ -11,6 +11,8 @@ import { renderWithProviders, requestBody, stubFetch } from "../render.tsx";
 const LIST_KEY = `GET ${API_ROUTES.listRules.path}`;
 const CREATE_KEY = `POST ${API_ROUTES.createRule.path}`;
 const RULE_ID = "3c2b1a09-8f7e-4d6c-9b5a-4e3d2c1b0a9f";
+const OTHER_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const UPDATE_KEY = `PATCH /api/rules/${RULE_ID}`;
 
 function makeRule(overrides: Partial<Rule> = {}): Rule {
   return {
@@ -26,7 +28,7 @@ function makeRule(overrides: Partial<Rule> = {}): Rule {
 describe("Rules panel", () => {
   it("numbers each rule and labels its delete button", async () => {
     stubFetch({
-      [LIST_KEY]: () => jsonResponse({ rules: [makeRule(), makeRule({ id: "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d", text: "Never blur my family." })] }),
+      [LIST_KEY]: () => jsonResponse({ rules: [makeRule(), makeRule({ id: OTHER_ID, text: "Never blur my family." })] }),
     });
     renderWithProviders(<RulesRoute />);
 
@@ -105,6 +107,47 @@ describe("Rules panel", () => {
     expect(await screen.findByText("No rules yet")).toBeInTheDocument();
   });
 
+  it("gives each rule a switch that shows whether it is on", async () => {
+    stubFetch({ [LIST_KEY]: () => jsonResponse({ rules: [makeRule(), makeRule({ id: OTHER_ID, text: "Never blur my family.", isEnabled: false })] }) });
+    renderWithProviders(<RulesRoute />);
+
+    expect(await screen.findByRole("switch", { name: "Use rule 1" })).toHaveAttribute("aria-checked", "true");
+    const offSwitch = screen.getByRole("switch", { name: "Use rule 2" });
+    expect(offSwitch).toHaveAttribute("aria-checked", "false");
+    expect(offSwitch.closest("li")).toHaveTextContent(/Off$/);
+  });
+
+  it("turns a rule off with its switch and announces it", async () => {
+    let rules: Rule[] = [makeRule()];
+    const fetchMock = stubFetch({
+      [LIST_KEY]: () => jsonResponse({ rules }),
+      [UPDATE_KEY]: () => {
+        rules = [makeRule({ isEnabled: false })];
+        return jsonResponse(rules[0]);
+      },
+    });
+    renderWithProviders(<RulesRoute />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Use rule 1" }));
+
+    expect(await screen.findByText("Rule 1 turned off.")).toBeInTheDocument();
+    expect(requestBody(fetchMock, `/api/rules/${RULE_ID}`, "PATCH")).toEqual({ isEnabled: false });
+    await vi.waitFor(() => expect(screen.getByRole("switch", { name: "Use rule 1" })).toHaveAttribute("aria-checked", "false"));
+  });
+
+  it("turns a rule back on", async () => {
+    const fetchMock = stubFetch({
+      [LIST_KEY]: () => jsonResponse({ rules: [makeRule({ isEnabled: false })] }),
+      [UPDATE_KEY]: () => jsonResponse(makeRule()),
+    });
+    renderWithProviders(<RulesRoute />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Use rule 1" }));
+
+    expect(await screen.findByText("Rule 1 turned on.")).toBeInTheDocument();
+    expect(requestBody(fetchMock, `/api/rules/${RULE_ID}`, "PATCH")).toEqual({ isEnabled: true });
+  });
+
   it("shows the server's reason when a save fails", async () => {
     stubFetch({ [LIST_KEY]: () => jsonResponse({ rules: [] }), [CREATE_KEY]: () => jsonResponse({ error: "Rules are capped at 500 characters" }, 400) });
     renderWithProviders(<RulesRoute />);
@@ -120,7 +163,7 @@ describe("Rules panel", () => {
   it("has no axe violations", async () => {
     stubFetch({ [LIST_KEY]: () => jsonResponse({ rules: [makeRule()] }) });
     const { container } = renderWithProviders(<RulesRoute />);
-    await screen.findByRole("button", { name: "Delete rule 1" });
+    await screen.findByRole("switch", { name: "Use rule 1" });
 
     const results = await axe.run(container, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag22aa"] } });
     expect(results.violations.map((violation) => `${violation.id}: ${violation.help}`)).toEqual([]);

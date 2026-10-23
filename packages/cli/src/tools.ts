@@ -23,9 +23,10 @@ function chromeOptions(context: ZksContext) {
   return { browser: Browser.CHROMEHEADLESSSHELL, buildId, platform, cacheDir: path.join(context.toolsDir, "chrome-headless-shell") };
 }
 
-/** Where the tool's executable is, or would be once installed: an explicit ZKS_FFMPEG wins, as the server honours it. */
+/** Where the tool's executable is, or would be once installed: an explicit ZKS_FFMPEG or ZKS_CHROME wins, as the server honours it. */
 export function toolExecutablePath(context: ZksContext, name: ToolName): string | undefined {
   if (name === "ffmpeg" && process.env[ENV.ffmpeg]) return process.env[ENV.ffmpeg];
+  if (name === "chrome-headless-shell" && process.env[ENV.chrome]) return process.env[ENV.chrome];
   return pinnedToolPath(context, name);
 }
 

@@ -126,7 +126,10 @@ export function checkWhisper(context: ZksContext): CheckResult {
 
 /** Renders a real page to PNG: a binary that starts but cannot draw (missing libs) fails here. */
 export function checkChromeRender(context: ZksContext, executable = toolExecutablePath(context, "chrome-headless-shell")): CheckResult {
-  if (!executable || !existsSync(executable)) return { id: "chrome", status: "fail", required: true, detail: "not installed", fix: SETUP_FIX };
+  if (!executable || !existsSync(executable)) {
+    const fix = process.env[ENV.chrome] ? `${ENV.chrome} does not exist; unset it or point it at a chrome-headless-shell` : SETUP_FIX;
+    return { id: "chrome", status: "fail", required: true, detail: "not installed", fix };
+  }
   const scratchDir = mkdtempSync(path.join(os.tmpdir(), "zks-doctor-"));
   const screenshotPath = path.join(scratchDir, "render.png");
   try {

@@ -2,7 +2,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ZksContext } from "../src/context.ts";
 import { loadToolsLock, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
 import { chromeDownloadUrl, installTool, tarExecutable, toolExecutablePath } from "../src/tools.ts";
@@ -23,6 +23,19 @@ describe("tool resolution", () => {
   it.each(PLATFORM_KEYS.filter((key) => key !== "win-arm64"))("pins the chrome URL @puppeteer/browsers resolves on %s", (platform) => {
     const context = contextFor(platform);
     expect(context.lock.tools["chrome-headless-shell"].platforms[platform]).toMatchObject({ url: chromeDownloadUrl(context) });
+  });
+
+  // The server and the HyperFrames renderer use an explicit ZKS_FFMPEG or ZKS_CHROME, so the doctor checks the same binary.
+  it("resolves an explicit ZKS_FFMPEG or ZKS_CHROME ahead of the pinned build", () => {
+    const context = contextFor("linux-x64");
+    vi.stubEnv("ZKS_FFMPEG", "/opt/ffmpeg/bin/ffmpeg");
+    vi.stubEnv("ZKS_CHROME", "/opt/chrome/chrome-headless-shell");
+    try {
+      expect(toolExecutablePath(context, "ffmpeg")).toBe("/opt/ffmpeg/bin/ffmpeg");
+      expect(toolExecutablePath(context, "chrome-headless-shell")).toBe("/opt/chrome/chrome-headless-shell");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("refuses a lock URL that drifts from @puppeteer/browsers before touching the network", async () => {

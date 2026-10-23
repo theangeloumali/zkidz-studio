@@ -13,6 +13,7 @@ export const ENV = {
   home: "ZKS_HOME",
   port: "ZKS_PORT",
   ffmpeg: "ZKS_FFMPEG",
+  chrome: "ZKS_CHROME",
   container: "ZKS_CONTAINER",
   /** Unset selects PGlite; a postgres:// or postgresql:// URL selects Postgres (plan §8). */
   databaseUrl: "DATABASE_URL",

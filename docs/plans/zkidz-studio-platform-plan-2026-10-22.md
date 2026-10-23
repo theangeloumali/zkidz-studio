@@ -27,7 +27,7 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
 - [ ] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions)
 - [ ] Phase 5: Render, covers, export and QC gates
 - [x] Phase 6: Bundled skills, rules panel, style onboarding, demo project (done 2026-10-24, PR #14; also added the engine
-  `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
+      `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
 - [ ] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker
 - [ ] Phase 8: Docs and the v1.0 release (policy re-check; terminal mode removed before release if Anthropic replies "no")
 

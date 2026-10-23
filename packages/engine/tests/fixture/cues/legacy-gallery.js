@@ -1,6 +1,5 @@
 // Created by The Angelo Umali.
-// Every HyperFrames brand kind once, for the gallery stills, parity sheets and coverage test (test_hf_render.py). The test's EDL is one
-// uncut segment (0-97 s), so source seconds are edited seconds; it also derives a censor (bleep at 25.0) and a cutaway (42-44 s).
+// The pre-JSON gallery sheet, kept verbatim as input for the legacy cue-sheet migrator test.
 const CUE_SHEET = [
   { kind: "hookTitle", at: 0.5, end: 3.5, kicker: "How I ask for a raise", lines: ["From $12", "to $25."], accentLine: 1 },
   { kind: "lowerThird", at: 3.6, end: 6.0, name: "Sam Rivera", sub: "Example Studio", y: 300 },

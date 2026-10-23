@@ -116,7 +116,7 @@ function goldRule(
   else draw();
 }
 
-const Z_PALETTES = { master: { teal: BRAND.logoSteel, gold: BRAND.logoGold }, token: { teal: BRAND.steel, gold: BRAND.gold } };
+const Z_PALETTES = themed(() => ({ master: { teal: BRAND.logoSteel, gold: BRAND.logoGold }, token: { teal: BRAND.steel, gold: BRAND.gold } }));
 
 // Woven Z (spec §5.1), top-left at (x, y). Draw it on paper only: the master steel is 2.3:1 on ink.
 function drawBrandZ(x, y, height, { steel = 0, gold = 0, steelNode = 0, goldNode = 0, glow = 0, palette = "master" } = {}) {
@@ -125,11 +125,11 @@ function drawBrandZ(x, y, height, { steel = 0, gold = 0, steelNode = 0, goldNode
   );
 }
 
-const CARD_TONES = {
+const CARD_TONES = themed(() => ({
   paper: { fill: BRAND.paper, edge: BRAND.lineStrong },
   white: { fill: BRAND.white, edge: BRAND.lineStrong },
   ink: { fill: BRAND.ink, edge: BRAND.ink },
-};
+}));
 
 // A card's sheet: fill and a still single-pass edge (spec §1.4, §4.2). hf/ draws it apart from the shadow it lifts.
 const cardSheet = (x, y, w, h, { fill, edge, width = 3.5 }) => sketchRect(x, y, w, h, { fill, color: edge, width, passes: 1, rough: 1, overshoot: 0 });

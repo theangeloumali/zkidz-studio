@@ -68,6 +68,7 @@ const EXEMPT_EXTENSIONS = new Set([
   ".otf",
   ".mp4",
   ".wav",
+  ".m4a",
   ".pdf",
   ".log",
 ]);

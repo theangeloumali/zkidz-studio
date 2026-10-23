@@ -5,20 +5,21 @@
 This file lists software, fonts and data that ZKidz Studio uses, and says whether each is in this repository or downloaded at setup.
 Package dependencies installed by pnpm and uv keep their own licences in their lockfiles and package metadata.
 
-| Component                      | Licence                                 | In this repo?                               | Notes                                                                                                  |
-| ------------------------------ | --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Archivo (font)                 | SIL Open Font License 1.1               | Yes, when a theme bundles it                | The OFL text ships beside the font files in each theme's `fonts/` folder.                              |
-| JetBrains Mono (font)          | SIL Open Font License 1.1               | Yes, when a theme bundles it                | Same as above.                                                                                         |
-| Newsreader (font)              | SIL Open Font License 1.1               | Yes, when a theme bundles it                | Same as above.                                                                                         |
-| Caveat (font)                  | SIL Open Font License 1.1               | Yes, in `packages/engine/hf/kit/fonts/`     | The OFL text ships beside the font file.                                                               |
-| Inter (font)                   | SIL Open Font License 1.1               | Yes, in `packages/engine/hf/overlay/fonts/` | Same as above.                                                                                         |
-| Lucide icons                   | ISC                                     | Yes, as inlined icon paths                  | https://lucide.dev                                                                                     |
-| HyperFrames                    | See its package licence                 | No, installed by pnpm                       | Renders overlay frames in headless Chrome.                                                             |
-| chrome-headless-shell          | Chromium licences                       | No, downloaded by setup                     | Pinned by version and SHA-256 in `tools.lock.json`.                                                    |
-| FFmpeg                         | GPL build (never the `nonfree` variant) | No, downloaded by setup                     | Pinned by URL and SHA-256. ZKidz Studio runs it as a separate program and does not link to it.         |
-| whisper.cpp (`whisper-cli`)    | MIT                                     | No, downloaded by setup                     | Pinned by URL and SHA-256.                                                                             |
-| Whisper ggml models            | MIT (OpenAI Whisper weights)            | No, downloaded on first transcription       | Pinned by URL and SHA-256.                                                                             |
-| Claude Code / Claude Agent SDK | Anthropic's terms                       | No                                          | You install and sign in to Claude Code yourself. The repository holds no Claude binary or credentials. |
+| Component                      | Licence                                 | In this repo?                                              | Notes                                                                                                  |
+| ------------------------------ | --------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Archivo (font)                 | SIL Open Font License 1.1               | Yes, when a theme bundles it                               | The OFL text ships beside the font files in each theme's `fonts/` folder.                              |
+| JetBrains Mono (font)          | SIL Open Font License 1.1               | Yes, when a theme bundles it                               | Same as above.                                                                                         |
+| Newsreader (font)              | SIL Open Font License 1.1               | Yes, when a theme bundles it                               | Same as above.                                                                                         |
+| Caveat (font)                  | SIL Open Font License 1.1               | Yes, in `packages/engine/hf/kit/fonts/`                    | The OFL text ships beside the font file.                                                               |
+| Inter (font)                   | SIL Open Font License 1.1               | Yes, in `packages/engine/hf/overlay/fonts/`                | Same as above.                                                                                         |
+| Lucide icons                   | ISC                                     | Yes, as inlined icon paths                                 | https://lucide.dev                                                                                     |
+| HyperFrames                    | See its package licence                 | No, installed by pnpm                                      | Renders overlay frames in headless Chrome.                                                             |
+| chrome-headless-shell          | Chromium licences                       | No, downloaded by setup                                    | Pinned by version and SHA-256 in `tools.lock.json`.                                                    |
+| FFmpeg                         | GPL build (never the `nonfree` variant) | No, downloaded by setup                                    | Pinned by URL and SHA-256. ZKidz Studio runs it as a separate program and does not link to it.         |
+| whisper.cpp (`whisper-cli`)    | MIT                                     | No, downloaded by setup                                    | Pinned by URL and SHA-256.                                                                             |
+| Whisper ggml models            | MIT (OpenAI Whisper weights)            | No, downloaded on first transcription                      | Pinned by URL and SHA-256.                                                                             |
+| JFK inaugural address sample   | Public domain (US government work)      | Yes, a 3 s cut in `packages/engine/tests/fixture/whisper/` | Cut from whisper.cpp's `samples/jfk.wav`; used by the transcription tests.                             |
+| Claude Code / Claude Agent SDK | Anthropic's terms                       | No                                                         | You install and sign in to Claude Code yourself. The repository holds no Claude binary or credentials. |
 
 ## herk-edit-kit
 

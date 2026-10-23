@@ -2,7 +2,7 @@
 // Gauges: effort slider, balance scale, count-up number and stopwatch.
 
 // Markers and pans alternate steel and gold, so two of them never share a colour.
-const SIDE_TINTS = [BRAND.steel, BRAND.gold];
+const SIDE_TINTS = themed(() => [BRAND.steel, BRAND.gold]);
 
 // Effort slider with one marker per model; a marker may slide to a new level at `moveAt` seconds.
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];

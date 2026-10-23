@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // Created by The Angelo Umali.
+import { existsSync } from "node:fs";
 import os from "node:os";
 import type { PathRoots } from "@zks/shared";
+import type { ToolName } from "@zks/shared/node";
 import { createContext, resolveZksHome } from "./context.ts";
 import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
 import { runSetup } from "./setup.ts";
+import { toolExecutablePath } from "./tools.ts";
 
-const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name>";
+const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name> | zks tools path <tool>";
 const EXIT_USAGE = 2;
 
 async function main(argv: string[]): Promise<number> {
@@ -28,6 +31,8 @@ async function main(argv: string[]): Promise<number> {
     }
     case "models":
       return runModels(context, rest, flags.has("--json"));
+    case "tools":
+      return printToolPath(context, rest);
     default:
       console.error(USAGE);
       return EXIT_USAGE;
@@ -36,6 +41,26 @@ async function main(argv: string[]): Promise<number> {
 
 function pathRoots(): PathRoots {
   return { zksHome: resolveZksHome(), homeDir: os.homedir() };
+}
+
+/** For CI and the server to hand the engine the pinned build (ZKS_FFMPEG, ZKS_CHROME) instead of one found on PATH. */
+function printToolPath(context: ReturnType<typeof createContext>, args: string[]): number {
+  const [action, name] = args;
+  if (action !== "path" || !name || !isToolName(context, name)) {
+    console.error(USAGE);
+    return EXIT_USAGE;
+  }
+  const executable = toolExecutablePath(context, name);
+  if (!executable || !existsSync(executable)) {
+    console.error(`${name} is not installed at ${executable ?? "its pinned location"}. Run: pnpm zks setup`);
+    return 1;
+  }
+  console.log(executable);
+  return 0;
+}
+
+function isToolName(context: ReturnType<typeof createContext>, name: string): name is ToolName {
+  return Object.hasOwn(context.lock.tools, name);
 }
 
 async function runModels(context: ReturnType<typeof createContext>, args: string[], asJson: boolean): Promise<number> {

@@ -17,4 +17,20 @@ const dataDir = (name) => process.env[`ZKS_${name.toUpperCase()}`] || path.join(
 // Twin of ffio.ffmpeg_bin: the pinned ZKS_FFMPEG, PATH only in a dev checkout.
 const ffmpegBin = () => process.env.ZKS_FFMPEG || "ffmpeg";
 
-module.exports = { zksHome, dataDir, ffmpegBin };
+// Twin of ffio.ffprobe_bin: ZKS_FFPROBE, else the ffprobe beside ZKS_FFMPEG (keeping a Windows .exe).
+function ffprobeBeside(ffmpeg) {
+  const dirEnd = Math.max(ffmpeg.lastIndexOf("/"), ffmpeg.lastIndexOf("\\")) + 1;
+  return `${ffmpeg.slice(0, dirEnd)}ffprobe${/\.exe$/i.test(ffmpeg) ? ".exe" : ""}`;
+}
+
+// The pinned tools for HyperFrames, which otherwise runs ffmpeg/ffprobe from PATH and Chrome from its own cache.
+// Unset only in a dev checkout, where HyperFrames' own lookups stand.
+function hyperframesToolsEnv(env = process.env) {
+  const tools = {};
+  if (env.ZKS_CHROME) tools.PRODUCER_HEADLESS_SHELL_PATH = env.ZKS_CHROME;
+  if (env.ZKS_FFMPEG) tools.HYPERFRAMES_FFMPEG_PATH = env.ZKS_FFMPEG;
+  if (env.ZKS_FFPROBE || env.ZKS_FFMPEG) tools.HYPERFRAMES_FFPROBE_PATH = env.ZKS_FFPROBE || ffprobeBeside(env.ZKS_FFMPEG);
+  return tools;
+}
+
+module.exports = { dataDir, ffmpegBin, hyperframesToolsEnv };

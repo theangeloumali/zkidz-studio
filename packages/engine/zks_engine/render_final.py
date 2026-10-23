@@ -1,12 +1,12 @@
 # Created by The Angelo Umali.
 # Composites one edit: the source cut by the EDL, privacy blur, punch-ins, overlays and the edited audio, on the GPU.
-# Usage: python -m zks_engine.render_final v1 [--draft | --4k]   (--4k: sharpened 2160x3840 HEVC, CUDA only)
-# Frames are selected by index n and restamped onto the overlay PNGs' 1001/30000 grid; the punch-in is two fixed
-# branches switched by overlay enable, since scale eval=frame + crop is not pixel-safe.
+# Usage: python -m zks_engine.render_final v1 [--draft | --4k]   (--4k: sharpened 2160x3840 HEVC)
+# Frames are selected by index n and restamped onto the overlay PNGs' grid; the punch-in is two fixed branches switched
+# by overlay enable, since scale eval=frame + crop is not pixel-safe. Upright footage on NVIDIA composites on CUDA/OpenCL;
+# everything else runs the backend's CPU-filter graph (backends/graph.py) between its decode and its encoder.
 import functools
 import json
 import math
-import os
 import re
 import shutil
 import struct
@@ -14,65 +14,32 @@ import subprocess
 import sys
 import time
 import wave
+from typing import NamedTuple
 
-from . import ffio
-from .blur import blur_graph, blur_regions, gpu_blur_graph, output_regions, ranges_expr
+from . import backends, ffio
+from .backends import graph as backend_graph
+from .backends.graph import BT709_TV, GRADE, UHD, edit_ranges, restamp
+from .backends.profile import Backend
+from .blur import blur_regions, gpu_blur_graph, output_regions, ranges_expr
 from .edl import FACECAM_ZOOM, PUNCH_TOP
 from . import progress
 from .slots import slot
-from .pipeline import (AUDIO_RATE, CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, frame_to_sample, has_cuda, intro_track, load_cuts, load_edl,
-                      orientation_filter, source_path, split_orientation, upright_size)
+from .specs import gates
+from .pipeline import (AUDIO_RATE, CUDA_LANCZOS, CUDA_TV_RANGE, CUDA_UPRIGHT, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, frame_to_sample,
+                       intro_track, load_cuts, load_edl, probe_video, rotation_of, source_path, split_orientation, upright_dims)
 
-GRADE = "eq=contrast=1.03:saturation=1.05"
-# overlay_cuda needs both inputs tagged alike; otherwise ffmpeg 9 inserts a CPU converter on a CUDA link and fails.
-BT709_TV = "setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"
+# BT709_TV tags overlay_cuda's inputs alike; otherwise ffmpeg 9 inserts a CPU converter on a CUDA link and fails.
 GPU_SCALE = CUDA_LANCZOS + ":format=yuv420p," + BT709_TV  # reads the TV-range frames decode hands on
-UHD = (2160, 3840)
 # Footage only (the animation layer goes on after): fine detail, then a wide low-strength clarity pass; no halos at 2x zoom.
 CRISP = "unsharp_opencl=lx=5:ly=5:la=0.6,unsharp_opencl=lx=17:ly=17:la=0.18"
 # Named by platform: OpenCL device 0 can be the Intel iGPU.
 OPENCL_DEVICE = ["-init_hw_device", "opencl=ocl:,platform_name=NVIDIA CUDA", "-filter_hw_device", "ocl"]
-MASTER_MAX_BPS = 12_000_000  # the 1080p H.264 master's cap; the boiling linework needs it
-# p7 + lookahead + AQ + B-frame refs: shared by the H.264 master and the HEVC 4K export.
-NVENC_QUALITY = ["-preset", "p7", "-tune", "hq", "-rc-lookahead", "32", "-spatial-aq", "1", "-temporal-aq", "1", "-bf", "3",
-                 "-b_ref_mode", "middle"]
-
-
-def restamp(edl):
-    """Footage frames onto the PNGs' exact grid. Never setpts=N*1001 alone: it is only right in a 1/30000 time base, and a
-    joined .mkv is 1/1000 (frames landed 1.001 s apart); N*1001/(30000*TB) rounds to whole ms, a frame early vs the PNGs."""
-    return f"settb={edl['fps_den']}/{edl['fps_num']},setpts=N"
 
 
 def punch_frame(width=OUTPUT[0], height=OUTPUT[1]):
     """The 1.08x frame the GPU punch-in reads from, and where the output window sits inside it (same framing as PUNCH_CROP)."""
     big_w, big_h = round(width * FACECAM_ZOOM / 2) * 2, round(height * FACECAM_ZOOM / 2) * 2
     return big_w, big_h, (big_w - width) // 2, round(big_h * PUNCH_TOP)
-
-
-def edit_ranges(edl):
-    keep = [(seg["in"], seg["out"]) for seg in edl["segments"]]
-    punched = [(seg["target"], seg["target"] + seg["out"] - seg["in"]) for seg in edl["segments"] if seg["zoom"] > 1]
-    return keep, punched
-
-
-def build_graph(edl, cuda, orientation="", regions=(), frame_size=None):
-    """CPU composite, used only without CUDA: blur on the upright source, punch-in as two branches switched by overlay."""
-    keep, punched = edit_ranges(edl)
-    punch_switch = f"overlay=enable='{ranges_expr(punched)}'" if punched else "overlay=enable=0"
-    gpu_turn, cpu_turn = split_orientation(orientation)
-    download = chain(gpu_turn, "hwdownload,format=nv12") if cuda else ""
-    decode = chain(f"select='{ranges_expr(keep)}'", restamp(edl), download, cpu_turn, DROP_ROTATION)
-    blurs, base = blur_graph(regions, "upright", frame_size)
-    return (
-        f"[0:v]{decode}[upright];"
-        f"{blurs}[{base}]split[a][b];"
-        "[a]scale=1080:1920:flags=lanczos[wide];"
-        f"[b]{edl['punch_crop']},scale=1080:1920:flags=lanczos[punch];"
-        f"[wide][punch]{punch_switch},{GRADE}[base];"
-        "[1:v]scale=out_color_matrix=bt709:out_range=tv,format=yuva420p[ovl];"
-        "[base][ovl]overlay=alpha=straight:eof_action=pass:repeatlast=0:ts_sync_mode=nearest,format=yuv420p[v]"
-    )
 
 
 def gpu_scale_png(size, pix_fmt):
@@ -149,8 +116,7 @@ def zoom_graph(edl, gpu_turn, regions, size, finish, first_frame):
     """An edit with animated zooms: the footage leaves CUDA once, libplacebo applies the punch-in and every zoom."""
     if regions:
         sys.exit("blur boxes with animated zooms are not supported yet: the boxes would not follow the moving crop")
-    keep, _ = edit_ranges(edl)
-    keep = [(start - first_frame, end - first_frame) for start, end in keep]
+    keep, _ = edit_ranges(edl, first_frame)
     select = chain(f"select='{ranges_expr(keep)}'", restamp(edl))
     footage = f"[0:v]{chain(select, gpu_turn, CUDA_TV_RANGE)},hwdownload,format=nv12,{zoom_crop(edl, size)}"
     if edl.get("matte"):
@@ -180,8 +146,7 @@ def gpu_graph(edl, gpu_turn, regions=(), size=OUTPUT, finish="", first_frame=0):
     first_frame: the source frame a chunk's seeked input starts at, which select counts from."""
     if edl.get("zooms") or edl.get("matte"):
         return zoom_graph(edl, gpu_turn, regions, size, finish, first_frame)
-    keep, punched = edit_ranges(edl)
-    keep = [(start - first_frame, end - first_frame) for start, end in keep]
+    keep, punched = edit_ranges(edl, first_frame)
     big_w, big_h, left, top = punch = punch_frame(*size)
     placed = output_regions(regions, punched, punch, size)
     decode = chain(f"select='{ranges_expr(keep)}'", restamp(edl), gpu_turn, CUDA_TV_RANGE)
@@ -209,28 +174,28 @@ def soundtrack(video):
     sys.exit(f"{video}: {mix.name} is missing or older than {edit.name} / {events.name}; re-run sfx.py {video}")
 
 
-def video_encoder(cuda, draft):
-    cap = ["-maxrate", str(MASTER_MAX_BPS), "-bufsize", str(2 * MASTER_MAX_BPS)]
-    if cuda:
-        preset = ["-preset", "p4"] if draft else NVENC_QUALITY
-        codec = ["-c:v", "h264_nvenc", *preset, "-rc", "vbr", "-cq", "19", "-b:v", "10M", *cap]
-    elif sys.platform == "darwin":
-        # -q:v is Apple-silicon only; a bitrate works on Intel too
-        codec = ["-c:v", "h264_videotoolbox", "-b:v", str(MASTER_MAX_BPS)]
-    else:
-        speed = ["-preset", "veryfast", "-crf", "20"] if draft else ["-preset", "slow", "-crf", "18", *cap]
-        codec = ["-c:v", "libx264", *speed, "-pix_fmt", "yuv420p"]
-    return [*codec, "-profile:v", "high"]
+class Route(NamedTuple):
+    backend: Backend
+    on_gpu: bool  # nvidia's CUDA/OpenCL composite; otherwise the backend's CPU-filter graph
+    gpu_turn: str  # transpose_cuda for a quarter-turned source on the CUDA composite
+    frame_size: tuple  # the upright source, where blur boxes are placed off the CUDA path
 
 
-# The apps re-compress every upload, so the 4K export spends bits on quality: screen text is what starves first.
-UHD_ENCODER = ["-c:v", "hevc_nvenc", *NVENC_QUALITY, "-multipass", "fullres", "-rc", "vbr", "-cq", "17", "-b:v", "0",
-               "-maxrate", "60M", "-bufsize", "120M", "-profile:v", "main", "-tag:v", "hvc1"]
+@functools.cache
+def has_filter(name):
+    listing = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    return re.search(rf"^\s*\S+\s+{re.escape(name)}\s", listing, re.M) is not None
 
 
-# One job leaves the GPU ~75% idle (its CUDA, OpenCL and NVENC steps wait on each other), so edits render as chunks at
-# once. Measured on v6 4K slices: 1 job 28.7 fps, 2 jobs 49.1, 4 jobs 66.0, 6 jobs 67.0 in total; ~1.2 CPU cores per job.
-RENDER_JOBS = int(os.environ.get("RENDER_JOBS", "4"))
+def route_for(source, backend):
+    """Off the CUDA composite, decode hands back system frames and autorotate turns them: the pinned ffmpeg n8.1 has no
+    transpose_cuda, and a half turn never had a CUDA filter."""
+    stream = probe_video(source)
+    gpu_turn, cpu_turn = split_orientation(CUDA_UPRIGHT[rotation_of(stream) % 360])
+    on_gpu = backend.name == "nvidia" and not cpu_turn and (not gpu_turn or has_filter("transpose_cuda")) and has_opencl()
+    return Route(backend, on_gpu, gpu_turn if on_gpu else "", upright_dims(stream))
+
+
 MIN_CHUNK_FRAMES = 900  # 30 s: a shorter chunk spends much of its time starting up
 BT709_TAGS = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
 # Below-normal priority: the PNG decode and grade still use the CPU, and the desktop must stay responsive.
@@ -252,12 +217,12 @@ def edl_slice(edl, first, last):
     return {**edl, "segments": segments, "frames": last - first, "zooms": within(edl.get("zooms", [])), "matte": within(edl.get("matte", []))}
 
 
-def chunk_bounds(frames, jobs=RENDER_JOBS):
+def chunk_bounds(frames, jobs):
     count = max(1, min(jobs, frames // MIN_CHUNK_FRAMES))
     return [(frames * index // count, frames * (index + 1) // count) for index in range(count)]
 
 
-def intro_bounds(frames, at, jobs=RENDER_JOBS):
+def intro_bounds(frames, at, jobs):
     """The edit's chunks before the brand intro's insert and after it, sharing `jobs` by length."""
     before = chunk_bounds(at, min(jobs - 1, max(1, round(jobs * at / frames))))
     after = chunk_bounds(frames - at, jobs - len(before))
@@ -272,15 +237,21 @@ def frame_times(source):
     return sorted(float(line.split(",")[1]) for line in result.stdout.split() if "," in line and "N/A" not in line)
 
 
-def chunk_command(piece, first, spec, source, gpu_turn, size, finish, encoder, frames_dir, out):
+def chunk_command(piece, first, spec, source, route, size, encoder, frames_dir, out):
     """One chunk, its input seeked between its first kept frame and the one before: accurate seek makes that frame n=0.
     Real frame times, not index x 1001: an Insta360 clip's timestamps shifted half a frame mid-file and the grid seek
     landed a frame late. -frames:v ends it on time: overlay_opencl repeats the footage's last frame past its end."""
     first_source = piece["segments"][0]["in"]
     times = frame_times(source)
     seek = (times[first_source - 1] + times[first_source]) / 2 if first_source else 0.0
-    graph = gpu_graph(piece, gpu_turn, blur_regions(spec, piece, size), size, finish, first_source)
-    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *device_args(piece), *decode_args(True), "-ss", f"{seek:.6f}", *ffio.user_input_args(source),
+    if route.on_gpu:
+        graph = gpu_graph(piece, route.gpu_turn, blur_regions(spec, piece, size), size, CRISP if size == UHD else "", first_source)
+        hardware = [*device_args(piece), *decode_args(True)]
+    else:
+        regions = blur_regions(spec, piece, route.frame_size)
+        graph = backend_graph.composite(route.backend, piece, regions, route.frame_size, size, first_source)
+        hardware = [*route.backend.device, *route.backend.decode]
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *hardware, "-ss", f"{seek:.6f}", *ffio.user_input_args(source),
             "-thread_queue_size", "512", "-framerate", f"{piece['fps_num']}/{piece['fps_den']}", "-start_number", str(first),
             "-i", str(frames_dir / "%05d.png"),
             *(matte_inputs(piece, first, frames_dir.with_name(frames_dir.name + ".behind"), WORK / "mask" / f"{piece['base']}.mkv", seek)
@@ -304,11 +275,12 @@ def count_frames(path):
     return int(json.loads(result.stdout)["streams"][0]["nb_read_packets"])
 
 
-def intro_command(intro, edl, size, encoder, out):
-    """The brand pre-roll as a chunk of its own: its opaque PNGs scaled on the GPU, encoded exactly like the edit's chunks
-    so the stream-copy join takes it."""
-    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0",
-            "-i", str(intro["frames_dir"] / "%05d.png"), "-vf", gpu_scale_png(size, "yuv420p"), "-frames:v", str(intro["frames"]),
+def intro_command(intro, edl, size, encoder, out, route):
+    """The brand pre-roll as a chunk of its own, scaled and encoded exactly like the edit's chunks so the stream-copy join
+    takes it."""
+    scale, device = (gpu_scale_png(size, "yuv420p"), []) if route.on_gpu else (backend_graph.intro_filter(route.backend, size), route.backend.device)
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *device, "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0",
+            "-i", str(intro["frames_dir"] / "%05d.png"), "-vf", scale, "-frames:v", str(intro["frames"]),
             "-fps_mode", "passthrough", *encoder, *BT709_TAGS, "-an", "-progress", str(out.with_suffix(".progress")), str(out)]
 
 
@@ -327,27 +299,30 @@ def join_command(listing, audio_path, encoder, part, intro_audio=None, at_sample
             "-c:v", "copy", *tag, *BT709_TAGS, "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", str(part)]
 
 
-def render_chunks(edl, spec, source, gpu_turn, size, finish, encoder, frames_dir, audio_path, part, intro=None, report=None):
-    """Up to RENDER_JOBS chunks rendered at once (a brand pre-roll as one more, at its insert), joined and muxed with the
-    audio."""
+def render_chunks(edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro=None, report=None):
+    """The backend's RENDER_JOBS chunks rendered at once (a brand pre-roll as one more, at its insert), joined and muxed
+    with the audio."""
     chunk_dir = part.with_name(f"{part.stem}-chunks")
     shutil.rmtree(chunk_dir, ignore_errors=True)
     chunk_dir.mkdir()
-    before, after = intro_bounds(edl["frames"], intro["at"]) if intro else (chunk_bounds(edl["frames"]), [])
+    jobs = backends.render_jobs(route.backend)
+    before, after = intro_bounds(edl["frames"], intro["at"], jobs) if intro else (chunk_bounds(edl["frames"], jobs), [])
     chunks, commands = [], []  # (output, frames), joined in this order
     for index, (first, last) in enumerate(before + after):
         if intro and index == len(before):
             chunks.append((chunk_dir / "intro.mp4", intro["frames"]))
-            commands.append(intro_command(intro, edl, size, encoder, chunks[-1][0]))
+            commands.append(intro_command(intro, edl, size, encoder, chunks[-1][0], route))
         chunks.append((chunk_dir / f"{index:02d}.mp4", last - first))
-        commands.append(chunk_command(edl_slice(edl, first, last), first, spec, source, gpu_turn, size, finish, encoder, frames_dir, chunks[-1][0]))
-    print(f"rendering {len(before + after)} chunks at once{' + the brand intro' if intro else ''}", flush=True)
-    jobs = [subprocess.Popen(command, **LOW_PRIORITY) for command in commands]
-    while any(job.poll() is None for job in jobs):
+        commands.append(chunk_command(edl_slice(edl, first, last), first, spec, source, route, size, encoder, frames_dir, chunks[-1][0]))
+    for command in commands:
+        gates.check_command(command)
+    print(f"rendering {len(before + after)} chunks at once on {route.backend.name}{' + the brand intro' if intro else ''}", flush=True)
+    running = [subprocess.Popen(command, **LOW_PRIORITY) for command in commands]
+    while any(job.poll() is None for job in running):
         if report:
             report(sum(frames_written(out.with_suffix(".progress")) for out, _ in chunks))
         time.sleep(2)
-    if codes := [job.returncode for job in jobs if job.returncode]:
+    if codes := [job.returncode for job in running if job.returncode]:
         sys.exit(f"chunk render failed (exit codes {codes}); chunks kept in {chunk_dir}")
     for out, count in chunks:
         if count_frames(out) != count:
@@ -355,7 +330,9 @@ def render_chunks(edl, spec, source, gpu_turn, size, finish, encoder, frames_dir
     listing = chunk_dir / "chunks.txt"
     listing.write_text(ffio.concat_listing(out for out, _ in chunks), encoding="utf-8")
     splice = (intro["audio"], frame_to_sample(intro["at"], edl)) if intro else ()
-    subprocess.run(join_command(listing, audio_path, encoder, part, *splice), check=True)
+    join = join_command(listing, audio_path, encoder, part, *splice)
+    gates.check_command(join)
+    subprocess.run(join, check=True)
     total = sum(count for _, count in chunks)
     if count_frames(part) != total:
         sys.exit(f"{part.name}: {count_frames(part)} frames after the join, expected {total}")
@@ -426,12 +403,15 @@ def has_opencl():
     return subprocess.run(probe, capture_output=True).returncode == 0
 
 
-def gpu_path(cuda, cpu_turn):
-    return cuda and not cpu_turn and has_opencl()
+def spec_files(video):
+    """The spec set the master is rendered from: snapshotted at start, checked before the master replaces the old one."""
+    return [path for path in (WORK / "cuts" / f"{video}.json", WORK / "edl" / f"{video}.json", WORK / "edl" / f"{video}.sfx.json") if path.exists()]
 
 
 def main(video, draft=False, uhd=False):
     edl, spec = load_edl(video), load_cuts(video)
+    specs = spec_files(video)
+    digest = gates.snapshot(specs)
     frames_dir = WORK / "frames" / video
     if edl.get("matte"):
         if problem := check_overlay_frames(frames_dir.with_name(f"{video}.behind"), edl["frames"]):
@@ -441,47 +421,35 @@ def main(video, draft=False, uhd=False):
     if problem := check_overlay_frames(frames_dir, edl["frames"]):
         sys.exit(f"{video}: {problem}")
     audio_path = soundtrack(video)
-    if not track_fits(audio_path, edl["frames"], edl):
-        sys.exit(f"{video}: {audio_path.name} does not match the edit; re-run audio.py (and sfx.py)")
+    with wave.open(str(audio_path)) as track:
+        gates.check_counts(edl["frames"], len(list(frames_dir.glob("*.png"))), track.getnframes(), (edl["fps_num"], edl["fps_den"]))
     intro = intro_of(video, edl)
     out_dir = WORK / "out"
     out_dir.mkdir(exist_ok=True)
-    size, finish, suffix = (UHD, CRISP, "-4k") if uhd else (OUTPUT, "", "-draft" if draft else "")
+    size, suffix = (UHD, "-4k") if uhd else (OUTPUT, "-draft" if draft else "")
     output = out_dir / f"{video}{suffix}.mp4"
     part = output.with_suffix(".part.mp4")  # a crashed encode never sits under the deliverable's name
-    cuda, source = has_cuda(), source_path(spec)
-    gpu_turn, cpu_turn = split_orientation(orientation_filter(source, cuda))
-    gpu = gpu_path(cuda, cpu_turn)
-    encoder = UHD_ENCODER if uhd else video_encoder(gpu, draft)
+    source = source_path(spec)
+    route = route_for(source, backends.active())
+    encoder = route.backend.uhd if uhd else route.backend.master(draft)
     with progress.job(video, "master", frames=edl["frames"]) as stage:
         with slot("gpu", f"render_final {video}{suffix} ({WORK})", on_wait=stage.wait):
             stage.begin(edl["frames"] + (intro["frames"] if intro else 0))
-            encode_master(video, uhd, gpu, cuda, source, edl, spec, gpu_turn, size, finish, encoder, frames_dir, audio_path, part, intro,
-                          stage.update)
+            encode_master(video, edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro, stage.update)
         assert_upright(part, size)
+        gates.check_snapshot(specs, digest)
         part.replace(output)
     note = f", the brand intro at frame {intro['at']}" if intro else ""
     print(f"rendered {output} ({audio_path.name}{note})")
 
 
-def encode_master(video, uhd, gpu, cuda, source, edl, spec, gpu_turn, size, finish, encoder, frames_dir, audio_path, part, intro=None,
-                  report=None):
-    if gpu:
-        render_chunks(edl, spec, source, gpu_turn, size, finish, encoder, frames_dir, audio_path, part, intro, report)
-    elif uhd:
-        sys.exit(f"{video}: 4K renders only on the CUDA path")
-    elif intro:
-        sys.exit(f"{video}: the brand intro renders only on the CUDA path")
-    else:
-        print(f"{video}: no usable CUDA + OpenCL path; rendering on the CPU", flush=True)
-        frame_size = upright_size(source)
-        graph = build_graph(edl, cuda, orientation_filter(source, cuda), blur_regions(spec, edl, frame_size), frame_size)
-        subprocess.run([
-            ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-stats", *decode_args(cuda), *ffio.user_input_args(source),
-            "-thread_queue_size", "512", "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0", "-i", str(frames_dir / "%05d.png"),
-            "-i", str(audio_path), "-filter_complex", graph, "-map", "[v]", "-map", "2:a", "-fps_mode", "passthrough", *encoder, *BT709_TAGS,
-            "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", str(part),
-        ], check=True, **LOW_PRIORITY)
+def encode_master(video, edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro=None, report=None):
+    if not route.on_gpu and (edl.get("zooms") or edl.get("matte")):
+        sys.exit(f"{video}: animated zooms and the matte render only on the NVIDIA CUDA + OpenCL composite; this source takes "
+                 f"{route.backend.name}'s CPU-filter graph")
+    if not route.on_gpu:
+        print(f"{video}: compositing with CPU filters between {route.backend.name} decode and encode", flush=True)
+    render_chunks(edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro, report)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+# Created by The Angelo Umali.
+# The parity clips (lavfi) and the public-domain speech clip are test media, unlike the user footage the root ignore keeps out of git.
+!/parity/*.[mM][pP]4
+!/parity/*.[mM]4[aA]

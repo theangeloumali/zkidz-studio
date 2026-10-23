@@ -1,10 +1,9 @@
 # Created by The Angelo Umali.
-# Lint, typecheck and tests on every push and pull request. Actions are pinned by commit SHA; bump the SHA and the tag comment together.
+# Lint, typecheck and tests, started by hand (scripts/ci-local.sh runs the same jobs before every merge). Actions are pinned by commit SHA; bump the SHA and the tag comment together.
 name: ci
 
 on:
-  push:
-  pull_request:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
   workflow_dispatch:
 
 permissions:
@@ -40,7 +39,7 @@ jobs:
   engine:
     name: engine unittest
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       # The overlay renderer tests fail instead of skipping when node, its packages, ffmpeg or Chrome is missing.
       ZKS_REQUIRE_HF: "1"
@@ -54,7 +53,13 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The pinned builds, not the runner's: golden frames differ between ffmpeg releases, and the renderer would pick its own Chrome.
+      - run: pnpm zks setup
+      - name: Point the engine at the pinned ffmpeg and Chrome
+        run: |
+          ffmpeg="$(pnpm -s zks tools path ffmpeg)"
+          chrome="$(pnpm -s zks tools path chrome-headless-shell)"
+          { echo "ZKS_FFMPEG=$ffmpeg"; echo "ZKS_CHROME=$chrome"; } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - run: uv sync --project packages/engine --locked
       - run: uv run --project packages/engine python -m unittest discover -s packages/engine/tests

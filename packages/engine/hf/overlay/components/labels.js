@@ -13,7 +13,7 @@ const SWISH_LEAD = 0.06;
 const cardSfx = (duration, events = []) => [{ at: -SWISH_LEAD, sound: "swish" }, ...events, { at: duration - EXIT, sound: "swishOut" }];
 // Pen timing for Caveat (spec §2.4): about 0.025 s per character after a 0.25 s lead.
 const penSpan = (text, start) => [start, start + 0.25 + text.length * 0.025];
-const HOT_CHIP = { fill: BRAND.ink, color: BRAND.goldBright, edge: BRAND.ink };
+const HOT_CHIP = themed(() => ({ fill: BRAND.ink, color: BRAND.goldBright, edge: BRAND.ink }));
 
 // Seconds until `preset` first reaches `threshold`: where countUp lands, and its settle SFX with it.
 function settleTime(preset, threshold = 0.99) {

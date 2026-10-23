@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ENGINE = Path(__file__).resolve().parents[1]
 HF = ENGINE / "hf"
@@ -16,14 +17,21 @@ for name in ("ZKS_LOCKS", "ZKS_PROGRESS", "ZKS_MODELS"):
     os.environ.pop(name, None)
 os.environ["ZKS_TOASTS"] = "0"
 
-from zks_engine import edl  # noqa: E402
+from zks_engine import edl, ffio  # noqa: E402
 
 NTSC = {"fps_num": 30000, "fps_den": 1001}
-GALLERY = ENGINE / "tests" / "fixture" / "cues" / "hf-gallery.js"
+# Every HyperFrames brand kind once, for the gallery stills, parity sheets and coverage test (test_hf_render.py). Its EDL is
+# one uncut segment (0-97 s), so source seconds are edited seconds; it also derives a censor (bleep at 25.0) and a cutaway (42-44 s).
+GALLERY = ENGINE / "tests" / "fixture" / "cues" / "hf-gallery.json"
 FIXTURE_MEDIA = ENGINE / "tests" / "fixture" / "images"
 GALLERY_FRAMES = 2908  # 97 s: every gallery cue fits
 HF_SKIP = "needs node and the overlay renderer's packages (pnpm install at the repo root)"
 HYPERFRAMES_SKIP = "needs node, ffmpeg, Chrome and the overlay renderer's packages (pnpm install at the repo root)"
+
+
+def has_ffmpeg():
+    """The ffmpeg the engine runs (ZKS_FFMPEG, else PATH) and the ffprobe beside it; CI puts only the pinned build in ZKS_FFMPEG."""
+    return bool(shutil.which(ffio.ffmpeg_bin()) and shutil.which(ffio.ffprobe_bin()))
 
 
 def hf_installed():
@@ -52,6 +60,11 @@ def needs_renderer(ready, reason=HF_SKIP):
         return guarded
 
     return decorate
+
+
+def media_project():
+    """The engine's work dir as ZKS_HOME/work, so media_file()'s files sit in that project's media/ (spec path containment)."""
+    return mock.patch("zks_engine.pipeline.WORK", Path(os.environ["ZKS_HOME"]) / "work")
 
 
 def media_file(name="clip.mp4"):
@@ -88,8 +101,15 @@ def fixture_media(root):
     shutil.copytree(FIXTURE_MEDIA, Path(root) / "media" / "fixture", dirs_exist_ok=True)
 
 
+def write_sheet(work, name, cues):
+    """cues/<name>.json in `work`: `cues` is a list of cues (or patches), or a JSON file to copy."""
+    sheet = Path(work) / "cues" / f"{name}.json"
+    sheet.parent.mkdir(exist_ok=True)
+    sheet.write_bytes(cues.read_bytes()) if isinstance(cues, Path) else sheet.write_text(json.dumps(cues), encoding="utf-8")
+
+
 def scratch_work(folder, name, edl_spec, cues):
-    """`folder`/work as a work dir with edl/<name>.json and cues/<name>.js: `cues` is a sheet's text, or a file to copy.
+    """`folder`/work as a work dir with edl/<name>.json and cues/<name>.json (see write_sheet).
     `folder` stands in for the repo root, holding the fixture images at media/fixture/."""
     work = Path(folder) / "work"
     work.mkdir(exist_ok=True)
@@ -97,6 +117,5 @@ def scratch_work(folder, name, edl_spec, cues):
     for sub in ("edl", "cues"):
         (work / sub).mkdir(exist_ok=True)
     (work / "edl" / f"{name}.json").write_text(json.dumps(edl_spec), encoding="utf-8")
-    sheet = work / "cues" / f"{name}.js"
-    sheet.write_bytes(cues.read_bytes()) if isinstance(cues, Path) else sheet.write_text(cues, encoding="utf-8")
+    write_sheet(work, name, cues)
     return work

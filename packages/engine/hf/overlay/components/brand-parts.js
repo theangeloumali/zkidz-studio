@@ -5,7 +5,7 @@
 const CARD_PAD = 44;
 const CARD_INNER = PANEL_W - 2 * CARD_PAD;
 const HEAD_KICKER = 64; // kicker baseline, card space
-const HEAD_TITLE = { ...TYPE.display, size: 60 };
+const HEAD_TITLE = themed(() => ({ ...TYPE.display, size: 60 }));
 
 // Largest size ≤ font.size at which every text fits maxWidth.
 const fittedFont = (font, texts, maxWidth) => ({ ...font, size: Math.min(font.size, ...texts.map((text) => fitFontSize(text, font, maxWidth))) });

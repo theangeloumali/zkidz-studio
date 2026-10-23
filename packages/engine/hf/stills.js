@@ -10,7 +10,6 @@ const { ffmpegBin } = require("./home");
 const COMPOSITE_JOBS = 8;
 
 const frameSeconds = (edl) => edl.fps_den / edl.fps_num;
-const savePng = (file, dataUrl) => fs.writeFileSync(file, Buffer.from(dataUrl.split(",")[1], "base64"));
 
 // Empties rather than deletes: Windows refuses to remove a directory another process has open.
 function resetDir(dir) {
@@ -62,4 +61,4 @@ async function compositeStills(work, video, edl, stills) {
   await Promise.all(Array.from({ length: COMPOSITE_JOBS }, worker));
 }
 
-module.exports = { frameSeconds, savePng, resetDir, compositeStills };
+module.exports = { resetDir, compositeStills };

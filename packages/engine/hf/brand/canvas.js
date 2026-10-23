@@ -37,6 +37,25 @@ function loadCanvas() {
   context.__active = [];
   const reset = () => vm.runInContext("beginFrame(__measure, 0); jitterScale = 1; drawingCueSeed = null", context);
   reset();
+  context.__jitter = vm.runInContext("BRAND_JITTER", context);
+
+  // A theme pack (hf/theme.js) over the brand defaults: palette, type roles and boil. Each call starts from the defaults,
+  // so themes never stack. Objects are edited in place because components hold references to them.
+  const defaults = JSON.parse(vm.runInContext("JSON.stringify({ BRAND, TYPE })", context));
+  function applyTheme(theme) {
+    context.__theme = { defaults, theme };
+    vm.runInContext(
+      `Object.assign(BRAND, __theme.defaults.BRAND, __theme.theme.tokens);
+      remapKitPalette();
+      for (const role of Object.keys(TYPE)) {
+        for (const key of Object.keys(TYPE[role])) delete TYPE[role][key];
+        Object.assign(TYPE[role], __theme.defaults.TYPE[role], __theme.theme.type[role]);
+      }
+      __jitter = __theme.theme.boil ? BRAND_JITTER : 0;`,
+      context,
+    );
+    context.__theme = null;
+  }
 
   // Top-level const/let are not properties of a vm global, so names resolve by evaluation. Read constants and functions
   // only: a mutable binding (seedCounter) would be cached stale.
@@ -60,10 +79,7 @@ function loadCanvas() {
     context.__job = { recorder, seed, run: () => draw(scope, (fn) => recorder.capture(fn), recorder) };
     context.__active = active;
     try {
-      return vm.runInContext(
-        "beginFrame(__job.recorder, 0); jitterScale = BRAND_JITTER; drawingCueSeed = __job.seed; stillInk(__job.seed, __job.run)",
-        context,
-      );
+      return vm.runInContext("beginFrame(__job.recorder, 0); jitterScale = __jitter; drawingCueSeed = __job.seed; stillInk(__job.seed, __job.run)", context);
     } finally {
       context.__job = null;
       context.__active = [];
@@ -92,7 +108,7 @@ function loadCanvas() {
       return found;
     });
   }
-  return { scope, still, svg, pieces };
+  return { scope, still, svg, pieces, applyTheme };
 }
 
 let canvas = null;

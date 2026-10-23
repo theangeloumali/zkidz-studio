@@ -2,14 +2,13 @@
 # ffmpeg input policy (plan §7.5): user media is a plain local file, never a playlist, list, URL or image sequence.
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import support  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import HF, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import ffio
 
@@ -75,36 +74,36 @@ class ConcatTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ffio.concat_listing([Path("/tmp/a\nfile '/etc/passwd'.mp4")])
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
     def test_a_home_path_with_a_quote_joins(self):
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch) / "O'Brien"
             folder.mkdir()
             pieces = [folder / f"{index}.mkv" for index in range(2)]
             for piece in pieces:
-                subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=30000/1001:duration=0.2",
+                subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=30000/1001:duration=0.2",
                                 "-c:v", "ffv1", str(piece)], check=True)
             listing = folder / "pieces.txt"
             listing.write_text(ffio.concat_listing(pieces), encoding="utf-8")
             joined = folder / "joined.mkv"
-            subprocess.run(["ffmpeg", "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(joined)], check=True)
-            frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+            subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(joined)], check=True)
+            frames = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
                                      "stream=nb_read_frames", "-of", "csv=p=0", str(joined)], capture_output=True, text=True, check=True)
             self.assertEqual(int(frames.stdout), 12)
 
 
-@unittest.skipUnless(shutil.which("ffprobe") and shutil.which("ffmpeg"), "needs ffmpeg and ffprobe")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg and ffprobe")
 class ProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.folder = tempfile.TemporaryDirectory()
         root = Path(cls.folder.name)
         cls.clip = root / "clip.mp4"
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=30000/1001:duration=0.5",
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=30000/1001:duration=0.5",
                         "-f", "lavfi", "-i", "sine=duration=0.5:sample_rate=48000", "-c:v", "libx264", "-c:a", "aac", "-ac", "2",
                         "-shortest", str(cls.clip)], check=True)
         cls.still = root / "still.png"
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:size=8x8", "-frames:v", "1", str(cls.still)], check=True)
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=red:size=8x8", "-frames:v", "1", str(cls.still)], check=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -190,5 +189,5 @@ class PinnedFfprobeTests(unittest.TestCase):
 
     def test_the_overlay_renderer_runs_the_pinned_ffmpeg_too(self):
         bare_call = re.compile(r"""execFile(Sync)?\(\s*["']ffmpeg["']""")
-        offenders = [path.name for path in (support.HF).glob("*.js") if bare_call.search(path.read_text(encoding="utf-8"))]
+        offenders = [path.name for path in HF.glob("*.js") if bare_call.search(path.read_text(encoding="utf-8"))]
         self.assertEqual(offenders, [])

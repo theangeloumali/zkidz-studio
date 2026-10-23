@@ -14,29 +14,28 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer, write_sheet, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import doctor
+from zks_engine import doctor, ffio
 from zks_engine.render_final import PNG_RGBA, png_header
 
-TINY_CUES = 'const CUE_SHEET = [{ kind: "keyword", at: 0.2, end: 1.8, text: "Tiny", tone: "paper" }];\n'
-OPENER_CUES = 'const CUE_SHEET = [{ kind: "hookTitle", at: 0, end: 3, intro: true, kicker: "How I ask", lines: ["From $12", "to $25."], accentLine: 1 }];\n'
+TINY_CUES = [{"kind": "keyword", "at": 0.2, "end": 1.8, "text": "Tiny", "tone": "paper"}]
+OPENER_CUES = [{"kind": "hookTitle", "at": 0, "end": 3, "intro": True, "kicker": "How I ask", "lines": ["From $12", "to $25."], "accentLine": 1}]
 CANVAS_GALLERY_EVENTS = ENGINE / "tests" / "fixture" / "sfx" / "gallery-canvas.json"
 
 
 def hyperframes_ready():
-    # The file check first: it is free, and doctor.check_chrome launches Chrome.
     return bool((ENGINE / "hf" / "node_modules" / "hyperframes" / "package.json").exists() and shutil.which("node")
-                and shutil.which("ffmpeg") and doctor.check_chrome()[0])
+                and has_ffmpeg() and doctor.check_chrome()[0])
 
 
 def rgba(png, shape=(1920, 1080)):
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(png), "-f", "rawvideo", "-pix_fmt", "rgba", "-"], capture_output=True, check=True).stdout
+    raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-i", str(png), "-f", "rawvideo", "-pix_fmt", "rgba", "-"], capture_output=True, check=True).stdout
     return np.frombuffer(raw, dtype=np.uint8).reshape(*shape, 4).astype(np.int16)
 
 
 def pixel(png, x, y):
-    return subprocess.run(["ffmpeg", "-v", "error", "-i", str(png), "-vf", f"crop=1:1:{x}:{y},format=rgba", "-f", "rawvideo", "-"],
+    return subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-i", str(png), "-vf", f"crop=1:1:{x}:{y},format=rgba", "-f", "rawvideo", "-"],
                           capture_output=True, check=True).stdout
 
 
@@ -55,12 +54,12 @@ class HyperFramesRenderTests(unittest.TestCase):
         # The canvas page reads the same EDL as a script (edl.py writes both).
         (cls.work / "edl" / "gallery.js").write_text(f"window.EDL = {json.dumps(gallery)};\n", encoding="utf-8")
         (cls.work / "edl" / "tiny.json").write_text(json.dumps(make_edl([(0, 60)])), encoding="utf-8")
-        shutil.copy(GALLERY, cls.work / "cues" / "gallery.js")
-        (cls.work / "cues" / "tiny.js").write_text(TINY_CUES, encoding="utf-8")
+        write_sheet(cls.work, "gallery", GALLERY)
+        write_sheet(cls.work, "tiny", TINY_CUES)
         (cls.work / "edl" / "opener.json").write_text(json.dumps(make_edl([(0, 90)])), encoding="utf-8")
-        (cls.work / "cues" / "opener.js").write_text(OPENER_CUES, encoding="utf-8")
+        write_sheet(cls.work, "opener", OPENER_CUES)
         # compositeStill needs a proxy to seek into: a flat 1080x1920 clip as long as the gallery edit.
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=97.1",
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=97.1",
                         "-c:v", "libx264", "-preset", "ultrafast", "-g", "300", str(cls.work / "mezz" / "gallery.mp4")], check=True)
 
     @classmethod

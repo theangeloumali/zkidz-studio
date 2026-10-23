@@ -60,8 +60,8 @@ function composeDocument({ edl, cues, registry, compositionId, css, guides = fal
     placed.push({ id, kind: cue.kind, text: cue.text ?? cue.title ?? null, start: cue.start, stop: cue.stop, firstFrame, endFrame, seed: cue.seed });
   });
 
-  // `</` inside a JSON script would end it early; cue text may contain it.
-  const json = (value) => JSON.stringify(value).replace(/<\//g, "<\\/");
+  // Cue text is agent output: a raw `</script` ends the script and `<!--` puts the parser in its escaped state, so every `<` goes.
+  const json = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
   const eases = easeDefinitions(tweens.map((spec) => spec.to?.ease).filter(Boolean));
   const html = `<!doctype html>
 <html lang="en">

@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Diagram cards: versus, prompt split and pipeline (checklist and flow row are in rows.js).
 
-const TONE_INK = { paper: BRAND.ink, white: BRAND.ink, ink: BRAND.copyOnInk };
+const TONE_INK = themed(() => ({ paper: BRAND.ink, white: BRAND.ink, ink: BRAND.copyOnInk }));
 
 // One contender: a white card (or `tone`), serif lines and a mono sub.
 // `inset` pushes text right, clear of the VS badge that overlaps the right-hand box.

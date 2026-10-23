@@ -38,20 +38,18 @@ svg.ink {
   top: 0;
   overflow: visible;
 }
-/* The warm glow a card sits in, filling its box. */
+/* The warm glow a card sits in, filling its box. --glow is the theme's goldBright (build.js pageCss). */
 .glow {
   position: absolute;
   inset: 0;
-}
-.glow {
   box-shadow:
     0 28px 70px rgba(0, 0, 0, 0.45),
-    0 0 56px rgba(213, 177, 58, 0.3);
+    0 0 56px color-mix(in srgb, var(--glow) 30%, transparent);
 }
 .glow.on-ink {
   box-shadow:
     0 28px 70px rgba(0, 0, 0, 0.5),
-    0 0 70px rgba(213, 177, 58, 0.45);
+    0 0 70px color-mix(in srgb, var(--glow) 45%, transparent);
 }
 /* The cinematic layer (fx/light.js): a dimming scrim behind a card, light leaks, the impact flash. */
 .scrim {

@@ -3,6 +3,7 @@
 # Commands run from the project's work dir (cwd) or ZKS_WORK; the package holds only code.
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -10,15 +11,13 @@ import wave
 from pathlib import Path
 
 from . import ffio
-from .home import data_dir
+from .specs.paths import inside_project, video_id
 
 FPS_NUM, FPS_DEN = 30000, 1001
 FPS = FPS_NUM / FPS_DEN
 AUDIO_RATE = 48000
 ENERGY_WINDOW = 0.01
 FRAME_EPSILON = 1e-6
-WHISPER_MODEL = "ggml-large-v3-turbo.bin"
-VAD_MODEL = "ggml-silero-v5.1.2.bin"
 DROP_ROTATION = "sidedata=mode=delete:type=DISPLAYMATRIX"
 OUTPUT = (1080, 1920)  # the 9:16 frame TikTok and Reels play
 # ffprobe rotation (mod 360) -> the CUDA-path filter that stands the frame upright; a half turn runs after hwdownload.
@@ -33,10 +32,6 @@ def work_dir():
     return Path(os.environ.get("ZKS_WORK") or Path.cwd())
 
 
-def models_dir():
-    return data_dir("models")
-
-
 # The HyperFrames renderer and the overlay page it draws through; the project installs editable, so it sits beside the package.
 HF_DIR = Path(__file__).resolve().parent.parent / "hf"
 
@@ -47,16 +42,34 @@ MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
 
 
 def load_cuts(video):
-    return json.loads((WORK / "cuts" / f"{video}.json").read_text(encoding="utf-8"))
+    spec = json.loads((WORK / "cuts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    if "base" in spec:
+        video_id(spec["base"])  # a reel reads its base's EDL, audio and mask by this name
+    return spec
 
 
 def load_edl(video):
-    return json.loads((WORK / "edl" / f"{video}.json").read_text(encoding="utf-8"))
+    return json.loads((WORK / "edl" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+
+
+def registered_inputs():
+    """The single files registered for use in place: ZKS_INPLACE, an os.pathsep-separated list the server sets."""
+    return [item for item in os.environ.get("ZKS_INPLACE", "").split(os.pathsep) if item]
+
+
+def project_input(path):
+    """A path from a spec or a command line (relative to the project dir) as its realpath, when it sits under the
+    project's media/ or work dir or is a registered in-place file; SpecError otherwise."""
+    return inside_project(WORK.parent / path, [WORK.parent / "media", WORK], registered_inputs())
+
+
+def command_input(path):
+    """A command-line path (relative to the cwd) under the same rule as a spec path."""
+    return project_input(Path(path).absolute())
 
 
 def source_path(spec):
-    """A relative `source` in a cut spec is relative to the work dir's parent (the footage folder)."""
-    return WORK.parent / spec["source"]
+    return project_input(spec["source"])
 
 
 def frame_to_sample(frame, edl):
@@ -122,6 +135,13 @@ def read_wav(path):
     return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
 
 
+def loudness(path):
+    """(integrated LUFS, true peak dBTP) from ffmpeg's ebur128 summary."""
+    log = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+                         capture_output=True, text=True, check=True).stderr
+    return float(re.findall(r"I:\s+(-?[\d.]+|-inf) LUFS", log)[-1]), float(re.findall(r"Peak:\s+(-?[\d.]+|-inf) dBFS", log)[-1])
+
+
 def has_cuda():
     """CUDA decode needs both an ffmpeg built with it and a working NVIDIA driver (never on a Mac)."""
     if not shutil.which("nvidia-smi"):
@@ -184,19 +204,3 @@ def assert_upright(path, size=OUTPUT):
         problems.append(f"rotation side data ({rotation_of(stream)} degrees)")
     if problems:
         sys.exit(f"{path}: " + "; ".join(problems))
-
-
-def filter_path(path):
-    """A path as a filter option value. The drive colon in C:/ ends an option unless quoted AND escaped
-    (measured: a bare \\: fails, '...\\:...' parses)."""
-    return "'" + Path(path).as_posix().replace(":", r"\:") + "'"
-
-
-def whisper_filter(destination, fmt, language="tl", word_level=True, vad=True, queue=20):
-    parts = [f"model={filter_path(models_dir() / WHISPER_MODEL)}", f"language={language}", f"queue={queue}",
-             f"destination={filter_path(destination)}", f"format={fmt}"]
-    if word_level:
-        parts.append("max_len=1")
-    if vad:
-        parts.append(f"vad_model={filter_path(models_dir() / VAD_MODEL)}")
-    return "whisper=" + ":".join(parts)

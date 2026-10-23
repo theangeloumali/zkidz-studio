@@ -1,28 +1,27 @@
 # Created by The Angelo Umali.
 # Unit tests for the CUDA render path: every heavy stage stays on the GPU, and the punch-in and blur land where the CPU path puts them.
-import shutil
 import struct
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
-from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
+from support import make_edl, seconds, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import blur
+from zks_engine import backends, blur, ffio
 from zks_engine import prepare
 from zks_engine import render_final
 from zks_engine.pipeline import has_cuda
 
-GPU_COMPOSITE = bool(shutil.which("ffmpeg") and has_cuda() and render_final.has_opencl())
+GPU_COMPOSITE = bool(has_ffmpeg() and has_cuda() and render_final.has_opencl())
+NVIDIA = backends.get("nvidia")
 GPU_SKIP = "needs ffmpeg with CUDA and the NVIDIA OpenCL platform (the GPU composite)"
 
 
 def run_graph(graph, encoder, devices=()):
     """Runs a gpu_graph on a 4-second synthetic 4K clip and a transparent 1080p overlay, fed as CUDA frames."""
     graph = graph.replace("[0:v]", "[0:v]format=yuv420p,hwupload_cuda,", 1)
-    return subprocess.run(["ffmpeg", "-v", "error", *devices, "-f", "lavfi", "-i", "testsrc2=size=2160x3840:rate=30000/1001:duration=4",
+    return subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *devices, "-f", "lavfi", "-i", "testsrc2=size=2160x3840:rate=30000/1001:duration=4",
                            "-f", "lavfi", "-i", "color=black@0:size=1080x1920:rate=30000/1001:duration=4,format=rgba",
                            "-filter_complex", graph, "-map", "[v]", *encoder, "-f", "null", "-"], capture_output=True, text=True)
 
@@ -31,7 +30,7 @@ def edge_row(graph):
     """Runs a gpu_graph on one full-range 2160x3840 frame, black left and peak white right; returns the output's middle luma row."""
     width, height = render_final.UHD
     frame = (bytes(width // 2 + 1) + b"\xff" * (width // 2 - 1)) * height + b"\x80" * (width * height // 2)
-    result = subprocess.run(["ffmpeg", "-v", "error", *render_final.OPENCL_DEVICE, "-f", "rawvideo", "-pix_fmt", "nv12", "-color_range", "pc",
+    result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *render_final.OPENCL_DEVICE, "-f", "rawvideo", "-pix_fmt", "nv12", "-color_range", "pc",
                              "-s", f"{width}x{height}", "-i", "-", "-f", "lavfi", "-i", "color=black@0:size=1080x1920,format=rgba",
                              "-filter_complex", graph.replace("[0:v]", "[0:v]hwupload_cuda,", 1), "-map", "[v]", "-frames:v", "1",
                              "-f", "rawvideo", "-"], input=frame, capture_output=True, check=True)
@@ -85,12 +84,6 @@ class GpuGraphTests(unittest.TestCase):
         # Source frames 40-50 play as edited 30-40. x 100 * 1166/1080 - 43 = 64.96 -> 64; y 200 * 2074/1920 - 59 = 157.04 -> 158.
         self.assertEqual(zoomed, (64, 158, 324, 432, [(30, 40)]))
 
-    def test_nvenc_whenever_cuda_exists(self):
-        self.assertEqual(render_final.video_encoder(True, False)[:2], ["-c:v", "h264_nvenc"])
-        self.assertIn("p7", render_final.video_encoder(True, False))
-        self.assertIn("p4", render_final.video_encoder(True, True))
-        self.assertNotIn("libx264", render_final.video_encoder(True, False))
-
     def test_4k_punch_window_matches_the_1080_framing(self):
         self.assertEqual(render_final.punch_frame(*render_final.UHD), (2332, 4148, 86, 119))
 
@@ -116,13 +109,13 @@ class GpuGraphTests(unittest.TestCase):
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
     def test_ffmpeg_runs_the_4k_graph(self):
         graph = render_final.gpu_graph(self.timeline, "", (), render_final.UHD, render_final.CRISP)
-        result = run_graph(graph, render_final.UHD_ENCODER, render_final.OPENCL_DEVICE)
+        result = run_graph(graph, NVIDIA.uhd, render_final.OPENCL_DEVICE)
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
     def test_ffmpeg_runs_the_gpu_graph(self):
         regions = blur.blur_regions({"blur": [[0, seconds(100), 0, 0, 500, 500, "a"]]}, self.timeline, render_final.OUTPUT)
-        result = run_graph(render_final.gpu_graph(self.timeline, "", regions), render_final.video_encoder(True, True), render_final.OPENCL_DEVICE)
+        result = run_graph(render_final.gpu_graph(self.timeline, "", regions), NVIDIA.master(True), render_final.OPENCL_DEVICE)
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
@@ -172,13 +165,6 @@ class OverlayFrameTests(unittest.TestCase):
         self.assertIn("1 overlay PNGs", problem)
         # The hint names the renderer this engine ships.
         self.assertIn("hf/render.js", problem)
-
-    def test_gpu_path_needs_opencl_for_the_composite(self):
-        with mock.patch.object(render_final, "has_opencl", return_value=False):
-            self.assertFalse(render_final.gpu_path(True, ""))
-        with mock.patch.object(render_final, "has_opencl", return_value=True):
-            self.assertTrue(render_final.gpu_path(True, ""))
-            self.assertFalse(render_final.gpu_path(True, "hflip,vflip"))
 
 
 class FlagTests(unittest.TestCase):

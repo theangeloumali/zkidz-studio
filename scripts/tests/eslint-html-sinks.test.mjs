@@ -1,12 +1,12 @@
 // Created by The Angelo Umali.
 import { ESLint } from "eslint";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const eslint = new ESLint({ cwd: REPO_ROOT });
-// The first lint loads typescript-eslint, which takes seconds on a slow disk.
-const LINT_TIMEOUT_MS = 60_000;
+// The first lint loads typescript-eslint: over 80 s on a loaded 9P mount, so it runs once in a hook with its own timeout.
+const WARM_UP_TIMEOUT_MS = 300_000;
 
 /** @param {string} sourceText @param {string} fileName */
 async function ruleIdsFor(sourceText, fileName) {
@@ -15,11 +15,15 @@ async function ruleIdsFor(sourceText, fileName) {
 }
 
 describe("ESLint HTML sink ban (plan §9.1)", () => {
+  beforeAll(async () => {
+    await ruleIdsFor("", "warm-up.mjs");
+  }, WARM_UP_TIMEOUT_MS);
+
   it.each([
     ["innerHTML", "element.innerHTML = label;"],
     ["outerHTML", "element.outerHTML = label;"],
     ["insertAdjacentHTML", 'element.insertAdjacentHTML("beforeend", label);'],
-  ])("rejects %s", { timeout: LINT_TIMEOUT_MS }, async (_sinkName, statement) => {
+  ])("rejects %s", async (_sinkName, statement) => {
     const ruleIds = await ruleIdsFor(`export function paint(element, label) {\n  ${statement}\n}\n`, "sink.mjs");
 
     expect(ruleIds).toContain("no-restricted-properties");

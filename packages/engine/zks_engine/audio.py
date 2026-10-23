@@ -9,7 +9,8 @@ import sys
 import numpy as np
 
 from . import ffio, progress
-from .pipeline import AUDIO_RATE, WORK, frame_to_sample, load_cuts, load_edl, map_interval, source_path
+from .pipeline import AUDIO_RATE, WORK, frame_to_sample, load_cuts, load_edl, loudness, map_interval, source_path
+from .specs import gates
 
 CROSSFADE = int(AUDIO_RATE * 0.010)
 BLEEP_HZ, BLEEP_DBFS, BLEEP_RAMP = 1000, -18, int(AUDIO_RATE * 0.005)
@@ -84,8 +85,10 @@ def main(video):
     # Float intermediate: crossfades and bleeps may exceed 0 dBFS before loudnorm pulls them down.
     raw_path = WORK / "audio" / f"{video}_edit.f32"
     output.tofile(raw_path)
-    measured = loudnorm(raw_path, WORK / "audio" / f"{video}_edit.wav")
+    final_path = WORK / "audio" / f"{video}_edit.wav"
+    measured = loudnorm(raw_path, final_path)
     raw_path.unlink()
+    gates.check_loudness(*loudness(final_path))  # linear loudnorm falls back to dynamic when the target is out of reach
     print(f"{video}: {len(output) / AUDIO_RATE:.3f}s audio for {edl['frames']} frames; input {measured['input_i']} LUFS -> -14")
 
 

@@ -44,13 +44,17 @@ async function installChrome(context: ZksContext, entry: PinnedDownload): Promis
   return "installed";
 }
 
+/** Windows' bsdtar by absolute path: it reads the .zip builds, and Git Bash's GNU tar takes "D:\\..." for a remote host. */
+export function tarExecutable(platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): string {
+  return platform === "win32" ? path.win32.join(env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : "tar";
+}
+
 /** Extracts beside the target and renames, so an interrupted extract never looks installed. */
 function extractArchive(archivePath: string, targetDir: string): void {
   const stagingDir = `${targetDir}.staging`;
   rmSync(stagingDir, { recursive: true, force: true });
   mkdirSync(stagingDir, { recursive: true });
-  // GNU tar reads .tar.xz/.tar.gz; Windows' bsdtar also reads the .zip builds.
-  const extraction = runCommand("tar", ["-xf", archivePath, "-C", stagingDir], 600_000);
+  const extraction = runCommand(tarExecutable(process.platform, process.env), ["-xf", archivePath, "-C", stagingDir], 600_000);
   if (extraction.code !== 0) throw new Error(`tar failed for ${archivePath}: ${extraction.stderr.trim()}`);
   renameSync(stagingDir, targetDir);
 }

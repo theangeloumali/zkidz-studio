@@ -9,43 +9,39 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import ENGINE, GALLERY, GALLERY_FRAMES, hf_installed, make_edl, needs_renderer, scratch_work, seconds  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, GALLERY, GALLERY_FRAMES, hf_installed, make_edl, needs_renderer, scratch_work, seconds, write_sheet  # first: it sets a scratch ZKS_HOME
 
 # Source frames 300-330 (10.01-11.011 s) are a trimmed pause; the reel also loses everything before frame 150 (5.005 s).
 FULL = make_edl([(0, 300), (330, 600)])
 REEL = {**make_edl([(150, 300), (330, 600)]), "reel": True}
 PAUSE = seconds(30)
-CUES = """const CUE_SHEET = [
-  { kind: "criteriaCard", at: 8, end: 14, title: "Rows", rows: [{ text: "one", at: 1 }, { text: "two", at: 4 }] },
-  { kind: "titleSwap", at: 4.5, end: 9.5, old: "old", new: "new", swapAt: 1 },
-  { kind: "keyword", at: 9.8, end: 11.2, text: "mostly cut" },
-];
-"""
+CUES = [
+    {"kind": "criteriaCard", "at": 8, "end": 14, "title": "Rows", "rows": [{"text": "one", "at": 1}, {"text": "two", "at": 4}]},
+    {"kind": "titleSwap", "at": 4.5, "end": 9.5, "old": "old", "new": "new", "swapAt": 1},
+    {"kind": "keyword", "at": 9.8, "end": 11.2, "text": "mostly cut"},
+]
 # The bleep and the "gone" cutaway lie wholly inside the trimmed pause; the authored keyword beside them must still warn.
 # "squeezed" is a 0.3 s card cutaway, too short for its title, so it draws as a bare wipe. Every cutaway covers its
 # whole span and wipes out after it, so its swishOut lands on its end.
 DERIVED = {**FULL, "bleeps": [{"at": 10.3, "end": 10.6, "x": 540, "y": 900}],
            "cutaways": [{"at": 2.0, "end": 3.0, "title": "kept"}, {"at": 6.0, "end": 6.3, "title": "squeezed"},
                         {"at": 10.1, "end": 10.9, "title": "gone", "style": "wipe"}]}
-DERIVED_CUES = 'const CUE_SHEET = [{ kind: "keyword", at: 10.3, end: 10.6, text: "in the pause" }];\n'
+DERIVED_CUES = [{"kind": "keyword", "at": 10.3, "end": 10.6, "text": "in the pause"}]
 
 
-# Reads {edl, cueSource, includeDerived} on stdin, runs the cue source like a cue file, prints the mapped cues + warnings.
+# Reads {edl, cueSheet, includeDerived} on stdin, prints the mapped cues + warnings.
 TIMEMAP_PROBE = """
-const vm = require("vm");
 const { createTimemap } = require(process.argv[1]);
-const { edl, cueSource, includeDerived } = JSON.parse(require("fs").readFileSync(0, "utf8"));
-const context = vm.createContext({ EDL: edl });
-vm.runInContext(cueSource, context);
+const { edl, cueSheet, includeDerived } = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const warnings = [];
-const cues = createTimemap(edl, warnings).mapCues(vm.runInContext("CUE_SHEET", context), { includeDerived });
+const cues = createTimemap(edl, warnings).mapCues(cueSheet, { includeDerived });
 console.log(JSON.stringify({ cues, warnings }));
 """
 
 
-def map_cues(edl, cue_source, include_derived=False):
+def map_cues(edl, cue_sheet, include_derived=False):
     result = subprocess.run(["node", "-e", TIMEMAP_PROBE, str(ENGINE / "hf" / "overlay" / "timemap.js")], capture_output=True,
-                            text=True, encoding="utf-8", input=json.dumps({"edl": edl, "cueSource": cue_source,
+                            text=True, encoding="utf-8", input=json.dumps({"edl": edl, "cueSheet": cue_sheet,
                                                                            "includeDerived": include_derived}))
     if result.returncode:
         raise AssertionError(result.stderr)
@@ -84,14 +80,13 @@ class TimemapTests(unittest.TestCase):
 
 
 FPS = 30000 / 1001
-BAD_CUES = 'const CUE_SHEET = [{ kind: "nope", at: 1, end: 2 }];\n'
+BAD_CUES = [{"kind": "nope", "at": 1, "end": 2}]
 # Unpinned pills take the canvas stagger (start 0.45, step 0.3); captions 0.2 s apart swap in place (canvas CAPTION_JOIN 0.3).
-PARITY_CUES = """const CUE_SHEET = [
-  { kind: "pills", at: 2, end: 6, text: "Pills", items: [{ text: "A" }, { text: "B" }, { text: "C" }] },
-  { kind: "caption", at: 1, end: 3, text: "First line" },
-  { kind: "caption", at: 3.2, end: 5, text: "Second line" },
-];
-"""
+PARITY_CUES = [
+    {"kind": "pills", "at": 2, "end": 6, "text": "Pills", "items": [{"text": "A"}, {"text": "B"}, {"text": "C"}]},
+    {"kind": "caption", "at": 1, "end": 3, "text": "First line"},
+    {"kind": "caption", "at": 3.2, "end": 5, "text": "Second line"},
+]
 
 
 def first_frame(seconds_value):
@@ -111,8 +106,8 @@ class BuildTests(unittest.TestCase):
         cls.work = Path(cls.folder.name)
         (cls.work / "edl").mkdir()
         (cls.work / "cues").mkdir()
-        (cls.work / "cues" / "timing.js").write_text(CUES, encoding="utf-8")
-        (cls.work / "cues" / "bad.js").write_text(BAD_CUES, encoding="utf-8")
+        write_sheet(cls.work, "timing", CUES)
+        write_sheet(cls.work, "bad", BAD_CUES)
         for video, edl in (("full", FULL), ("reel", REEL)):
             (cls.work / "edl" / f"{video}.json").write_text(json.dumps(edl), encoding="utf-8")
         cls.full = build(cls.work, "full:timing", "--events")
@@ -169,14 +164,14 @@ class BuildTests(unittest.TestCase):
         self.assertNotIn("OVERLAYS=canvas", result.stderr)
 
     def test_a_canvas_only_kind_fails_without_naming_a_renderer_this_engine_lacks(self):
-        (self.work / "cues" / "older.js").write_text('const CUE_SHEET = [{ kind: "terminalCard", at: 1, end: 3, lines: ["ls"] }];\n', encoding="utf-8")
+        write_sheet(self.work, "older", [{"kind": "terminalCard", "at": 1, "end": 3, "lines": ["ls"]}])
         result = build(self.work, "full:older")
         self.assertEqual(result.returncode, 1)
         self.assertIn("unknown cue kinds: terminalCard", result.stderr)
         self.assertNotIn("OVERLAYS=canvas", result.stderr)
 
     def test_unpinned_items_and_caption_joins_match_the_canvas_page(self):
-        (self.work / "cues" / "parity.js").write_text(PARITY_CUES, encoding="utf-8")
+        write_sheet(self.work, "parity", PARITY_CUES)
         (self.work / "edl" / "parity.json").write_text(json.dumps(FULL), encoding="utf-8")
         result = build(self.work, "parity", "--events")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -226,7 +221,7 @@ class SeekSafetyTests(unittest.TestCase):
         assert_seek_safe(self, tweens(html))
 
 
-END_CARD_CUES = 'const CUE_SHEET = [{ kind: "endCard", at: 1, end: 9, cta: "Follow" }];\n'
+END_CARD_CUES = [{"kind": "endCard", "at": 1, "end": 9, "cta": "Follow"}]
 
 
 @needs_renderer(hf_installed())
@@ -247,12 +242,15 @@ class TypedCursorTests(unittest.TestCase):
             self.assertEqual(opacity, 0 if index % 2 == 0 else 1, blinks)
 
 
-INTRO_HOOK = '{{ kind: "hookTitle", at: {at}, end: 5, intro: true, kicker: "How I ask", lines: ["From $12", "to $25."], accentLine: 1 }}'
-INTRO_CUES = f"const CUE_SHEET = [{INTRO_HOOK.format(at=0)}];\n"
-LATE_INTRO_CUES = f"const CUE_SHEET = [{INTRO_HOOK.format(at=1)}];\n"
+def intro_hook(at, **fields):
+    return {"kind": "hookTitle", "at": at, "end": 5, "intro": True, "kicker": "How I ask", "lines": ["From $12", "to $25."], "accentLine": 1, **fields}
+
+
+INTRO_CUES = [intro_hook(0)]
+LATE_INTRO_CUES = [intro_hook(1)]
 # A card 0.2 s after the hook's end, and a caption there (speech-locked, never moved).
-CARD_CUES = (f"const CUE_SHEET = [{INTRO_HOOK.format(at=0)}, {{ kind: \"keyword\", at: 5.2, end: 7.2, text: \"Later\", tone: \"paper\" }}, "
-             f"{{ kind: \"caption\", at: 5.2, end: 6.2, text: \"Said here\" }}];\n")
+CARD_CUES = [intro_hook(0), {"kind": "keyword", "at": 5.2, "end": 7.2, "text": "Later", "tone": "paper"},
+             {"kind": "caption", "at": 5.2, "end": 6.2, "text": "Said here"}]
 
 
 @needs_renderer(hf_installed())
@@ -269,9 +267,9 @@ class BrandIntroTests(unittest.TestCase):
         (work / "cues").mkdir()
         for video in ("opener", "late", "card"):
             (work / "edl" / f"{video}.json").write_text(json.dumps(make_edl([(0, 300)])), encoding="utf-8")
-        (work / "cues" / "opener.js").write_text(INTRO_CUES, encoding="utf-8")
-        (work / "cues" / "late.js").write_text(LATE_INTRO_CUES, encoding="utf-8")
-        (work / "cues" / "card.js").write_text(CARD_CUES, encoding="utf-8")
+        write_sheet(work, "opener", INTRO_CUES)
+        write_sheet(work, "late", LATE_INTRO_CUES)
+        write_sheet(work, "card", CARD_CUES)
         cls.result = build(work, "opener", "--events")
         cls.payload = json.loads((work / "edl" / "opener.sfx.json").read_text(encoding="utf-8"))
         cls.html = (work / "hf" / "opener" / "index.html").read_text(encoding="utf-8")
@@ -343,7 +341,7 @@ class BrandIntroTests(unittest.TestCase):
         # introAt is a pin after the hook's at: where a vlog-style cold open ends. Never before the hook has gone.
         for video, intro_at, expected in (("coldopen", 8, 8.0), ("early", 3, 5.0)):
             (self.work / "edl" / f"{video}.json").write_text(json.dumps(make_edl([(0, 300)])), encoding="utf-8")
-            (self.work / "cues" / f"{video}.js").write_text(INTRO_CUES.replace("intro: true,", f"intro: true, introAt: {intro_at},"), encoding="utf-8")
+            write_sheet(self.work, video, [intro_hook(0, introAt=intro_at)])
             self.assertEqual(build(self.work, video, "--events").returncode, 0)
             intro = json.loads((self.work / "edl" / f"{video}.sfx.json").read_text(encoding="utf-8"))["intro"]
             self.assertAlmostEqual(intro["hookEnd"], expected, delta=1 / FPS, msg=video)
@@ -364,7 +362,7 @@ class BrandIntroTests(unittest.TestCase):
             assert_seek_safe(self, tweens(html))
 
     def test_a_sheet_without_an_intro_has_no_pre_roll(self):
-        (self.work / "cues" / "plain.js").write_text(INTRO_CUES.replace("intro: true, ", ""), encoding="utf-8")
+        write_sheet(self.work, "plain", [intro_hook(0, intro=False)])
         (self.work / "edl" / "plain.json").write_text(json.dumps(make_edl([(0, 300)])), encoding="utf-8")
         self.assertEqual(build(self.work, "plain", "--events").returncode, 0)
         self.assertNotIn("intro", json.loads((self.work / "edl" / "plain.sfx.json").read_text(encoding="utf-8")))
@@ -444,16 +442,15 @@ class CliAndMarkupTests(unittest.TestCase):
         self.assertNotIn("><</text>", html.stdout)
 
 
-VLOG_CUES = """const CUE_SHEET = [
-  { kind: "chatCard", at: 1, end: 9, title: "Me to the editor", typing: true, stream: true, accentPhrase: "every skill",
-    messages: [{ from: "me", text: "Use every skill you have", at: 0.6 }, { from: "editor", text: "Reading the skills now", at: 2.0 }] },
-  { kind: "headlineStack", at: 10, end: 17, final: "So I built my own", finalAt: 4.2,
-    items: [{ text: "Facebook: slow upload", at: 0.3 }, { text: "Then I still schedule", at: 1.5 }] },
-  { kind: "lineChart", at: 18, end: 25, kicker: "CPU", title: "ffmpeg load", note: "busy for 45 min", suffix: "%", focus: 2,
-    points: [["0m", 12], ["15m", 48], ["30m", 95], ["45m", 60]] },
-  { kind: "phoneFrame", at: 26, end: 32, tilt: -6 },
-];
-"""
+VLOG_CUES = [
+    {"kind": "chatCard", "at": 1, "end": 9, "title": "Me to the editor", "typing": True, "stream": True, "accentPhrase": "every skill",
+     "messages": [{"from": "me", "text": "Use every skill you have", "at": 0.6}, {"from": "editor", "text": "Reading the skills now", "at": 2.0}]},
+    {"kind": "headlineStack", "at": 10, "end": 17, "final": "So I built my own", "finalAt": 4.2,
+     "items": [{"text": "Facebook: slow upload", "at": 0.3}, {"text": "Then I still schedule", "at": 1.5}]},
+    {"kind": "lineChart", "at": 18, "end": 25, "kicker": "CPU", "title": "ffmpeg load", "note": "busy for 45 min", "suffix": "%", "focus": 2,
+     "points": [["0m", 12], ["15m", 48], ["30m", 95], ["45m", 60]]},
+    {"kind": "phoneFrame", "at": 26, "end": 32, "tilt": -6},
+]
 TEXT_NODE = re.compile(r'style="white-space:pre">([^<]*)</text>')
 
 

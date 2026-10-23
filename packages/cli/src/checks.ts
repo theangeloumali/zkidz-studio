@@ -120,16 +120,15 @@ export function checkWhisper(context: ZksContext): CheckResult {
 }
 
 /** Renders a real page to PNG: a binary that starts but cannot draw (missing libs) fails here. */
-export function checkChromeRender(context: ZksContext): CheckResult {
-  const executable = toolExecutablePath(context, "chrome-headless-shell");
+export function checkChromeRender(context: ZksContext, executable = toolExecutablePath(context, "chrome-headless-shell")): CheckResult {
   if (!executable || !existsSync(executable)) return { id: "chrome", status: "fail", required: true, detail: "not installed", fix: SETUP_FIX };
   const scratchDir = mkdtempSync(path.join(os.tmpdir(), "zks-doctor-"));
   const screenshotPath = path.join(scratchDir, "render.png");
   try {
-    const sandboxArgs = process.getuid?.() === 0 ? ["--no-sandbox"] : [];
+    // Same flag as the HyperFrames renderer, which always launches without the sandbox: Ubuntu 23.10+ blocks it via AppArmor.
     const render = runCommand(
       executable,
-      [...sandboxArgs, `--user-data-dir=${scratchDir}`, `--screenshot=${screenshotPath}`, "--window-size=64,64", "data:text/html,<p>zks</p>"],
+      ["--no-sandbox", `--user-data-dir=${scratchDir}`, `--screenshot=${screenshotPath}`, "--window-size=64,64", "data:text/html,<p>zks</p>"],
       RENDER_TIMEOUT_MS,
     );
     const isPng = existsSync(screenshotPath) && readFileSync(screenshotPath).subarray(0, 4).equals(PNG_SIGNATURE);

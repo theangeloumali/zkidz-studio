@@ -29,7 +29,8 @@ def composite(backend, edl, regions=(), frame_size=None, size=OUTPUT, first_fram
     punch_switch = f"overlay=enable='{ranges_expr(punched)}'" if punched else "overlay=enable=0"
     scale = f"scale={size[0]}:{size[1]}:flags=lanczos"
     blurs, base = blur_graph(regions, "upright", frame_size)
-    decode = chain(f"select='{ranges_expr(keep)}'", restamp(edl), DROP_ROTATION)
+    # A hardware decode hands over nv12 and a CPU decode yuv420p; one format here keeps every backend's composite identical.
+    decode = chain(f"select='{ranges_expr(keep)}'", restamp(edl), DROP_ROTATION, "format=yuv420p")
     return (
         f"[0:v]{decode}[upright];"
         f"{blurs}[{base}]split[a][b];"

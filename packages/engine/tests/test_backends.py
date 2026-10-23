@@ -82,8 +82,9 @@ class RenderJobsTests(unittest.TestCase):
             self.assertEqual(backends.render_jobs(backends.get("nvidia")), 3)
 
 
+# NVDEC hands nv12 to the graph and a CPU decode yuv420p; without the format both, the filters convert differently (SSIM 0.986).
 CPU_COMPOSITE = (
-    "[0:v]select='between(n,0,29)+between(n,60,89)',settb=1001/30000,setpts=N,sidedata=mode=delete:type=DISPLAYMATRIX[upright];"
+    "[0:v]select='between(n,0,29)+between(n,60,89)',settb=1001/30000,setpts=N,sidedata=mode=delete:type=DISPLAYMATRIX,format=yuv420p[upright];"
     "[upright]split[a][b];"
     "[a]scale=1080:1920:flags=lanczos[wide];"
     "[b]{punch},scale=1080:1920:flags=lanczos[punch];"

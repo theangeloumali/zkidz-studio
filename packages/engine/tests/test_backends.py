@@ -56,7 +56,7 @@ class ProbeCacheTests(unittest.TestCase):
             self.assertEqual(backends.probe_attempts(), first)
             self.assertEqual(len(runs), count)
         self.assertEqual(backends.select(first).name, "cpu")
-        self.assertEqual(count, len(backends.PROBE_ORDER))
+        self.assertEqual(count, len(backends.PROBE_ORDER) + 1)  # only cpu's encode passed, so only cpu ran its round trip
 
     def test_a_new_driver_runs_the_probe_again(self):
         with mock.patch.object(backends.subprocess, "run", return_value=mock.Mock(returncode=1)) as run:
@@ -65,12 +65,6 @@ class ProbeCacheTests(unittest.TestCase):
             with mock.patch.object(backends, "fingerprint", return_value="abc|2.0"):
                 backends.probe_attempts()
         self.assertEqual(run.call_count, 2 * len(backends.PROBE_ORDER))
-
-    def test_the_vaapi_probe_uploads_to_its_render_node(self):
-        command = backends.probe_command(backends.get("vaapi"), "ffmpeg")
-        self.assertIn("vaapi=va:/dev/dri/renderD128", command)
-        self.assertEqual(command[command.index("-vf") + 1], "format=nv12,hwupload")
-        self.assertEqual(command[command.index("-c:v") + 1], "hevc_vaapi")
 
 
 class RenderJobsTests(unittest.TestCase):

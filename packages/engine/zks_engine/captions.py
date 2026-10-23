@@ -9,6 +9,7 @@ import sys
 import numpy as np
 
 from .pipeline import ENERGY_WINDOW, FPS, WORK, load_cuts, load_edl, load_energy
+from .specs import gates
 
 PAUSE_BREAK = 0.35
 MAX_WORDS, MAX_SECONDS = 7, 2.8
@@ -144,12 +145,8 @@ def check_entries(entries, phrases):
         ids = entry["ids"]
         if ids != list(range(ids[0], ids[0] + len(ids))):
             problems.append(f"ids {ids} are not consecutive")
-        if len({phrases[i]["reel"] for i in ids}) > 1:
-            problems.append(f"ids {ids} cross a Reels keep edge")
         if not entry.get("en", "").strip():
             problems.append(f"ids {ids} have no English")
-        elif line_count(entry["en"]) > 2:
-            problems.append(f"ids {ids} wrap to {line_count(entry['en'])} lines: {entry['en']!r}")
         covered += ids
     missing = sorted(set(range(len(phrases))) - set(covered))
     doubled = sorted({i for i in covered if covered.count(i) > 1})
@@ -163,6 +160,10 @@ def check_entries(entries, phrases):
 def emit_cues(video):
     phrases = json.loads((WORK / "captions" / f"{video}.phrases.json").read_text(encoding="utf-8"))
     entries = json.loads((WORK / "captions" / f"{video}.json").read_text(encoding="utf-8"))
+    try:
+        gates.check_captions(entries, phrases)
+    except gates.GateFailed as failure:
+        sys.exit(f"{video} captions: {failure}")
     if problems := check_entries(entries, phrases):
         sys.exit(f"{video} captions:\n  " + "\n  ".join(problems))
     cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip()}

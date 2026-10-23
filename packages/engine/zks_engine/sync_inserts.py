@@ -12,8 +12,9 @@ from typing import NamedTuple
 import numpy as np
 
 from . import ffio
-from .pipeline import FPS_DEN, FPS_NUM, WORK, has_cuda, probe_video, rotation_of, upright_size
+from .pipeline import FPS_DEN, FPS_NUM, WORK, command_input, has_cuda, probe_video, rotation_of, upright_size
 from .showcase import panel_for
+from .specs.paths import video_id
 
 
 class Mode(NamedTuple):
@@ -170,8 +171,9 @@ def level_db(signal):
 
 
 def repo_relative(path):
+    """An insert's src as showcase.py reads it: project-relative, or a registered in-place file's own path."""
     try:
-        return Path(path).resolve().relative_to(WORK.parent.resolve()).as_posix()
+        return Path(path).relative_to(WORK.parent.resolve()).as_posix()
     except ValueError:
         return str(path)
 
@@ -210,7 +212,7 @@ def main(argv):
     positional = [arg for arg in argv if not arg.startswith("--")]
     if len(positional) < 3 or any(flag not in ("--visual", "--write") and not flag.startswith("--crop=") for flag in flags):
         sys.exit("usage: sync_inserts.py vN <camera clip> <file> [<file> ...] [--visual] [--crop=x:y:w:h] [--write]")
-    video, camera_path, *files = positional
+    video, camera_path, files = video_id(positional[0]), command_input(positional[1]), [command_input(path) for path in positional[2:]]
     crop = next((flag.split("=", 1)[1] for flag in flags if flag.startswith("--crop=")), None)
     # Decoded once, and only if some file needs that signal.
     camera_audio, camera_activity = cache(lambda: band_passed_audio(camera_path)), cache(lambda: activity(camera_path, crop))

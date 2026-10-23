@@ -21,7 +21,7 @@ const { redesign } = require("./fx/sound");
 const { INTRO, LAYOUTS, introFrames, brandIntro, brandSplit } = require("./components/intro");
 
 const WORK = process.env.ZKS_WORK || process.cwd();
-// Cue images (a backdrop, a cutout) are repo-relative like a cut spec's inserts; an absolute path still wins.
+// Cue images (a backdrop, a cutout) are project-relative like a cut spec's inserts.
 const REPO = path.dirname(WORK);
 const LAYERS = ["front", "behind"];
 const vendor = (file) => require.resolve(`gsap/dist/${file}`, { paths: [__dirname] });
@@ -118,14 +118,28 @@ function brandIntroCompositions(orientation, fps, dir) {
 // The clips one layer draws: a behind cue only in the behind pass, captions always in front.
 const inLayer = (cue, layer) => (cue.depth === "behind" && cue.kind !== "caption") === (layer === "behind");
 
+// specs/paths.inside_project's twin: the realpath must sit under the project's media/ or work dir, or be a file registered
+// in place (ZKS_INPLACE). Resolving first defeats `..` and symlinks; Windows paths compare case-folded.
+const fold = (file) => (process.platform === "win32" ? file.toLowerCase() : file);
+const realpaths = (files) => files.filter((file) => fs.existsSync(file)).map((file) => fold(fs.realpathSync(file)));
+function projectImage(src) {
+  const real = fs.realpathSync(path.resolve(REPO, src));
+  const roots = realpaths([path.join(REPO, "media"), WORK]).map((root) => root + path.sep);
+  const registered = realpaths((process.env.ZKS_INPLACE || "").split(path.delimiter).filter(Boolean));
+  if (!roots.some((root) => fold(real).startsWith(root)) && !registered.includes(fold(real))) {
+    throw new Error(`${src} is outside the project (its media and work folders) and is not a registered in-place file`);
+  }
+  return real;
+}
+
 // Each cue image copied into the composition (Chrome loads it from there): the cues with page-relative srcs, and the copies.
 function withImages(clips) {
   const images = {};
   const resolved = clips.map((cue, index) => {
     if (!REGISTRY[cue.kind]?.image) return cue;
-    if (typeof cue.src !== "string" || !cue.src) throw new Error(`${cue.kind} at ${cue.at}: src is required (a repo-relative image path)`);
-    const file = path.resolve(REPO, cue.src);
-    if (!fs.existsSync(file)) throw new Error(`${cue.kind} at ${cue.at}: no image at ${cue.src} (${file})`);
+    if (typeof cue.src !== "string" || !cue.src) throw new Error(`${cue.kind} at ${cue.at}: src is required (a project-relative image path)`);
+    if (!fs.existsSync(path.resolve(REPO, cue.src))) throw new Error(`${cue.kind} at ${cue.at}: no image at ${cue.src}`);
+    const file = projectImage(cue.src);
     // The name lands in an src attribute: anything past [\w.-] could close it.
     const relative = `media/${index}-${path.basename(file).replace(/[^\w.-]/g, "_")}`;
     images[relative] = file;

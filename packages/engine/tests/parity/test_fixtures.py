@@ -1,6 +1,9 @@
 # Created by The Angelo Umali.
 # The parity fixtures are self-generated (lavfi testsrc2 + sine), small, and carry the properties the frame-count ACs need.
+import hashlib
+import tempfile
 import unittest
+from pathlib import Path
 
 from zks_engine import ffio
 
@@ -36,6 +39,14 @@ class FixtureTests(unittest.TestCase):
         for clip in harness.CLIPS.values():
             with self.subTest(clip.name):
                 self.assertIsNotNone(ffio.probe(harness.source_of(clip))["audio"])
+
+    def test_two_builds_of_a_project_draw_byte_identical_overlay_frames(self):
+        # A run-to-run change in the overlay moved frame-0 SSIM by 0.002 and flaked the 0.995 parity AC.
+        clip = harness.CLIPS["ntsc"]
+        with tempfile.TemporaryDirectory() as folder:
+            builds = [harness.build_project(clip, Path(folder) / str(index)) / "frames" / clip.name for index in range(2)]
+            digests = [[hashlib.sha256(png.read_bytes()).hexdigest() for png in sorted(frames.glob("*.png"))] for frames in builds]
+        self.assertEqual(digests[0], digests[1])
 
 
 if __name__ == "__main__":

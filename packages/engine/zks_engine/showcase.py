@@ -13,8 +13,10 @@ import sys
 from . import backends, ffio
 from .backends.graph import restamp
 from .join_sources import audio_command, gpu_frames, piece_command, probe, run_all
-from .pipeline import CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, rotation_of, split_orientation, upright_dims
+from .pipeline import (CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, project_input, rotation_of, split_orientation,
+                       upright_dims)
 from .slots import slot
+from .specs.paths import video_id
 from .render_final import BT709_TV, BT709_TAGS, count_frames, frame_times
 
 SIZE = (2160, 3840)
@@ -85,11 +87,12 @@ def base_piece(clip, first, count, out, backend):
 
 def insert_command(insert, first, count, out, backend, fps):
     """The file from insert["src_at"], read from the frame-grid time of `first` so it matches insert_audio's exact offset."""
-    src = str(WORK.parent / insert["src"])  # repo-relative like a cut spec source; an absolute path still wins
+    src = str(project_input(insert["src"]))
     stream = probe_video(src)
     rounded, compose = panel_passes(PANELS[insert.get("panel") or panel_for(upright_dims(stream))])
     if src.lower().endswith(".png"):
-        source, decode = ["-loop", "1", "-framerate", f"{fps[0]}/{fps[1]}", *ffio.user_input_args(src)], ""
+        # Bounded like every looping input (gates.check_looping_inputs); -frames:v below ends the piece on its count.
+        source, decode = ["-loop", "1", "-framerate", f"{fps[0]}/{fps[1]}", "-t", f"{count * fps[1] / fps[0]:.6f}", *ffio.user_input_args(src)], ""
     else:
         seek = insert["src_at"] + first * fps[1] / fps[0] - insert["at"]
         rotation = rotation_of(stream) % 360
@@ -109,7 +112,7 @@ def main(video, raw):
     clip = probe(raw)
     backend = backends.active()
     jobs = backends.render_jobs(backend)
-    inserts = json.loads((WORK / "inserts" / f"{video}.json").read_text(encoding="utf-8"))
+    inserts = json.loads((WORK / "inserts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
     target = WORK / "sources" / f"{video}.mkv"
     work = target.with_name(f"{video}-pieces")
     shutil.rmtree(work, ignore_errors=True)

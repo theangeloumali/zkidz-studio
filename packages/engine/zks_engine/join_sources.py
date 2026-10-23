@@ -2,7 +2,7 @@
 # Joins several recordings into one uniform source the engine can cut: 2160x3840 8-bit BT.709 SDR at the clips' shared
 # rate, HEVC, with lossless FLAC audio. HDR clips (HLG / PQ) are tone-mapped; on NVIDIA every clip is upscaled with
 # libplacebo on the GPU, and the other backends scale and tone-map on the CPU between their decode and encoder.
-# Usage (from the work dir): python -m zks_engine.join_sources sources/v8.mkv ../clip1.mp4@1.25 ../clip2.mp4 ...
+# Usage (from the work dir): python -m zks_engine.join_sources sources/v8.mkv ../media/clip1.mp4@1.25 ../media/clip2.mp4 ...
 #   clip@Z zooms that clip Z x, anchored at the top, so a face framed high drops below the card band (y 270-600).
 import json
 import shutil
@@ -15,9 +15,11 @@ from typing import NamedTuple
 from . import backends, ffio
 from . import progress
 from .backends.graph import restamp
-from .pipeline import AUDIO_RATE, CUDA_UPRIGHT, DROP_ROTATION, FPS_DEN, FPS_NUM, WORK, chain, probe_video, rotation_of, split_orientation
+from .pipeline import AUDIO_RATE, CUDA_UPRIGHT, DROP_ROTATION, FPS_DEN, FPS_NUM, WORK, chain, command_input, probe_video, rotation_of, split_orientation
 from .render_final import LOW_PRIORITY, count_frames, has_filter
 from .slots import slot
+from .specs import gates
+from .specs.paths import inside_project
 
 SIZE = (2160, 3840)
 HDR_TRANSFERS = {"arib-std-b67", "smpte2084"}
@@ -42,7 +44,8 @@ class Clip(NamedTuple):
 
 
 def probe(argument):
-    path, _, zoom = argument.partition("@")
+    name, _, zoom = argument.partition("@")
+    path = command_input(name)
     stream = json.loads(subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
                                         "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt", "-of", "json",
                                         *ffio.user_input_args(path)],
@@ -116,6 +119,8 @@ def piece_command(clip, first, frames, out, backend):
 def run_all(commands, jobs):
     """Exit codes of the commands that failed, `jobs` at a time: 14 at once meant 14 libplacebo Vulkan devices, and 12
     failed VK_ERROR_INITIALIZATION_FAILED."""
+    for command in commands:
+        gates.check_command(command)
     with ThreadPoolExecutor(jobs) as pool:
         return [code for code in pool.map(lambda command: subprocess.run(command, **LOW_PRIORITY).returncode, commands) if code]
 
@@ -131,7 +136,7 @@ def audio_command(clips, out):
 
 
 def main(target, arguments):
-    target = WORK / target
+    target = inside_project(WORK / target, WORK)
     clips = [probe(argument) for argument in arguments]
     num, den = common_rate(clips)
     backend = backends.active()

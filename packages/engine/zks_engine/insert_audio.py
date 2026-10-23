@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 
 from . import ffio
-from .pipeline import AUDIO_RATE, WORK, read_wav
+from .pipeline import AUDIO_RATE, WORK, project_input, read_wav
+from .specs.paths import video_id
 from .render_final import BT709_TAGS
 
 PRESENCE_DB = 2.0  # the file sits a little forward of the speaker level the room recorded
@@ -75,15 +76,16 @@ def headroom(track):
 
 
 def main(video):
-    source = WORK / "sources" / f"{video}.mkv"
+    source = WORK / "sources" / f"{video_id(video)}.mkv"
     spans = clean_spans(json.loads((WORK / "inserts" / f"{video}.json").read_text(encoding="utf-8")))
     if not spans:
         sys.exit(f"inserts/{video}.json has no \"clean\" spans")
+    paths = {src: project_input(src) for src in {span[2] for span in spans}}  # before any ffmpeg runs
     room_track = source.with_name(f"{video}.room.flac")
     if not room_track.exists():
         subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(source), "-vn", "-c:a", "flac", str(room_track)], check=True)
     room = read_wav(room_track)
-    files = {src: read_wav(WORK.parent / src) for src in {span[2] for span in spans}}
+    files = {src: read_wav(path) for src, path in paths.items()}
     gains = {}
     for src in files:
         start, end, _, offset = reference_span(spans, src)

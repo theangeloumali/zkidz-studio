@@ -8,7 +8,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=24.11 <27",
+      "version": ">=24.17.0 <27",
       "onFail": "download"
     },
     "packageManager": {

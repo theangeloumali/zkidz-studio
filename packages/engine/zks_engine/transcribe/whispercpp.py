@@ -33,14 +33,13 @@ def load_lock(path=TOOLS_LOCK):
 
 
 def cli_path(lock=None, key=None):
-    """The pinned whisper-cli `pnpm zks setup` installed; PATH only for a Homebrew pin or a dev checkout."""
+    """The pinned whisper-cli `pnpm zks setup` installed; PATH only for a Homebrew pin, never an unverified stand-in."""
     entry = (lock or load_lock())["tools"]["whisper-cpp"]["platforms"].get(key or platform_key(), {})
     if "sha256" in entry:
         pinned = data_dir("tools") / "whisper-cpp" / entry["sha256"][:SHORT_HASH_LENGTH] / entry.get("executable", "whisper-cli")
         if pinned.exists():
             return pinned
-    found = shutil.which(Path(entry.get("executable", "whisper-cli")).name)
-    if found:
+    elif "homebrew" in entry and (found := shutil.which(Path(entry.get("executable", "whisper-cli")).name)):
         return Path(found)
     raise ToolMissing(f"whisper-cli is not installed. {SETUP_FIX}")
 

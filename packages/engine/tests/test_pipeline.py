@@ -33,17 +33,6 @@ class WorkDirTests(unittest.TestCase):
             self.assertEqual(pipeline.models_dir(), Path(os.environ["ZKS_HOME"]) / "models")
 
 
-class WordParseTests(unittest.TestCase):
-    def test_plain_json_line(self):
-        self.assertEqual(transcribe.parse_word('{"start":10,"end":20,"text":" boss,"}'),
-                         {"start": 10, "end": 20, "text": " boss,"})
-
-    def test_unescaped_quote_from_the_whisper_filter(self):
-        # ffmpeg's whisper json writes quotes inside text unescaped (measured on v4: ""Plak").
-        self.assertEqual(transcribe.parse_word('{"start":23968,"end":24518,"text":""Plak"}'),
-                         {"start": 23968, "end": 24518, "text": '"Plak'})
-
-
 class CheckWindowArgsTests(unittest.TestCase):
     def test_defaults_to_english(self):
         self.assertEqual(check_windows.parse_args(["a.wav", "1.0-1.5"]), ("en", "a.wav", [(1.0, 1.5)]))

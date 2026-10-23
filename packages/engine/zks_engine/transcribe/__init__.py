@@ -3,7 +3,6 @@
 # Usage (from the work dir): python -m zks_engine.transcribe audio/v3.wav transcripts/v3_words.json [chunks] [language] [model]
 import json
 import os
-import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -29,19 +28,6 @@ def split_points(energy_db, chunks):
         high = min(len(energy_db), int((target + SEARCH) / ENERGY_WINDOW))
         points.append((low + int(np.argmin(energy_db[low:high]))) * ENERGY_WINDOW if high > low else target)
     return points + [duration]
-
-
-WORD_LINE = re.compile(r'^\{"start":\s*(\d+),\s*"end":\s*(\d+),\s*"text":\s*"(.*)"\s*\}$')
-
-
-# dead-code-allowed: only tests/test_pipeline.py (another slice's file) still calls it; the whisper filter it parsed is gone 2026-11-30
-def parse_word(line):
-    """The old ffmpeg whisper filter wrote quotes inside "text" unescaped, which json.loads rejects."""
-    try:
-        return json.loads(line)
-    except json.JSONDecodeError:
-        start, end, text = WORD_LINE.match(line.strip()).groups()
-        return {"start": int(start), "end": int(end), "text": text}
 
 
 def transcribe_chunk(wav, start, end, index, language, model, threads):

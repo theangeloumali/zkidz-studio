@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ENGINE = Path(__file__).resolve().parents[1]
 HF = ENGINE / "hf"
@@ -54,6 +55,11 @@ def needs_renderer(ready, reason=HF_SKIP):
         return guarded
 
     return decorate
+
+
+def media_project():
+    """The engine's work dir as ZKS_HOME/work, so media_file()'s files sit in that project's media/ (spec path containment)."""
+    return mock.patch("zks_engine.pipeline.WORK", Path(os.environ["ZKS_HOME"]) / "work")
 
 
 def media_file(name="clip.mp4"):

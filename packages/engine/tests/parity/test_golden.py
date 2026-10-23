@@ -59,6 +59,21 @@ class GoldenRenderTests(unittest.TestCase):
         neighbour = harness.frame_png(self.masters["ntsc"], frame + 1, Path(self.scratch.name) / "neighbour.png")
         self.assertLess(harness.ssim(neighbour, harness.golden_of(clip, frame)), harness.GOLDEN_SSIM)
 
+    def test_each_masters_footage_moves_like_its_source(self):
+        # The moving-footage gate: frame count and changing overlays do not prove the camera picture advances.
+        for key, clip in harness.CLIPS.items():
+            with self.subTest(clip.name):
+                source_motion = harness.motion(harness.source_of(clip), harness.MOTION_FRAME)
+                self.assertGreaterEqual(harness.motion(self.masters[key], harness.MOTION_FRAME), harness.MOTION_SHARE * source_motion)
+
+    def test_a_frozen_master_fails_the_motion_check(self):
+        clip = harness.CLIPS["ntsc"]
+        frozen = Path(self.scratch.name) / "frozen.mp4"
+        harness.ffmpeg("-y", *ffio.user_input_args(self.masters["ntsc"]), "-vf", f"select='eq(n\\,{harness.MOTION_FRAME})',loop=loop=1:size=1",
+                       "-fps_mode", "passthrough", "-an", "-c:v", "libx264", "-crf", "18", str(frozen))
+        source_motion = harness.motion(harness.source_of(clip), harness.MOTION_FRAME)
+        self.assertLess(harness.motion(frozen, 0), harness.MOTION_SHARE * source_motion)
+
 
 if __name__ == "__main__":
     unittest.main()

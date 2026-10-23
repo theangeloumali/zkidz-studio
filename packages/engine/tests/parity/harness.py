@@ -27,6 +27,10 @@ GOLDEN_SSIM = 0.97  # plan §10.3: the CPU render on any OS against the committe
 PARITY_SSIM = 0.995  # plan §12: a hardware backend against the CPU render of the same spec
 SOURCE_SIZE = (360, 640)  # the clips' upright size; frames are compared here, as the 1080p master holds no more detail
 CLIP_SECONDS = 2
+# The moving-footage gate (plan §10.3): testsrc2's diagonal sweep on SOURCE_SIZE, clear of the overlay box and the blur box.
+MOTION_REGION = (120, 200, 180, 160)  # x, y, width, height
+MOTION_FRAME = 10  # edited frame k and k + 1 sit in every clip's first keep, so they are source frames k and k + 1
+MOTION_SHARE = 0.5  # a master must keep at least this share of its source's frame-to-frame change
 # One privacy box (source seconds, 1080-grid box) so every backend's blur path is in the comparison.
 BLUR = [[0.2, 1.0, 60, 1400, 400, 300, "parity fixture"]]
 
@@ -69,7 +73,7 @@ def ffmpeg(*args):
     result = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostdin", *args], capture_output=True, text=True, check=False)
     if result.returncode:
         raise RuntimeError(f"ffmpeg {' '.join(args[:6])}...: {result.stderr.strip()[-1500:]}")
-    return result.stderr
+    return result
 
 
 def skip_without_ffmpeg():
@@ -124,8 +128,9 @@ def build_project(clip, folder):
     ffmpeg("-y", *ffio.user_input_args(media), "-vn", "-af", f"aresample=48000,apad,atrim=end_sample={samples}", "-ac", "2", "-c:a", "pcm_s16le",
            str(work / "audio" / f"{clip.name}_edit.wav"))
     rate, (width, height) = f"{clip.fps[0]}/{clip.fps[1]}", OUTPUT
+    # format=auto blends in RGBA: overlay's default yuv420 blend onto a main with alpha gives different pixels on every run (n8.1).
     ffmpeg("-y", "-f", "lavfi", "-i", f"color=c=black@0:s={width}x{height}:r={rate},format=rgba", "-f", "lavfi", "-i",
-           f"color=c=gold@0.85:s=320x120:r={rate},format=rgba", "-filter_complex", "[0:v][1:v]overlay=x='80+12*n':y=300,format=rgba",
+           f"color=c=gold@0.85:s=320x120:r={rate},format=rgba", "-filter_complex", "[0:v][1:v]overlay=x='80+12*n':y=300:format=auto,format=rgba",
            "-frames:v", str(edl["frames"]), "-start_number", "0", str(work / "frames" / clip.name / "%05d.png"))
     return work
 
@@ -149,19 +154,33 @@ def render(clip, backend, folder):
     return work / "out" / f"{clip.name}.mp4"
 
 
-def frame_png(video, index, out):
-    """Frame `index` of a video, scaled to SOURCE_SIZE, as an RGB PNG."""
+def frame_png(video, index, out, region=None):
+    """Frame `index` of a video, scaled to SOURCE_SIZE (then cropped to `region`), as an RGB PNG."""
     width, height = SOURCE_SIZE
-    ffmpeg("-y", *ffio.user_input_args(video), "-vf", f"select='eq(n\\,{index})',scale={width}:{height}:flags=area,format=rgb24",
+    crop = ",crop={2}:{3}:{0}:{1}".format(*region) if region else ""
+    ffmpeg("-y", *ffio.user_input_args(video), "-vf", f"select='eq(n\\,{index})',scale={width}:{height}:flags=area{crop},format=rgb24",
            "-frames:v", "1", "-fps_mode", "passthrough", str(out))
     return out
+
+
+def frame_digests(video):
+    """One MD5 per decoded frame: two renders of one spec must match frame for frame, whatever their container bytes."""
+    listing = ffmpeg(*ffio.user_input_args(video), "-map", "0:v", "-f", "framemd5", "-").stdout
+    return [line.rsplit(",", 1)[-1].strip() for line in listing.splitlines() if line and not line.startswith("#")]
 
 
 def ssim(first, second):
     """SSIM of two same-size PNGs over the R, G and B planes (one RGB space: no YUV matrix guess on either side)."""
     log = ffmpeg(*ffio.user_input_args(first), *ffio.user_input_args(second), "-filter_complex", "[0:v]format=gbrp[a];[1:v]format=gbrp[b];[a][b]ssim",
-                 "-f", "null", "-")
+                 "-f", "null", "-").stderr
     return float(re.findall(r"All:([\d.]+)", log)[-1])
+
+
+def motion(video, frame):
+    """How much MOTION_REGION changes from `frame` to the next (1 - SSIM): about 0 when the footage is frozen."""
+    with tempfile.TemporaryDirectory() as folder:
+        pngs = [frame_png(video, index, Path(folder) / f"{index}.png", MOTION_REGION) for index in (frame, frame + 1)]
+        return 1 - ssim(*pngs)
 
 
 def encoded_by_x264(video):

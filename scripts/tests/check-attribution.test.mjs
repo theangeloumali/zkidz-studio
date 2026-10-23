@@ -93,6 +93,7 @@ describe("findAttributionProblems", () => {
     writeRepoFile("LICENSE", "Apache License\n");
     writeRepoFile("fonts/OFL-Archivo.txt", "Copyright\n");
     writeRepoFile("shot.png", "binary");
+    writeRepoFile("speech.m4a", "binary");
 
     expect(findAttributionProblems(repoDir)).toEqual([]);
   });

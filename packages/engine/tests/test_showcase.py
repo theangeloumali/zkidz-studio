@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from support import media_file  # first: it sets a scratch ZKS_HOME
+from support import media_file, media_project  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, join_sources
 from zks_engine import showcase
@@ -15,7 +15,8 @@ PORTRAIT = {"codec_name": "h264", "width": 1080, "height": 1920, "pix_fmt": "yuv
 
 def insert_command(first=0, stream=PORTRAIT, backend=NVIDIA, fps=(30000, 1001), **fields):
     insert = {"at": 0.0, "end": 1.0, "src": str(media_file("a.mp4")), "src_at": 2.0, **fields}
-    with mock.patch.object(showcase, "probe_video", return_value=stream), mock.patch.object(join_sources, "has_filter", return_value=True):
+    with (mock.patch.object(showcase, "probe_video", return_value=stream), mock.patch.object(join_sources, "has_filter", return_value=True),
+          media_project()):
         return showcase.insert_command(insert, first, 30, Path("out.mp4"), backend, fps)
 
 

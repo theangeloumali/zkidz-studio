@@ -5,7 +5,6 @@
 # Usage (from the work dir): python -m zks_engine.sfx v1   (exit 1 when the gate still fails after 3 bus cuts)
 import json
 import math
-import re
 import subprocess
 import sys
 import zlib
@@ -15,7 +14,7 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from . import ffio, progress
-from .pipeline import AUDIO_RATE, ENERGY_WINDOW, WORK, energy_db, frame_to_sample, intro_track, load_edl, map_interval, read_wav
+from .pipeline import AUDIO_RATE, ENERGY_WINDOW, WORK, energy_db, frame_to_sample, intro_track, load_edl, loudness, map_interval, read_wav
 
 from . import synth
 
@@ -181,13 +180,6 @@ def mix_bus(events, voice):
 def write_wav(path, samples):
     subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", "-f", "f32le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-", "-c:a", "pcm_s24le", str(path)],
                    input=samples.astype(np.float32).tobytes(), check=True)
-
-
-def loudness(path):
-    """(integrated LUFS, true peak dBTP) from ffmpeg's ebur128 summary."""
-    log = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
-                         capture_output=True, text=True, check=True).stderr
-    return float(re.findall(r"I:\s+(-?[\d.]+|-inf) LUFS", log)[-1]), float(re.findall(r"Peak:\s+(-?[\d.]+|-inf) dBFS", log)[-1])
 
 
 INTRO_REACH = 1.5  # how long after the intro hook ends the insert may wait for a pause (s)

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from support import media_file  # first: it sets a scratch ZKS_HOME
+from support import media_file, media_project  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, ffio, join_sources
 
@@ -86,7 +86,7 @@ class RateTests(unittest.TestCase):
     def probe(self, rate):
         stream = {"streams": [{"nb_read_packets": "50", "r_frame_rate": rate, "pix_fmt": "yuv420p"}]}
         with (mock.patch.object(join_sources.subprocess, "run", return_value=mock.Mock(stdout=__import__("json").dumps(stream))),
-              mock.patch.object(join_sources, "probe_video", return_value={})):
+              mock.patch.object(join_sources, "probe_video", return_value={}), media_project()):
             return join_sources.probe(str(media_file("a.mp4")))
 
     def test_any_constant_rate_is_read(self):

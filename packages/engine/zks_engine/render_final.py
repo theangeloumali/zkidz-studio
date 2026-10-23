@@ -25,6 +25,7 @@ from .blur import blur_regions, gpu_blur_graph, output_regions, ranges_expr
 from .edl import FACECAM_ZOOM, PUNCH_TOP
 from . import progress
 from .slots import slot
+from .specs import gates
 from .pipeline import (AUDIO_RATE, CUDA_LANCZOS, CUDA_TV_RANGE, CUDA_UPRIGHT, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, frame_to_sample,
                        intro_track, load_cuts, load_edl, probe_video, rotation_of, source_path, split_orientation, upright_dims)
 
@@ -320,6 +321,8 @@ def render_chunks(edl, spec, source, route, size, encoder, frames_dir, audio_pat
             commands.append(intro_command(intro, edl, size, encoder, chunks[-1][0], route))
         chunks.append((chunk_dir / f"{index:02d}.mp4", last - first))
         commands.append(chunk_command(edl_slice(edl, first, last), first, spec, source, route, size, encoder, frames_dir, chunks[-1][0]))
+    for command in commands:
+        gates.check_command(command)
     print(f"rendering {len(before + after)} chunks at once on {route.backend.name}{' + the brand intro' if intro else ''}", flush=True)
     running = [subprocess.Popen(command, **LOW_PRIORITY) for command in commands]
     while any(job.poll() is None for job in running):
@@ -334,7 +337,9 @@ def render_chunks(edl, spec, source, route, size, encoder, frames_dir, audio_pat
     listing = chunk_dir / "chunks.txt"
     listing.write_text(ffio.concat_listing(out for out, _ in chunks), encoding="utf-8")
     splice = (intro["audio"], frame_to_sample(intro["at"], edl)) if intro else ()
-    subprocess.run(join_command(listing, audio_path, encoder, part, *splice), check=True)
+    join = join_command(listing, audio_path, encoder, part, *splice)
+    gates.check_command(join)
+    subprocess.run(join, check=True)
     total = sum(count for _, count in chunks)
     if count_frames(part) != total:
         sys.exit(f"{part.name}: {count_frames(part)} frames after the join, expected {total}")
@@ -409,8 +414,15 @@ def gpu_path(cuda, cpu_turn):
     return cuda and not cpu_turn and has_opencl()
 
 
+def spec_files(video):
+    """The spec set the master is rendered from: snapshotted at start, checked before the master replaces the old one."""
+    return [path for path in (WORK / "cuts" / f"{video}.json", WORK / "edl" / f"{video}.json", WORK / "edl" / f"{video}.sfx.json") if path.exists()]
+
+
 def main(video, draft=False, uhd=False):
     edl, spec = load_edl(video), load_cuts(video)
+    specs = spec_files(video)
+    digest = gates.snapshot(specs)
     frames_dir = WORK / "frames" / video
     if edl.get("matte"):
         if problem := check_overlay_frames(frames_dir.with_name(f"{video}.behind"), edl["frames"]):
@@ -420,8 +432,8 @@ def main(video, draft=False, uhd=False):
     if problem := check_overlay_frames(frames_dir, edl["frames"]):
         sys.exit(f"{video}: {problem}")
     audio_path = soundtrack(video)
-    if not track_fits(audio_path, edl["frames"], edl):
-        sys.exit(f"{video}: {audio_path.name} does not match the edit; re-run audio.py (and sfx.py)")
+    with wave.open(str(audio_path)) as track:
+        gates.check_counts(edl["frames"], len(list(frames_dir.glob("*.png"))), track.getnframes(), (edl["fps_num"], edl["fps_den"]))
     intro = intro_of(video, edl)
     out_dir = WORK / "out"
     out_dir.mkdir(exist_ok=True)
@@ -436,6 +448,7 @@ def main(video, draft=False, uhd=False):
             stage.begin(edl["frames"] + (intro["frames"] if intro else 0))
             encode_master(video, edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro, stage.update)
         assert_upright(part, size)
+        gates.check_snapshot(specs, digest)
         part.replace(output)
     note = f", the brand intro at frame {intro['at']}" if intro else ""
     print(f"rendered {output} ({audio_path.name}{note})")

@@ -7,9 +7,9 @@ from pathlib import Path
 AUDIO_RATE = 48000
 NTSC = (30000, 1001)
 TARGET_LUFS, LUFS_TOLERANCE, MAX_TRUE_PEAK = -14.0, 1.0, -1.0
-# A caption plate holds two lines; past ~60 chars the text wraps to a third (captions.py rejects the same).
-MAX_CAPTION_CHARS = 60
 BOUNDED = ("-t", "-frames:v", "-frames", "-to")
+GRAPH_OPTIONS = ("-filter_complex", "-vf", "-af", "-filter:v", "-filter:a")
+MAX_CAPTION_LINES = 2
 
 
 class GateFailed(RuntimeError):
@@ -46,6 +46,14 @@ def check_looping_inputs(args):
                 raise GateFailed(f"looping input {source} must be bounded (-t or -frames) before its -i")
 
 
+def check_command(args):
+    """Every graph and looping input of one ffmpeg command; the engine calls it on each command before spawning it."""
+    for option, value in zip(args, args[1:]):
+        if option in GRAPH_OPTIONS:
+            check_graph(value)
+    check_looping_inputs(args)
+
+
 def check_counts(edl_frames, overlay_frames, audio_samples, fps=NTSC, audio_rate=AUDIO_RATE):
     if overlay_frames != edl_frames:
         raise GateFailed(f"overlay has {overlay_frames} frames; the edit has {edl_frames}")
@@ -62,17 +70,18 @@ def check_loudness(lufs, true_peak):
 
 
 def check_captions(entries, phrases):
-    """A group mixing FULL-only (reel null) and reel phrases straddles a keep edge; long text wraps to a third line."""
-    reel_of = {phrase["id"]: phrase["reel"] for phrase in phrases}
+    """A group whose phrases sit in different reel keeps (or FULL-only beside a keep) straddles a keep edge; text wider than
+    the plate's two lines, by its font metrics, wraps to a third. Phrase ids are positions in the phrase file."""
+    from ..captions import line_count  # captions.py runs this gate, so its import must wait
+
     for entry in entries:
-        unknown = [phrase_id for phrase_id in entry["ids"] if phrase_id not in reel_of]
+        unknown = [phrase_id for phrase_id in entry["ids"] if not 0 <= phrase_id < len(phrases)]
         if unknown:
             raise GateFailed(f"caption ids {unknown} are not phrases of this edit")
-        reels = {reel_of[phrase_id] for phrase_id in entry["ids"]}
-        if None in reels and len(reels) > 1:
+        if len({phrases[phrase_id]["reel"] for phrase_id in entry["ids"]}) > 1:
             raise GateFailed(f"caption ids {entry['ids']} cross a Reels keep edge")
-        if len(entry["en"].strip()) > MAX_CAPTION_CHARS:
-            raise GateFailed(f"caption ids {entry['ids']} wrap to 3 lines ({len(entry['en'].strip())} chars, max {MAX_CAPTION_CHARS}); split it")
+        if (lines := line_count(entry.get("en", ""))) > MAX_CAPTION_LINES:
+            raise GateFailed(f"caption ids {entry['ids']} wrap to {lines} lines: {entry['en'].strip()!r}; split it")
 
 
 def snapshot(paths):

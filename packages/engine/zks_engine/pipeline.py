@@ -3,6 +3,7 @@
 # Commands run from the project's work dir (cwd) or ZKS_WORK; the package holds only code.
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from . import ffio
 from .home import data_dir
+from .specs.paths import inside_project, video_id
 
 FPS_NUM, FPS_DEN = 30000, 1001
 FPS = FPS_NUM / FPS_DEN
@@ -47,16 +49,34 @@ MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
 
 
 def load_cuts(video):
-    return json.loads((WORK / "cuts" / f"{video}.json").read_text(encoding="utf-8"))
+    spec = json.loads((WORK / "cuts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    if "base" in spec:
+        video_id(spec["base"])  # a reel reads its base's EDL, audio and mask by this name
+    return spec
 
 
 def load_edl(video):
-    return json.loads((WORK / "edl" / f"{video}.json").read_text(encoding="utf-8"))
+    return json.loads((WORK / "edl" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+
+
+def registered_inputs():
+    """The single files registered for use in place: ZKS_INPLACE, an os.pathsep-separated list the server sets."""
+    return [item for item in os.environ.get("ZKS_INPLACE", "").split(os.pathsep) if item]
+
+
+def project_input(path):
+    """A path from a spec or a command line (relative to the project dir) as its realpath, when it sits under the
+    project's media/ or work dir or is a registered in-place file; SpecError otherwise."""
+    return inside_project(WORK.parent / path, [WORK.parent / "media", WORK], registered_inputs())
+
+
+def command_input(path):
+    """A command-line path (relative to the cwd) under the same rule as a spec path."""
+    return project_input(Path(path).absolute())
 
 
 def source_path(spec):
-    """A relative `source` in a cut spec is relative to the work dir's parent (the footage folder)."""
-    return WORK.parent / spec["source"]
+    return project_input(spec["source"])
 
 
 def frame_to_sample(frame, edl):
@@ -120,6 +140,13 @@ def read_wav(path):
     raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(path), "-f", "f32le", "-ac", "2", "-ar", str(AUDIO_RATE), "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
+
+
+def loudness(path):
+    """(integrated LUFS, true peak dBTP) from ffmpeg's ebur128 summary."""
+    log = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+                         capture_output=True, text=True, check=True).stderr
+    return float(re.findall(r"I:\s+(-?[\d.]+|-inf) LUFS", log)[-1]), float(re.findall(r"Peak:\s+(-?[\d.]+|-inf) dBFS", log)[-1])
 
 
 def has_cuda():

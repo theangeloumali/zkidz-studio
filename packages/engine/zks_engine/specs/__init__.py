@@ -3,7 +3,7 @@
 from .cues import anchor_word, check_cue, validate_add_cue, validate_update_cue
 from .cuts import cut_spec_to_engine, migrate_cuts
 from .legacy_js import migrate_cue_sheet
-from .paths import inside_project
+from .paths import inside_project, video_id
 from .schema import SpecError, load_spec, validate
 
 __all__ = [
@@ -18,4 +18,5 @@ __all__ = [
     "validate",
     "validate_add_cue",
     "validate_update_cue",
+    "video_id",
 ]

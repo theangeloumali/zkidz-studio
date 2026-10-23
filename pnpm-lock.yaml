@@ -173,7 +173,7 @@ importers:
         specifier: ^10.12.0
         version: 10.12.0(jiti@2.7.0)
       node:
-        specifier: runtime:>=24.11 <27
+        specifier: runtime:>=24.17.0 <27
         version: runtime:26.12.1
       prettier:
         specifier: ^3.9.10

@@ -24,6 +24,7 @@ class BackendParityTests(unittest.TestCase):
         cls.masters = {
             key: {backend: harness.render(clip, backend, root / backend / clip.name) for backend in ("cpu", BACKEND)} for key, clip in harness.CLIPS.items()
         }
+        cls.repeat = harness.render(harness.CLIPS["ntsc"], BACKEND, root / "repeat")
 
     @classmethod
     def tearDownClass(cls):
@@ -34,6 +35,10 @@ class BackendParityTests(unittest.TestCase):
             with self.subTest(clip.name):
                 masters = self.masters[key]
                 self.assertEqual(count_frames(masters[BACKEND]), count_frames(masters["cpu"]))
+
+    def test_a_second_render_of_the_same_spec_decodes_to_identical_frames(self):
+        # A score that moves between identical runs cannot hold a 0.995 bar: the AC flaked at frame 0 before this held.
+        self.assertEqual(harness.frame_digests(self.repeat), harness.frame_digests(self.masters["ntsc"][BACKEND]))
 
     def test_checked_frames_match_the_cpu_render(self):
         for key, clip in harness.CLIPS.items():

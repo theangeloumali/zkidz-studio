@@ -1,5 +1,5 @@
 # Created by The Angelo Umali.
-# The CPU golden render (plan §10.3) on every desktop OS, with the ffmpeg `zks setup` pins, plus videotoolbox parity on macOS.
+# The CPU golden render and tiny.en speech check (plan §10.3) on every desktop OS, with the ffmpeg `zks setup` pins, plus videotoolbox parity on macOS.
 name: golden
 
 on:
@@ -49,6 +49,8 @@ jobs:
       - if: runner.os == 'macOS'
         run: brew install ffmpeg
       - run: pnpm zks setup
+      # tiny.en is not fetched on setup; the speech leg of §10.3 transcribes with it.
+      - run: pnpm zks models fetch tiny.en
       - name: Point the engine at the pinned ffmpeg
         run: |
           pnpm -s zks doctor --json > "$RUNNER_TEMP/doctor.json" || true

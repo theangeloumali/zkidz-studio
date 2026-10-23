@@ -83,7 +83,11 @@ class CliPathTests(unittest.TestCase):
         pinned.touch()
         self.assertEqual(whispercpp.cli_path(FAKE_LOCK, "linux-x64"), pinned)
 
-    def test_falls_back_to_path_when_not_installed(self):
+    def test_an_uninstalled_sha_pin_never_runs_an_unpinned_binary_from_path(self):
+        with mock.patch("shutil.which", return_value="/usr/bin/whisper-cli"), self.assertRaisesRegex(ToolMissing, "pnpm zks setup"):
+            whispercpp.cli_path(FAKE_LOCK, "linux-x64")
+
+    def test_a_homebrew_pin_resolves_from_path(self):
         with mock.patch("shutil.which", return_value="/usr/bin/whisper-cli") as which:
             self.assertEqual(whispercpp.cli_path(FAKE_LOCK, "mac-arm64"), Path("/usr/bin/whisper-cli"))
         which.assert_called_with("whisper-cli")

@@ -8,6 +8,8 @@ set -uo pipefail
 
 USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# shellcheck source=scripts/lib/ci-lanes.sh
+source "$REPO_ROOT/scripts/lib/ci-lanes.sh"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
@@ -143,8 +145,10 @@ step_setup-doctor() {
 }
 
 failed=()
+reported=()
 report() {
   local step=$1 status=$2 seconds=$3
+  reported+=("$step")
   if ((status == 0)); then
     printf 'PASS  %-12s %4ss\n' "$step" "$seconds"
   else
@@ -160,23 +164,14 @@ for step in "${serial_steps[@]}"; do
   report "$step" $? "$((SECONDS - started))"
 done
 
-declare -A step_of_pid
 lanes=$(lane_count)
-lane_started=$SECONDS
-reap_one() {
-  local finished_pid status
-  wait -n -p finished_pid "${!step_of_pid[@]}"
-  status=$?
-  report "${step_of_pid[$finished_pid]}" "$status" "$((SECONDS - lane_started))"
-  unset "step_of_pid[$finished_pid]"
-}
 echo "lanes: $lanes"
-for step in "${parallel_steps[@]}"; do
-  while ((${#step_of_pid[@]} >= lanes)); do reap_one; done
-  "step_$step" >"$log_dir/$step.log" 2>&1 &
-  step_of_pid[$!]=$step
-done
-while ((${#step_of_pid[@]})); do reap_one; done
+run_lanes "$lanes" "$log_dir" "${parallel_steps[@]}"
+# Every step must have reported; a scheduler fault that skips one must never read as a pass.
+if ((${#reported[@]} != ${#serial_steps[@]} + ${#parallel_steps[@]})); then
+  echo "ci-local: only ${#reported[@]} of $((${#serial_steps[@]} + ${#parallel_steps[@]})) steps reported" >&2
+  failed+=(scheduler)
+fi
 
 if ((release)); then
   started=$SECONDS

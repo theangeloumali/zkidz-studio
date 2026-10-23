@@ -104,7 +104,12 @@ describe("checkWebSocketUpgrade", () => {
     for (const origin of ["https://evil.example", undefined]) {
       const tickets = createTicketStore();
       const { ticket } = tickets.issue(SESSION_ID);
-      expect(checkUpgrade(upgradeRequest(ticket, { "sec-fetch-site": undefined, origin }), tickets)).toMatchObject({ ok: false, status: 403 });
+      expect(checkUpgrade(upgradeRequest(ticket, { "sec-fetch-site": undefined, origin }), tickets)).toMatchObject({
+        ok: false,
+        status: 403,
+        reason: "origin",
+      });
+      expect(tickets.redeem(ticket, SESSION_ID)).toBe(true);
     }
   });
 

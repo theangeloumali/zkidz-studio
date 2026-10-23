@@ -39,13 +39,14 @@ async function ticketFor(sessionId: string): Promise<string> {
 }
 
 interface UpgradeHeaders {
-  readonly origin?: string;
+  readonly origin?: string | null;
   readonly fetchSite?: string | null;
 }
 
 async function connectSocket(sessionId: string, ticket: string, headers: UpgradeHeaders = {}): Promise<{ socket: WebSocket; received: string[] }> {
   const fetchSite = headers.fetchSite === undefined ? "same-origin" : headers.fetchSite;
-  const upgradeHeaders = { origin: headers.origin ?? baseUrl, ...(fetchSite === null ? {} : { "sec-fetch-site": fetchSite }) };
+  const origin = headers.origin === undefined ? baseUrl : headers.origin;
+  const upgradeHeaders = { ...(origin === null ? {} : { origin }), ...(fetchSite === null ? {} : { "sec-fetch-site": fetchSite }) };
   const socket = new WebSocket(`${baseUrl.replace("http", "ws")}/api/terminal/${sessionId}/ws?ticket=${ticket}`, { headers: upgradeHeaders });
   const received: string[] = [];
   socket.on("message", (frame: Buffer) => received.push(frame.toString("utf8")));
@@ -92,6 +93,17 @@ describe("terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     await expect(connectSocket(session.sessionId, "not-a-ticket")).rejects.toThrow("upgrade refused 403");
     await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), { origin: FOREIGN_ORIGIN })).rejects.toThrow("upgrade refused 403");
     await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), { fetchSite: "cross-site" })).rejects.toThrow("upgrade refused 403");
+  });
+
+  // The request middleware lets these through on a GET, so only the socket guard stands between them and the PTY.
+  it("refuses an upgrade with no Origin, or with same-site or none fetch metadata", async () => {
+    await startServer();
+    const session = await openSession();
+    for (const headers of [{ origin: null, fetchSite: null }, { fetchSite: "same-site" }, { fetchSite: "none" }]) {
+      await expect(connectSocket(session.sessionId, await ticketFor(session.sessionId), headers), JSON.stringify(headers)).rejects.toThrow(
+        "upgrade refused 403",
+      );
+    }
   });
 
   // Chrome's WebSocket handshake carries Host and Origin but no Sec-Fetch-* headers.

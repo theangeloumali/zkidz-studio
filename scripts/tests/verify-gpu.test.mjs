@@ -61,4 +61,22 @@ describe("engine command", () => {
     const env = engineEnv({ PATH: "/usr/bin", HOME: "/home/gpu", ZKS_HOME: "/z", ZKS_FFMPEG: "/f", NPM_TOKEN: "s", AWS_SECRET_ACCESS_KEY: "s" });
     expect(env).toEqual({ PATH: "/usr/bin", HOME: "/home/gpu", ZKS_HOME: "/z", ZKS_FFMPEG: "/f" });
   });
+
+  it("keeps uv's location settings but drops uv publish and index credentials", () => {
+    const env = engineEnv({
+      UV_CACHE_DIR: "/c",
+      UV_PYTHON_INSTALL_DIR: "/p",
+      UV_PUBLISH_TOKEN: "s",
+      UV_PUBLISH_PASSWORD: "s",
+      UV_INDEX_PRIVATE_PASSWORD: "s",
+      UV_INDEX_URL: "https://u:p@x",
+    });
+    expect(env).toEqual({ UV_CACHE_DIR: "/c", UV_PYTHON_INSTALL_DIR: "/p" });
+  });
+
+  it("drops a secret-named variable even under the ZKS_ prefix", () => {
+    expect(engineEnv({ ZKS_HOME: "/z", ZKS_RELEASE_TOKEN: "s", ZKS_API_KEY: "s", ZKS_DB_PASSWORD: "s", ZKS_DATABASE_URL: "postgres://x" })).toEqual({
+      ZKS_HOME: "/z",
+    });
+  });
 });

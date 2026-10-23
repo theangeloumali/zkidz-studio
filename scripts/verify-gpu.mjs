@@ -11,8 +11,24 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SECRET_PATHS = [".claude", ".ssh", join(".config", "gh", "hosts.yml")];
 const SECRET_VARIABLES = ["SSH_AUTH_SOCK", "GH_TOKEN", "GITHUB_TOKEN", "ANTHROPIC_API_KEY"];
-const ENGINE_VARIABLES = ["PATH", "HOME", "LANG", "TMPDIR", "XDG_CACHE_HOME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA"];
-const ENGINE_PREFIXES = ["ZKS_", "UV_"];
+const ENGINE_VARIABLES = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "TMPDIR",
+  "XDG_CACHE_HOME",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "USERPROFILE",
+  "LOCALAPPDATA",
+  "APPDATA",
+  "UV_CACHE_DIR",
+  "UV_PYTHON_INSTALL_DIR",
+];
+const ENGINE_PREFIX = "ZKS_";
+// uv also reads publish and index credentials from UV_*, so uv gets named settings only, and a secret-shaped ZKS_ name is dropped.
+const SECRET_NAME = /TOKEN|PASSWORD|SECRET|KEY|CREDENTIAL|_URL$/i;
 
 /**
  * os.homedir() honours $HOME, so the passwd home and USERPROFILE are checked too: a scratch HOME must not hide the real one.
@@ -69,7 +85,7 @@ export function engineEnv(env) {
   const allowed = {};
   for (const [name, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (ENGINE_VARIABLES.includes(name) || ENGINE_PREFIXES.some((prefix) => name.startsWith(prefix))) allowed[name] = value;
+    if (ENGINE_VARIABLES.includes(name) || (name.startsWith(ENGINE_PREFIX) && !SECRET_NAME.test(name))) allowed[name] = value;
   }
   return allowed;
 }

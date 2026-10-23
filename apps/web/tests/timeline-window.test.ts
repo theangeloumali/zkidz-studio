@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { indexTimelineItems, visibleItems } from "../src/editor/timeline-window.ts";
+import { indexTimelineItems, mountedWindow, visibleItems } from "../src/editor/timeline-window.ts";
 
 describe("visibleItems", () => {
   it("returns only the items that overlap the window", () => {
@@ -26,5 +26,19 @@ describe("visibleItems", () => {
     const visible = visibleItems(indexTimelineItems(items), 100, 110);
     expect(visible).toHaveLength(11);
     expect(visible[0]?.id).toBe("100");
+  });
+});
+
+describe("mountedWindow", () => {
+  it("holds still while a scroll stays inside one step, so the lanes do not re-render every frame", () => {
+    expect(mountedWindow(31, 63, 10)).toEqual(mountedWindow(34.3, 66.3, 10));
+  });
+
+  it("always reaches at least the overscan past both viewport edges", () => {
+    for (const viewStartS of [0, 7.5, 19.99, 20, 333.3]) {
+      const { startS, endS } = mountedWindow(viewStartS, viewStartS + 32, 10);
+      expect(startS).toBeLessThanOrEqual(viewStartS - 10);
+      expect(endS).toBeGreaterThanOrEqual(viewStartS + 32 + 10);
+    }
   });
 });

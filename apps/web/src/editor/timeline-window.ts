@@ -37,3 +37,19 @@ export function visibleItems<Item extends TimeSpan>(index: TimelineIndex<Item>, 
   const afterLast = lowerBound(items.length, (position) => (items[position]?.at ?? 0) > windowEnd);
   return items.slice(first, afterLast).filter((item) => item.end >= windowStart);
 }
+
+export interface SecondsWindow {
+  readonly startS: number;
+  readonly endS: number;
+}
+
+/** Window edges snap outward to this step, so a scroll re-renders the lanes once per step, not once per frame. */
+const WINDOW_STEP_S = 10;
+
+/** The mounted window for a viewport: at least `overscanS` past each edge, snapped outward to the step. */
+export function mountedWindow(viewStartS: number, viewEndS: number, overscanS: number): SecondsWindow {
+  return {
+    startS: Math.floor((viewStartS - overscanS) / WINDOW_STEP_S) * WINDOW_STEP_S,
+    endS: Math.ceil((viewEndS + overscanS) / WINDOW_STEP_S) * WINDOW_STEP_S,
+  };
+}

@@ -5,7 +5,7 @@ import { formatDuration } from "../lib/format.ts";
 import { editedToSource, type TimeSpan } from "./edl.ts";
 import type { PlaybackClock } from "./playback-clock.ts";
 import { TRACK_IDS, type TimelineBlock, type TimelineTracks, type TrackId } from "./timeline-items.ts";
-import { indexTimelineItems, visibleItems } from "./timeline-window.ts";
+import { indexTimelineItems, mountedWindow, visibleItems, type SecondsWindow } from "./timeline-window.ts";
 
 export const PIXELS_PER_SECOND = 40;
 /** Seconds drawn past each viewport edge, so a fast scroll never shows an empty lane before the next frame. */
@@ -30,16 +30,13 @@ interface TimelineProps {
   readonly videoLaneExtras?: ReactNode;
 }
 
-interface SecondsWindow {
-  readonly startS: number;
-  readonly endS: number;
-}
-
 function windowFor(scroller: HTMLElement | null): SecondsWindow {
   const viewportPx = scroller?.clientWidth || FALLBACK_VIEWPORT_PX;
   const startS = ((scroller?.scrollLeft ?? 0) - LABEL_WIDTH_PX) / PIXELS_PER_SECOND;
-  return { startS: startS - OVERSCAN_S, endS: startS + viewportPx / PIXELS_PER_SECOND + OVERSCAN_S };
+  return mountedWindow(startS, startS + viewportPx / PIXELS_PER_SECOND, OVERSCAN_S);
 }
+
+const sameWindow = (left: SecondsWindow, right: SecondsWindow) => left.startS === right.startS && left.endS === right.endS;
 
 function blockStyle(block: TimelineBlock) {
   const left = block.at * PIXELS_PER_SECOND;
@@ -60,7 +57,9 @@ export function Timeline({ tracks, sourceDurationS, keptSpans, clock, videoLaneE
     const onScroll = () => {
       pendingFrame ??= requestAnimationFrame(() => {
         pendingFrame = null;
-        setVisibleWindow(windowFor(scroller));
+        const next = windowFor(scroller);
+        // Keeping the old object lets React skip the render while the scroll stays inside one window step.
+        setVisibleWindow((current) => (sameWindow(current, next) ? current : next));
       });
     };
     onScroll();

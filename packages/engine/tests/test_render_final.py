@@ -52,17 +52,12 @@ class RangeExprTests(unittest.TestCase):
         self.assertEqual(pipeline.decode_args(False), [])
         self.assertIn("cuda", pipeline.decode_args(True))
 
-    def test_filter_path_escapes_drive_colon(self):
-        # Forward slashes: on POSIX a backslash is not a separator, so it would not be normalised.
-        self.assertEqual(pipeline.filter_path("C:/models/a.bin"), r"'C\:/models/a.bin'")
-
-    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
-    def test_ffmpeg_accepts_escaped_absolute_path(self):
-        with tempfile.TemporaryDirectory() as folder:
-            value = f"ametadata=mode=print:file={pipeline.filter_path(Path(folder).resolve() / 'probe.txt')}"
-            result = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=duration=0.1", "-af", value, "-f", "null", "-"],
-                                    capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_encoders_come_only_from_the_backend_profile(self):
+        # The old cuda-flag picker chose videotoolbox on any Mac without a probe; the ffmpeg whisper filter is gone (spike 04).
+        for name in ("video_encoder", "gpu_path", "UHD_ENCODER"):
+            self.assertFalse(hasattr(render_final, name), name)
+        for name in ("whisper_filter", "filter_path", "models_dir", "WHISPER_MODEL", "VAD_MODEL"):
+            self.assertFalse(hasattr(pipeline, name), name)
 
 
 class GraphTests(unittest.TestCase):
@@ -295,18 +290,18 @@ class IntroTests(unittest.TestCase):
 
     def test_the_intro_chunk_scales_on_the_gpu_and_encodes_like_the_edit(self):
         intro = {"frames": 60, "frames_dir": self.work / "frames" / "v1.intro"}
-        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4", GPU_ROUTE)
+        command = render_final.intro_command(intro, self.edl, render_final.UHD, backends.get("nvidia").uhd, self.work / "intro.mp4", GPU_ROUTE)
         graph = command[command.index("-vf") + 1]
         self.assertIn("libplacebo=w=2160:h=3840", graph)
         self.assertEqual(command[command.index("-frames:v") + 1], "60")
         self.assertEqual(command[command.index("-start_number") + 1], "0")
         joined = " ".join(command)
-        self.assertIn(" ".join(render_final.UHD_ENCODER), joined)
+        self.assertIn(" ".join(backends.get("nvidia").uhd), joined)
         self.assertIn(" ".join(render_final.BT709_TAGS), joined)
 
     def test_every_chunk_writes_its_progress_and_the_total_reads_the_last_frame(self):
         intro = {"frames": 60, "frames_dir": self.work / "frames" / "v1.intro"}
-        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4", GPU_ROUTE)
+        command = render_final.intro_command(intro, self.edl, render_final.UHD, backends.get("nvidia").uhd, self.work / "intro.mp4", GPU_ROUTE)
         self.assertEqual(command[command.index("-progress") + 1], str(self.work / "intro.progress"))
         report = self.work / "00.progress"
         report.write_text("frame=10\nprogress=continue\nframe=42\nprogress=continue\n", encoding="utf-8")
@@ -315,7 +310,7 @@ class IntroTests(unittest.TestCase):
 
     def test_the_join_splices_the_intro_track_into_the_edits_at_the_insert(self):
         listing, edit, track = self.work / "chunks.txt", self.work / "mix.wav", self.work / "intro.wav"
-        command = render_final.join_command(listing, edit, render_final.UHD_ENCODER, self.work / "out.mp4", track, 72072)
+        command = render_final.join_command(listing, edit, backends.get("nvidia").uhd, self.work / "out.mp4", track, 72072)
         inputs = [command[index + 1] for index, arg in enumerate(command) if arg == "-i"]
         self.assertEqual(inputs, [str(listing), str(track), str(edit)])
         graph = command[command.index("-filter_complex") + 1]
@@ -323,7 +318,7 @@ class IntroTests(unittest.TestCase):
         self.assertIn("atrim=start_sample=72072", graph)
         self.assertIn("[1:a]", graph)
         self.assertIn("concat=n=3:v=0:a=1[a]", graph)
-        plain = render_final.join_command(listing, edit, render_final.UHD_ENCODER, self.work / "out.mp4")
+        plain = render_final.join_command(listing, edit, backends.get("nvidia").uhd, self.work / "out.mp4")
         self.assertEqual([plain[index + 1] for index, arg in enumerate(plain) if arg == "-i"], [str(listing), str(edit)])
         self.assertEqual(plain[plain.index("-map", plain.index("-map") + 1) + 1], "1:a")
 

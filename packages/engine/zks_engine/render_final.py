@@ -19,7 +19,6 @@ from typing import NamedTuple
 from . import backends, ffio
 from .backends import graph as backend_graph
 from .backends.graph import BT709_TV, GRADE, UHD, edit_ranges, restamp
-from .backends.nvidia import UHD_ENCODER  # noqa: F401 (the 4K encoder callers of the CUDA path name)
 from .backends.profile import Backend
 from .blur import blur_regions, gpu_blur_graph, output_regions, ranges_expr
 from .edl import FACECAM_ZOOM, PUNCH_TOP
@@ -173,12 +172,6 @@ def soundtrack(video):
     if mix.exists() and mix.stat().st_mtime > max(edit.stat().st_mtime, events.stat().st_mtime):
         return mix
     sys.exit(f"{video}: {mix.name} is missing or older than {edit.name} / {events.name}; re-run sfx.py {video}")
-
-
-def video_encoder(cuda, draft):
-    """The 1080p master's encoder by the old cuda flag; main() asks the active backend instead."""
-    name = "nvidia" if cuda else "videotoolbox" if sys.platform == "darwin" else "cpu"
-    return backends.get(name).master(draft)
 
 
 class Route(NamedTuple):
@@ -408,10 +401,6 @@ def has_opencl():
     probe = [ffio.ffmpeg_bin(), "-v", "error", *OPENCL_DEVICE, "-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04",
              "-vf", "format=yuv420p,hwupload,hwdownload,format=yuv420p", "-f", "null", "-"]
     return subprocess.run(probe, capture_output=True).returncode == 0
-
-
-def gpu_path(cuda, cpu_turn):
-    return cuda and not cpu_turn and has_opencl()
 
 
 def spec_files(video):

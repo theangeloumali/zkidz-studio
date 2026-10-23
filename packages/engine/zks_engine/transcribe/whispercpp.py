@@ -17,6 +17,8 @@ TOOLS_LOCK = Path(__file__).resolve().parents[4] / "tools.lock.json"
 SHORT_HASH_LENGTH = 12  # @zks/shared pinnedInstallDir names each extract by this much of its SHA-256
 # The pinned whisper-cli builds are CPU-only, so the quantised turbo leads (plan §7.4: CPU -> large-v3-turbo-q5_0).
 MODEL_PREFERENCE = ("large-v3-turbo-q5_0", "large-v3-turbo", "base", "tiny")
+# @zks/shared WHISPER_MODELS names "turbo"; either pinned turbo build serves it, the quantised one first.
+MODEL_ALIASES = {"turbo": ("large-v3-turbo-q5_0", "large-v3-turbo")}
 BLANK_AUDIO = "[BLANK_AUDIO]"  # whisper.cpp's marker for a silent stretch, not a word
 OS_PREFIX = {"linux": "linux", "win32": "win", "darwin": "mac"}
 ARCH_NAME = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}
@@ -47,14 +49,14 @@ def cli_path(lock=None, key=None):
 def model_path(name=None, lock=None):
     """The named model, or the most accurate one installed in ZKS_HOME/models."""
     models = (lock or load_lock())["models"]
-    if name and name not in models:
+    candidates = [model for model in (MODEL_ALIASES.get(name, (name,)) if name else MODEL_PREFERENCE) if model in models]
+    if name and not candidates:
         raise ValueError(f"no pinned whisper model '{name}' (tools.lock.json has {', '.join(models)})")
-    candidates = [name] if name else [model for model in MODEL_PREFERENCE if model in models]
     for candidate in candidates:
         path = data_dir("models") / models[candidate]["file"]
         if path.exists():
             return path
-    wanted = models[name]["file"] if name else "a whisper model"
+    wanted = models[candidates[0]]["file"] if name else "a whisper model"
     raise ToolMissing(f"{wanted} is not in {data_dir('models')}. {SETUP_FIX}")
 
 

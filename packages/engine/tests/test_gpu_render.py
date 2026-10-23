@@ -6,16 +6,16 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import blur
+from zks_engine import backends, blur
 from zks_engine import prepare
 from zks_engine import render_final
 from zks_engine.pipeline import has_cuda
 
 GPU_COMPOSITE = bool(shutil.which("ffmpeg") and has_cuda() and render_final.has_opencl())
+NVIDIA = backends.get("nvidia")
 GPU_SKIP = "needs ffmpeg with CUDA and the NVIDIA OpenCL platform (the GPU composite)"
 
 
@@ -85,12 +85,6 @@ class GpuGraphTests(unittest.TestCase):
         # Source frames 40-50 play as edited 30-40. x 100 * 1166/1080 - 43 = 64.96 -> 64; y 200 * 2074/1920 - 59 = 157.04 -> 158.
         self.assertEqual(zoomed, (64, 158, 324, 432, [(30, 40)]))
 
-    def test_nvenc_whenever_cuda_exists(self):
-        self.assertEqual(render_final.video_encoder(True, False)[:2], ["-c:v", "h264_nvenc"])
-        self.assertIn("p7", render_final.video_encoder(True, False))
-        self.assertIn("p4", render_final.video_encoder(True, True))
-        self.assertNotIn("libx264", render_final.video_encoder(True, False))
-
     def test_4k_punch_window_matches_the_1080_framing(self):
         self.assertEqual(render_final.punch_frame(*render_final.UHD), (2332, 4148, 86, 119))
 
@@ -116,13 +110,13 @@ class GpuGraphTests(unittest.TestCase):
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
     def test_ffmpeg_runs_the_4k_graph(self):
         graph = render_final.gpu_graph(self.timeline, "", (), render_final.UHD, render_final.CRISP)
-        result = run_graph(graph, render_final.UHD_ENCODER, render_final.OPENCL_DEVICE)
+        result = run_graph(graph, NVIDIA.uhd, render_final.OPENCL_DEVICE)
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
     def test_ffmpeg_runs_the_gpu_graph(self):
         regions = blur.blur_regions({"blur": [[0, seconds(100), 0, 0, 500, 500, "a"]]}, self.timeline, render_final.OUTPUT)
-        result = run_graph(render_final.gpu_graph(self.timeline, "", regions), render_final.video_encoder(True, True), render_final.OPENCL_DEVICE)
+        result = run_graph(render_final.gpu_graph(self.timeline, "", regions), NVIDIA.master(True), render_final.OPENCL_DEVICE)
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     @unittest.skipUnless(GPU_COMPOSITE, GPU_SKIP)
@@ -172,13 +166,6 @@ class OverlayFrameTests(unittest.TestCase):
         self.assertIn("1 overlay PNGs", problem)
         # The hint names the renderer this engine ships.
         self.assertIn("hf/render.js", problem)
-
-    def test_gpu_path_needs_opencl_for_the_composite(self):
-        with mock.patch.object(render_final, "has_opencl", return_value=False):
-            self.assertFalse(render_final.gpu_path(True, ""))
-        with mock.patch.object(render_final, "has_opencl", return_value=True):
-            self.assertTrue(render_final.gpu_path(True, ""))
-            self.assertFalse(render_final.gpu_path(True, "hflip,vflip"))
 
 
 class FlagTests(unittest.TestCase):

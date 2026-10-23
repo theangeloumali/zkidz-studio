@@ -25,13 +25,6 @@ class WorkDirTests(unittest.TestCase):
             os.environ.pop("ZKS_WORK", None)
             self.assertEqual(pipeline.work_dir(), Path.cwd())
 
-    def test_models_dir_env_and_default(self):
-        with mock.patch.dict(os.environ, {"ZKS_MODELS": "/models"}):
-            self.assertEqual(pipeline.models_dir(), Path("/models"))
-        with mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("ZKS_MODELS", None)
-            self.assertEqual(pipeline.models_dir(), Path(os.environ["ZKS_HOME"]) / "models")
-
 
 class CheckWindowArgsTests(unittest.TestCase):
     def test_defaults_to_english(self):

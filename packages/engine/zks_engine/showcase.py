@@ -4,20 +4,20 @@
 # Usage (from the work dir): python -m zks_engine.showcase v11 ../raw.mp4   (reads inserts/v11.json, writes sources/v11.mkv)
 #   inserts/vN.json = [{"at": 119.3, "end": 134.2, "src": "media/deliverables/07-.../07-...-4k.mp4", "src_at": 1.0}]  (seconds; src repo-relative)
 #   A wider-than-tall file plays in the landscape panel ("panel" overrides). An HDR raw is tone-mapped like a joined clip.
-#   The panel is libplacebo on every backend, so an insert needs a Vulkan device even where the encoder is not NVENC.
+#   The panel is libplacebo (a Vulkan device) on NVIDIA only; other hosts may have no Vulkan, so they round it with CPU filters.
 import json
 import shutil
 import subprocess
 import sys
 
 from . import backends, ffio
-from .backends.graph import restamp
+from .backends.graph import BT709_TV, restamp
 from .join_sources import audio_command, gpu_frames, piece_command, probe, run_all
 from .pipeline import (CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, project_input, rotation_of, split_orientation,
                        upright_dims)
 from .slots import slot
 from .specs.paths import video_id
-from .render_final import BT709_TV, BT709_TAGS, count_frames, frame_times
+from .render_final import BT709_TAGS, count_frames, frame_times
 
 SIZE = (2160, 3840)
 # x, y, w, h. Portrait: 1080-space x 253-827, y 380-1400, under the label chip at y ~300. Landscape: 1080-space y 500-1076,
@@ -27,6 +27,7 @@ BASE_PIECE_FRAMES = 1800
 # Two mitchell steps: one 60x downscale overflows libplacebo's polar kernel ("radius exceeds implementation capacity").
 FILL = ("libplacebo=w=270:h=480:downscaler=mitchell:format=yuv420p,libplacebo=w=36:h=64:downscaler=mitchell:format=yuv420p,"
         f"libplacebo=w={SIZE[0]}:h={SIZE[1]}:upscaler=bicubic:brightness=-0.25:saturation=0.7:format=yuv420p")
+CPU_FILL = f"scale=270:480:flags=bicubic,scale=36:64:flags=bicubic,scale={SIZE[0]}:{SIZE[1]}:flags=bicubic,eq=brightness=-0.25:saturation=0.7"
 
 
 def grid(fps):
@@ -71,6 +72,16 @@ def panel_passes(box):
     return rounded, compose
 
 
+def cpu_panel(box, fps):
+    """libplacebo's corner_rounding=0.1 as a mask drawn once and looped: geq on every 4K frame would dominate the encode."""
+    x, y, w, h = box
+    radius = round(0.1 * min(w, h) / 2)
+    outside = f"hypot(max(max({radius}-X,X-(W-1-{radius})),0),max(max({radius}-Y,Y-(H-1-{radius})),0))"
+    mask = f"color=c=black:s={w}x{h}:r={fps[0]}/{fps[1]}:d={fps[1] / fps[0]:.6f},format=gray,geq=lum='255*lte({outside},{radius})',loop=loop=-1:size=1"
+    return (f"[b]scale={w}:{h}:flags=bicubic[pv];{mask},{grid(fps)}[mask];[pv][mask]alphamerge[panel];"
+            f"[fill][panel]overlay={x}:{y},format=yuv420p,{BT709_TV}")
+
+
 def panel_for(size):
     """A file wider than tall plays in the landscape panel."""
     width, height = size
@@ -89,7 +100,7 @@ def insert_command(insert, first, count, out, backend, fps):
     """The file from insert["src_at"], read from the frame-grid time of `first` so it matches insert_audio's exact offset."""
     src = str(project_input(insert["src"]))
     stream = probe_video(src)
-    rounded, compose = panel_passes(PANELS[insert.get("panel") or panel_for(upright_dims(stream))])
+    box = PANELS[insert.get("panel") or panel_for(upright_dims(stream))]
     if src.lower().endswith(".png"):
         # Bounded like every looping input (gates.check_looping_inputs); -frames:v below ends the piece on its count.
         source, decode = ["-loop", "1", "-framerate", f"{fps[0]}/{fps[1]}", "-t", f"{count * fps[1] / fps[0]:.6f}", *ffio.user_input_args(src)], ""
@@ -103,8 +114,13 @@ def insert_command(insert, first, count, out, backend, fps):
         else:
             hardware, decode = [*backend.device, *backend.decode], ""  # system frames, autorotated
         source = [*hardware, "-ss", f"{seek:.4f}", *ffio.user_input_args(src)]
-    graph = f"[0:v]{decode}{grid(fps)},split[a][b];[a]{FILL}[fill];[b]{rounded}[panel];[fill][panel]{compose}{backend.upload}[v]"
-    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-init_hw_device", "vulkan", *source, "-filter_complex", graph,
+    if backend.name == "nvidia":
+        rounded, compose = panel_passes(box)
+        vulkan, panel = ["-init_hw_device", "vulkan"], f"[a]{FILL}[fill];[b]{rounded}[panel];[fill][panel]{compose}"
+    else:
+        vulkan, panel = [], f"[a]{CPU_FILL}[fill];{cpu_panel(box, fps)}"
+    graph = f"[0:v]{decode}{grid(fps)},split[a][b];{panel}{backend.upload}[v]"
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *vulkan, *source, "-filter_complex", graph,
             "-map", "[v]", "-frames:v", str(count), "-r", f"{fps[0]}/{fps[1]}", "-fps_mode", "cfr", *backend.mezzanine, "-an", str(out)]
 
 

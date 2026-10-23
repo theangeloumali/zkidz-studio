@@ -120,6 +120,22 @@ class ModelPathTests(unittest.TestCase):
         with self.assertRaisesRegex(ToolMissing, "ggml-base.bin.*pnpm zks setup"):
             whispercpp.model_path("base", FAKE_LOCK)
 
+    def test_the_contract_turbo_name_takes_the_installed_turbo_pin(self):
+        # @zks/shared WHISPER_MODELS says "turbo"; tools.lock.json pins the quantised and full builds.
+        (self.models / "ggml-large-v3-turbo.bin").touch()
+        self.assertEqual(whispercpp.model_path("turbo", FAKE_LOCK), self.models / "ggml-large-v3-turbo.bin")
+        (self.models / "ggml-large-v3-turbo-q5_0.bin").touch()
+        self.assertEqual(whispercpp.model_path("turbo", FAKE_LOCK), self.models / "ggml-large-v3-turbo-q5_0.bin")
+
+    def test_turbo_not_installed_says_to_run_setup(self):
+        with self.assertRaisesRegex(ToolMissing, "ggml-large-v3-turbo-q5_0.bin.*pnpm zks setup"):
+            whispercpp.model_path("turbo", FAKE_LOCK)
+
+    def test_every_contract_model_name_is_pinned_in_the_real_lock(self):
+        lock = whispercpp.load_lock()
+        for name in ("turbo", "small", "base"):
+            self.assertTrue(set(whispercpp.MODEL_ALIASES.get(name, (name,))) <= set(lock["models"]), name)
+
     def test_unknown_model_name(self):
         with self.assertRaisesRegex(ValueError, "no pinned whisper model 'huge'"):
             whispercpp.model_path("huge", FAKE_LOCK)

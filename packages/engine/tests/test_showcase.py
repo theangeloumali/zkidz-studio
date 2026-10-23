@@ -1,12 +1,14 @@
 # Created by The Angelo Umali.
 # showcase pieces: a 16:9 film needs its own panel, and an HLG raw must be tone-mapped like join_sources' pieces.
+import shutil
+import subprocess
 import unittest
 from unittest import mock
 from pathlib import Path
 
 from support import media_file, media_project  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends, join_sources
+from zks_engine import backends, ffio, join_sources
 from zks_engine import showcase
 
 NVIDIA, CPU = backends.get("nvidia"), backends.get("cpu")
@@ -59,6 +61,27 @@ class InsertPanelTests(unittest.TestCase):
 
 
 class BackendInsertTests(unittest.TestCase):
+    def test_only_nvidia_opens_a_vulkan_device_for_libplacebo(self):
+        # A Mac, QSV, AMF, VAAPI or CPU host may have no Vulkan; its panel is rounded with CPU filters instead.
+        self.assertIn("vulkan", insert_command(backend=NVIDIA))
+        for name in ("videotoolbox", "qsv", "amf", "vaapi", "cpu"):
+            command = " ".join(insert_command(backend=backends.get(name)))
+            self.assertNotIn("vulkan", command, name)
+            self.assertNotIn("libplacebo", command, name)
+
+    def test_off_nvidia_the_rounded_panel_is_masked_and_overlaid_at_its_box(self):
+        graph = insert_graph(backend=CPU, panel="landscape")
+        self.assertIn("[b]scale=2048:1152:flags=bicubic[pv]", graph)
+        self.assertIn("color=c=black:s=2048x1152", graph)
+        self.assertIn("[pv][mask]alphamerge[panel];[fill][panel]overlay=56:1000", graph)
+
+    @unittest.skipUnless(shutil.which(ffio.ffmpeg_bin()), "needs ffmpeg")
+    def test_the_cpu_insert_graph_runs_in_ffmpeg(self):
+        graph = insert_graph(backend=CPU, panel="portrait").replace("[0:v]", "[0:v]format=yuv420p,", 1)
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=30000/1001:duration=0.2",
+                                 "-filter_complex", graph, "-map", "[v]", "-frames:v", "6", "-f", "null", "-"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_off_nvidia_the_insert_decodes_to_system_frames_and_uploads_for_its_encoder(self):
         vaapi = backends.get("vaapi")
         command = insert_command(backend=vaapi, stream={**PORTRAIT, "pix_fmt": "yuv420p10le"})

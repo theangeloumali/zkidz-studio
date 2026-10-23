@@ -1,7 +1,7 @@
 # Created by The Angelo Umali.
 # Checks that this machine can run the engine.
-# Usage: python -m zks_engine.doctor [--fetch] [--render]
-#   --fetch   download missing whisper models      --render  only the overlay/composite prerequisites
+# Usage: python -m zks_engine.doctor [--render]   (--render: only the overlay/composite prerequisites)
+# Installs nothing: `pnpm zks doctor --fetch` downloads the tools.lock.json pins and verifies each SHA-256.
 # Exit 1 when a required check fails.
 import functools
 import importlib.util
@@ -9,29 +9,18 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 from . import backends, ffio
-from .pipeline import HF_DIR, VAD_MODEL, WHISPER_MODEL, models_dir
+from .pipeline import HF_DIR
+from .transcribe import whispercpp
 
-MODEL_URLS = {
-    WHISPER_MODEL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-    VAD_MODEL: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin",
-}
+FETCH_MOVED = "doctor --fetch moved to `pnpm zks doctor --fetch`, which installs the tools.lock.json pins and verifies each SHA-256"
 OVERLAY_PAGE = HF_DIR / "overlay" / "overlay.html"
 CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chrome", "chromium", "chromium-browser")
 CHROME_PATHS = (Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
                 Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"))
-
-
-def run(command):
-    try:
-        return subprocess.run(command, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
 
 
 def kit_files():
@@ -46,10 +35,11 @@ def check_ffmpeg():
 
 
 def check_whisper():
-    whisper = run([ffio.ffmpeg_bin(), "-hide_banner", "-h", "filter=whisper"]) if shutil.which(ffio.ffmpeg_bin()) else None
-    if not whisper or "Filter whisper" not in whisper.stdout:
-        return False, "ffmpeg lacks the whisper filter (needs ffmpeg 8+ built with --enable-whisper, e.g. the gyan.dev full build)"
-    return True, "ffmpeg whisper filter"
+    """The pinned ffmpeg is built --disable-whisper (spike 04); transcription runs whisper.cpp's whisper-cli."""
+    try:
+        return True, f"whisper-cli at {whispercpp.cli_path()}"
+    except ffio.ToolMissing as missing:
+        return False, str(missing)
 
 
 def check_numpy():
@@ -83,21 +73,11 @@ def check_hyperframes():
     return True, " + ".join(f"{name} {version}" for name, version in wanted.items())
 
 
-def check_models(fetch):
-    folder = models_dir()
-    missing = [name for name in MODEL_URLS if not (folder / name).exists()]
-    if missing and fetch:
-        folder.mkdir(parents=True, exist_ok=True)
-        for name in missing:
-            print(f"  downloading {name} -> {folder}", flush=True)
-            # Download beside the target and rename, so an interrupted fetch never looks complete.
-            partial = folder / f"{name}.part"
-            urllib.request.urlretrieve(MODEL_URLS[name], partial)
-            partial.replace(folder / name)
-        missing = [name for name in MODEL_URLS if not (folder / name).exists()]
-    if missing:
-        return False, f"missing {missing} in {folder} (re-run with --fetch; the turbo model is 1.6 GB)"
-    return True, f"whisper models in {folder}"
+def check_models():
+    try:
+        return True, f"whisper model {whispercpp.model_path()}"
+    except ffio.ToolMissing as missing:
+        return False, str(missing)
 
 
 def check_gpu():
@@ -107,10 +87,10 @@ def check_gpu():
     return True, f"{backend.name} ({backend.probe_encoder}), {backends.render_jobs(backend)} render jobs{proof}"
 
 
-def main(fetch, render_only):
+def main(render_only):
     results = [("ffmpeg", *check_ffmpeg()), ("overlay kit", *check_kit()), ("chrome", *check_chrome())]
     if not render_only:
-        results += [("whisper", *check_whisper()), ("numpy", *check_numpy()), ("models", *check_models(fetch))]
+        results += [("whisper", *check_whisper()), ("numpy", *check_numpy()), ("models", *check_models())]
         results.append(("gpu", *check_gpu()))
     results.append(("hyperframes", *check_hyperframes()))
     for name, ok, detail in results:
@@ -118,5 +98,11 @@ def main(fetch, render_only):
     return 0 if all(ok for _, ok, _ in results) else 1
 
 
+def cli(argv):
+    if "--fetch" in argv:
+        sys.exit(FETCH_MOVED)
+    return main("--render" in argv)
+
+
 if __name__ == "__main__":
-    sys.exit(main("--fetch" in sys.argv[1:], "--render" in sys.argv[1:]))
+    sys.exit(cli(sys.argv[1:]))

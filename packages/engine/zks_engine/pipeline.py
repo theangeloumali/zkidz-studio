@@ -11,7 +11,6 @@ import wave
 from pathlib import Path
 
 from . import ffio
-from .home import data_dir
 from .specs.paths import inside_project, video_id
 
 FPS_NUM, FPS_DEN = 30000, 1001
@@ -19,8 +18,6 @@ FPS = FPS_NUM / FPS_DEN
 AUDIO_RATE = 48000
 ENERGY_WINDOW = 0.01
 FRAME_EPSILON = 1e-6
-WHISPER_MODEL = "ggml-large-v3-turbo.bin"
-VAD_MODEL = "ggml-silero-v5.1.2.bin"
 DROP_ROTATION = "sidedata=mode=delete:type=DISPLAYMATRIX"
 OUTPUT = (1080, 1920)  # the 9:16 frame TikTok and Reels play
 # ffprobe rotation (mod 360) -> the CUDA-path filter that stands the frame upright; a half turn runs after hwdownload.
@@ -33,10 +30,6 @@ CUDA_LANCZOS = "scale_cuda={}:{}:interp_algo=lanczos"  # only ever after CUDA_TV
 
 def work_dir():
     return Path(os.environ.get("ZKS_WORK") or Path.cwd())
-
-
-def models_dir():
-    return data_dir("models")
 
 
 # The HyperFrames renderer and the overlay page it draws through; the project installs editable, so it sits beside the package.
@@ -211,19 +204,3 @@ def assert_upright(path, size=OUTPUT):
         problems.append(f"rotation side data ({rotation_of(stream)} degrees)")
     if problems:
         sys.exit(f"{path}: " + "; ".join(problems))
-
-
-def filter_path(path):
-    """A path as a filter option value. The drive colon in C:/ ends an option unless quoted AND escaped
-    (measured: a bare \\: fails, '...\\:...' parses)."""
-    return "'" + Path(path).as_posix().replace(":", r"\:") + "'"
-
-
-def whisper_filter(destination, fmt, language="tl", word_level=True, vad=True, queue=20):
-    parts = [f"model={filter_path(models_dir() / WHISPER_MODEL)}", f"language={language}", f"queue={queue}",
-             f"destination={filter_path(destination)}", f"format={fmt}"]
-    if word_level:
-        parts.append("max_len=1")
-    if vad:
-        parts.append(f"vad_model={filter_path(models_dir() / VAD_MODEL)}")
-    return "whisper=" + ":".join(parts)

@@ -59,8 +59,11 @@ interface RequestOptions {
 export async function requestJson<Schema extends z.ZodType>(schema: Schema, url: string, options: RequestOptions = {}): Promise<z.infer<Schema>> {
   const method = options.method ?? "GET";
   const headers = new Headers();
-  if (isStateChangingMethod(method)) headers.set(CSRF_HEADER, await ensureCsrfToken());
-  if (options.body !== undefined) headers.set("content-type", "application/json");
+  // Every write carries the JSON type, bodyless ones too (Stop, the terminal ticket): the server's CSRF guard requires it.
+  if (isStateChangingMethod(method)) {
+    headers.set(CSRF_HEADER, await ensureCsrfToken());
+    headers.set("content-type", "application/json");
+  }
 
   const response = await fetch(url, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   rememberCsrfToken(response);

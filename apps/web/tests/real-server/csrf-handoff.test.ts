@@ -54,6 +54,18 @@ describe("CSRF handoff through the real security middleware", () => {
     expect((await fetchProjects()).map(({ id }) => id)).toContain(project.id);
   });
 
+  // Stop, the terminal ticket and opening the terminal send no body; the guard still needs the JSON content type on them.
+  it("lets a write with no body through the guard (Stop)", async () => {
+    const exchanges = routeFetchToServer();
+    vi.resetModules();
+    const { stopTurn } = await import("../../src/api/agent-client.ts");
+
+    const outcome = await stopTurn("no-such-project").catch((error: unknown) => error);
+
+    expect(exchanges.at(-1)).toMatch(/^POST \/api\/projects\/no-such-project\/stop (?!403)\d+$/);
+    expect(String(outcome)).not.toContain("Forbidden: content-type");
+  });
+
   it("is a real guard: a write carrying a stale token is refused with 403", async () => {
     const exchanges = routeFetchToServer();
 

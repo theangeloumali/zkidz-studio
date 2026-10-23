@@ -14,8 +14,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from . import ffio
-from .pipeline import HF_DIR, VAD_MODEL, WHISPER_MODEL, has_cuda, models_dir
+from . import backends, ffio
+from .pipeline import HF_DIR, VAD_MODEL, WHISPER_MODEL, models_dir
 
 MODEL_URLS = {
     WHISPER_MODEL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
@@ -100,11 +100,18 @@ def check_models(fetch):
     return True, f"whisper models in {folder}"
 
 
+def check_gpu():
+    """The probed render backend; every profile renders, so the check passes and only names the path."""
+    backend = backends.active()
+    proof = "" if backend.hardware_tested else ", untested on hardware"
+    return True, f"{backend.name} ({backend.probe_encoder}), {backends.render_jobs(backend)} render jobs{proof}"
+
+
 def main(fetch, render_only):
     results = [("ffmpeg", *check_ffmpeg()), ("overlay kit", *check_kit()), ("chrome", *check_chrome())]
     if not render_only:
         results += [("whisper", *check_whisper()), ("numpy", *check_numpy()), ("models", *check_models(fetch))]
-        results.append(("gpu", True, "CUDA decode + NVENC" if has_cuda() else "no CUDA: CPU decode, slower but identical output"))
+        results.append(("gpu", *check_gpu()))
     results.append(("hyperframes", *check_hyperframes()))
     for name, ok, detail in results:
         print(f"{'OK  ' if ok else 'FAIL'} {name:12} {detail}")

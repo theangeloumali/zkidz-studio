@@ -6,10 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import ffio
+from . import backends, ffio
 from .audio import GAP_FILL
-from .pipeline import (CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, has_cuda, orientation_filter,
-                      split_orientation)
+from .pipeline import CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, orientation_filter, split_orientation
+from .render_final import has_filter
 
 
 def build_audio(source, video):
@@ -27,16 +27,20 @@ def proxy_filter(gpu_turn, cpu_turn, cuda):
     return chain("hwdownload,format=nv12" if cuda else "", cpu_turn, "scale=1080:1920:flags=lanczos", DROP_ROTATION)
 
 
-def build_proxy(source, video, cuda):
+def build_proxy(source, video, backend):
     (WORK / "mezz").mkdir(exist_ok=True)
     target = WORK / "mezz" / f"{video}.mp4"
     # Encoded beside the target and swapped in only once it checks out, so a failed build never replaces a good proxy.
     partial = target.with_name(f"{video}.partial.mp4")
-    video_filter = proxy_filter(*split_orientation(orientation_filter(source, cuda)), cuda)
-    encoder = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "16", "-b:v", "0"] if cuda else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "16"]
+    gpu_turn = orientation_filter(source, True) if backend.name == "nvidia" else ""
+    cuda = backend.name == "nvidia" and (not gpu_turn.startswith("transpose_cuda") or has_filter("transpose_cuda"))
+    if cuda:
+        hardware, video_filter = decode_args(True), proxy_filter(*split_orientation(gpu_turn), True)
+    else:  # system frames come back autorotated
+        hardware, video_filter = [*backend.device, *backend.decode], proxy_filter("", "", False) + backend.upload
     # 1-second GOP so review stills can seek to any time quickly.
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *decode_args(cuda), *ffio.user_input_args(source), "-vf", video_filter,
-                    *encoder, "-g", "30", "-c:a", "copy", str(partial)], check=True)
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *hardware, *ffio.user_input_args(source), "-vf", video_filter,
+                    *backend.proxy, "-g", "30", "-c:a", "copy", str(partial)], check=True)
     assert_upright(partial)
     partial.replace(target)
     return target
@@ -46,6 +50,6 @@ if __name__ == "__main__":
     video_name, source_file = sys.argv[1], Path(sys.argv[2])
     if not source_file.is_file():
         sys.exit(f"source not found: {source_file}")
-    uses_cuda = has_cuda()
+    active = backends.active()
     print(f"audio: {build_audio(source_file, video_name)}")
-    print(f"proxy ({'cuda' if uses_cuda else 'cpu'}): {build_proxy(source_file, video_name, uses_cuda)}")
+    print(f"proxy ({active.name}): {build_proxy(source_file, video_name, active)}")

@@ -22,6 +22,7 @@
     "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
     "zks": "node packages/cli/src/main.ts",
     "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
+    "verify:gpu": "node scripts/verify-gpu.mjs",
     "db:test:matrix": "node scripts/db-test-matrix.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

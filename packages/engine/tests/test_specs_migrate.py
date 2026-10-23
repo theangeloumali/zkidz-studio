@@ -7,6 +7,7 @@ import support  # noqa: F401  first: it sets a scratch ZKS_HOME
 from zks_engine.specs import SpecError, cut_spec_to_engine, migrate_cue_sheet, migrate_cuts, validate
 
 ASSET = "123e4567-e89b-42d3-a456-426614174000"
+LEGACY_GALLERY = support.ENGINE / "tests" / "fixture" / "cues" / "legacy-gallery.js"
 
 
 class MigrateCutsTests(unittest.TestCase):
@@ -79,7 +80,7 @@ class MigrateCueSheetTests(unittest.TestCase):
             migrate_cue_sheet('const CUE_SHEET = [{ kind: "comment", at: f(), end: 2, text: "x" }];')
 
     def test_gallery_fixture_migrates_to_a_valid_sheet(self):
-        cues, _ = migrate_cue_sheet(support.GALLERY.read_text(encoding="utf-8"))
+        cues, _ = migrate_cue_sheet(LEGACY_GALLERY.read_text(encoding="utf-8"))
         validate("cue-sheet", cues)
         self.assertGreater(len(cues), 15)
 

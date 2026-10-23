@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey } from "@zks/shared/node";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SECRET_PATHS = [".claude", ".ssh", join(".config", "gh", "hosts.yml")];
@@ -90,6 +91,20 @@ export function engineEnv(env) {
   return allowed;
 }
 
+/**
+ * The engine falls back to ffmpeg on PATH, so the pinned build `zks setup` installed is resolved here and handed over.
+ * @param {Record<string, string | undefined>} env
+ * @param {string} homeDir
+ * @param {(path: string) => boolean} exists
+ * @returns {string | null}
+ */
+export function pinnedFfmpeg(env, homeDir, exists) {
+  if (env.ZKS_FFMPEG) return env.ZKS_FFMPEG;
+  const toolsDir = join(defaultZksHome({ env, platform: process.platform, homeDir }), "tools");
+  const ffmpeg = pinnedExecutablePath({ toolsDir, platform: platformKey(), lock: loadToolsLock() }, "ffmpeg");
+  return ffmpeg && exists(ffmpeg) ? ffmpeg : null;
+}
+
 /** @param {string[]} args */
 function git(args) {
   const run = spawnSync("git", args, { cwd: REPO_ROOT, encoding: "utf8" });
@@ -104,8 +119,13 @@ function main() {
     console.error(refusal);
     return 1;
   }
+  const ffmpeg = pinnedFfmpeg(process.env, homedir(), existsSync);
+  if (!ffmpeg) {
+    console.error("refused: the pinned ffmpeg is not installed. Run: pnpm zks setup");
+    return 1;
+  }
   const [command, args] = engineCommand();
-  const run = spawnSync(command, args, { cwd: REPO_ROOT, stdio: "inherit", env: engineEnv(process.env) });
+  const run = spawnSync(command, args, { cwd: REPO_ROOT, stdio: "inherit", env: { ...engineEnv(process.env), ZKS_FFMPEG: ffmpeg } });
   if (run.error) {
     console.error(`verify:gpu could not start ${command}: ${run.error.message}`);
     return 1;

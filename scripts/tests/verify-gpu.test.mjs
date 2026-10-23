@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { candidateHomes, engineCommand, engineEnv, hygieneRefusal, treeRefusal } from "../verify-gpu.mjs";
+import { loadToolsLock, pinnedExecutablePath, platformKey } from "@zks/shared/node";
+import { candidateHomes, engineCommand, engineEnv, hygieneRefusal, pinnedFfmpeg, treeRefusal } from "../verify-gpu.mjs";
 
 describe("verify:gpu hygiene (§10.3)", () => {
   const absent = () => false;
@@ -78,5 +79,16 @@ describe("engine command", () => {
     expect(engineEnv({ ZKS_HOME: "/z", ZKS_RELEASE_TOKEN: "s", ZKS_API_KEY: "s", ZKS_DB_PASSWORD: "s", ZKS_DATABASE_URL: "postgres://x" })).toEqual({
       ZKS_HOME: "/z",
     });
+  });
+
+  // The engine falls back to ffmpeg on PATH, so verify:gpu must hand it the pinned build or it measures the wrong binary.
+  it("hands the engine the pinned ffmpeg from ZKS_HOME, not one on PATH", () => {
+    const expected = pinnedExecutablePath({ toolsDir: "/z/tools", platform: platformKey(), lock: loadToolsLock() }, "ffmpeg");
+    expect(pinnedFfmpeg({ ZKS_HOME: "/z" }, "/home/gpu", (path) => path === expected)).toBe(expected);
+  });
+
+  it("keeps an explicit ZKS_FFMPEG, and reports a missing pinned ffmpeg as null", () => {
+    expect(pinnedFfmpeg({ ZKS_FFMPEG: "/opt/ff/ffmpeg" }, "/home/gpu", () => true)).toBe("/opt/ff/ffmpeg");
+    expect(pinnedFfmpeg({ ZKS_HOME: "/z" }, "/home/gpu", () => false)).toBeNull();
   });
 });

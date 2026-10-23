@@ -1,10 +1,9 @@
 # Created by The Angelo Umali.
-# Lint, typecheck and tests on every push and pull request. Actions are pinned by commit SHA; bump the SHA and the tag comment together.
+# Lint, typecheck and tests, started by hand (scripts/ci-local.sh runs the same jobs before every merge). Actions are pinned by commit SHA; bump the SHA and the tag comment together.
 name: ci
 
 on:
-  push:
-  pull_request:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
   workflow_dispatch:
 
 permissions:

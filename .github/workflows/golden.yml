@@ -3,9 +3,7 @@
 name: golden
 
 on:
-  push:
-    branches: [develop, main]
-  pull_request:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
   workflow_dispatch:
 
 permissions:

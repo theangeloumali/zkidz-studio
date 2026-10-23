@@ -1,11 +1,10 @@
 # Created by The Angelo Umali.
-# Secret scan of the full git history on every push and pull request.
+# Secret scan of the full git history, started by hand (scripts/ci-local.sh runs it before every merge).
 # Runs the pinned, checksum-verified gitleaks binary instead of a third-party action, so the job needs only read access.
 name: gitleaks
 
 on:
-  push:
-  pull_request:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
   workflow_dispatch:
 
 permissions:
@@ -44,7 +43,4 @@ jobs:
           "$RUNNER_TEMP/gitleaks-bin/gitleaks" version
 
       - name: Scan history
-        # On a pull request the rules come from the base commit, so the PR cannot loosen its own scan.
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash .github/scripts/gitleaks-scan.sh "$BASE_SHA"
+        run: bash .github/scripts/gitleaks-scan.sh

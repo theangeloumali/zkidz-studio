@@ -5,7 +5,14 @@ import { CutSpecSchema, keptSpansOf, type CutSpec } from "@zks/shared";
 import { implementTool } from "../define-tool.ts";
 import type { ToolContext } from "../context.ts";
 import { findCutCandidates } from "../cut-candidates.ts";
-import { approvedCandidateSpan, awaitCutReview, findRejectedCandidates, reachesOutsideCandidate, recordRejectedCandidates } from "../cut-review.ts";
+import {
+  approvedCandidateSpan,
+  assertRoomForRejections,
+  awaitCutReview,
+  findRejectedCandidates,
+  reachesOutsideCandidate,
+  recordRejectedCandidates,
+} from "../cut-review.ts";
 import { findProjectAsset, loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 import { readCurrentSpec, writeAgentSpec } from "../spec-store.ts";
@@ -23,6 +30,7 @@ const proposeCuts = implementTool("propose_cuts", {
       idPrefix: requestId.slice(0, 8),
     });
     if (candidates.length === 0) return { output: { candidates, approved: [], rejected: [] } };
+    await assertRoomForRejections(context, candidates);
     const review = awaitCutReview({ projectId: context.projectId, requestId, candidates }, signal);
     await context.events.publish({ type: "cuts.proposed", projectId: context.projectId, requestId, candidates });
     const decision = await review;

@@ -166,10 +166,25 @@ describe("propose_cuts", () => {
     const fixture = await createToolFixture(server);
     const spans = Array.from({ length: MAX_REJECTED_SPANS }, (_, index) => ({ id: `r${index}`, at: index, end: index + 0.5 }));
     await recordRejectedCandidates(fixture.context, spans);
-    await recordRejectedCandidates(fixture.context, [spans[0] ?? { id: "", at: 0, end: 0 }]);
+    // The same span under a new id is the same rejection, so it takes no room.
+    await recordRejectedCandidates(fixture.context, [{ id: "renamed", at: 0, end: 0.5 }]);
 
     await expect(recordRejectedCandidates(fixture.context, [{ id: "one-more", at: -2, end: -1 }])).rejects.toThrow(/record of rejected cuts is full/);
     expect(await findRejectedCandidates(fixture.context, [{ at: 0, end: 0.5 }])).toEqual(["r0"]);
+  });
+
+  // Refusing only when the rejections were written left the approvals remembered and the rejections lost.
+  it("refuses a cut review before it starts when the record has no room for every candidate", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    await insertTranscript(fixture, asset.id, STUTTER_WORDS);
+    const filler = Array.from({ length: MAX_REJECTED_SPANS - 1 }, (_, index) => ({ id: `old${index}`, at: 100 + index, end: 100.5 + index }));
+    await recordRejectedCandidates(fixture.context, filler);
+
+    const result = await callTool(fixture, "propose_cuts", {});
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/record of rejected cuts is full/);
+    expect(fixture.events.some((event) => event.type === "cuts.proposed")).toBe(false);
   });
 
   it("refuses an approved candidate id stretched past its own span", async () => {

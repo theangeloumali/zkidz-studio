@@ -103,9 +103,7 @@ export function recordRejectedCandidates(context: ToolContext, rejected: readonl
   const previousWrite = rejectedSpanWrites.get(context.projectId) ?? Promise.resolve();
   const write = previousWrite.then(async () => {
     const spans = withoutDuplicates([...(await readRejectedSpans(context)), ...rejected.map(({ id, at, end }) => ({ id, at, end }))]);
-    if (spans.length > MAX_REJECTED_SPANS) {
-      throw new ToolError("The record of rejected cuts is full; start a new project for further cut reviews");
-    }
+    if (spans.length > MAX_REJECTED_SPANS) throw recordFullError();
     await writeFileAtomically(await rejectedSpansPath(context), `${JSON.stringify(spans)}\n`);
   });
   const settled = write.finally(() => {
@@ -115,9 +113,20 @@ export function recordRejectedCandidates(context: ToolContext, rejected: readonl
   return write;
 }
 
+/** Checked before a review is shown, as if every candidate were rejected, so a review never half-applies. */
+export async function assertRoomForRejections(context: ToolContext, candidates: readonly CandidateSpan[]): Promise<void> {
+  if (withoutDuplicates([...(await readRejectedSpans(context)), ...candidates]).length > MAX_REJECTED_SPANS) throw recordFullError();
+}
+
+function recordFullError(): ToolError {
+  return new ToolError("The record of rejected cuts is full; start a new project for further cut reviews");
+}
+
+// Keyed on the span, first id kept: re-rejecting the same span under a new candidate id is the same rejection.
 function withoutDuplicates(spans: readonly CandidateSpan[]): CandidateSpan[] {
-  const byKey = new Map(spans.map((span) => [`${span.id}|${span.at}|${span.end}`, span]));
-  return [...byKey.values()];
+  const bySpan = new Map<string, CandidateSpan>();
+  for (const span of spans) if (!bySpan.has(`${span.at}|${span.end}`)) bySpan.set(`${span.at}|${span.end}`, span);
+  return [...bySpan.values()];
 }
 
 /** Rejected candidates the removals cover past REJECTED_COVERAGE_LIMIT, taken together so a split cut still counts. */

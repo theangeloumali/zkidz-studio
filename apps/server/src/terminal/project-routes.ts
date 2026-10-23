@@ -1,9 +1,7 @@
 // Created by The Angelo Umali.
 // Opens or reattaches a project's mode T terminal (plan §6.3). The folder and resume id come from the server, never the request.
 import type { StudioDatabase } from "@zks/db";
-import { rules } from "@zks/db/schema";
 import { API_ROUTES } from "@zks/shared";
-import { asc, eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { findResumeSessionId, recordCurrentSession } from "../agent/session-records.ts";
 import { readConnection } from "../auth/connection-store.ts";
@@ -11,6 +9,7 @@ import { projectDir } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
 import { HttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { loadRulesPromptBlock } from "../rules/session-setup.ts";
 import type { TerminalSession, TerminalSessions } from "./terminal-sessions.ts";
 
 const TERMINAL_AUTH_MODES = ["terminal"] as const;
@@ -43,7 +42,7 @@ export function registerProjectTerminalRoutes(app: Hono, deps: ProjectTerminalRo
 
 async function openSession(deps: ProjectTerminalRouteDeps, project: ProjectRow): Promise<TerminalSession> {
   const { database, model } = deps;
-  const [resumeSessionId, rulesText] = await Promise.all([findResumeSessionId(database, project.id, TERMINAL_AUTH_MODES), readEnabledRules(database)]);
+  const [resumeSessionId, rulesText] = await Promise.all([findResumeSessionId(database, project.id, TERMINAL_AUTH_MODES), loadRulesPromptBlock(database)]);
   const session = await deps.sessions.open({
     projectId: project.id,
     projectDir: projectDir(deps.studioHome, project.slug),
@@ -53,9 +52,4 @@ async function openSession(deps: ProjectTerminalRouteDeps, project: ProjectRow):
   });
   await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode: "terminal" });
   return session;
-}
-
-async function readEnabledRules(database: StudioDatabase): Promise<string> {
-  const rows = await database.select({ text: rules.text }).from(rules).where(eq(rules.enabled, true)).orderBy(asc(rules.createdAt));
-  return rows.map((row) => row.text).join("\n");
 }

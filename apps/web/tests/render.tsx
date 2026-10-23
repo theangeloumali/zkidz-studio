@@ -29,8 +29,9 @@ export function stubFetch(handlers: Readonly<Record<string, Handler>>) {
 }
 
 /** The parsed JSON body of the first stubbed request to `url`. */
-export function requestBody(fetchMock: ReturnType<typeof stubFetch>, url: string): unknown {
-  const body = fetchMock.mock.calls.find(([calledUrl]) => calledUrl === url)?.[1]?.body;
+/** Pass `method` when a GET shares the url, or the GET's empty body is found first. */
+export function requestBody(fetchMock: ReturnType<typeof stubFetch>, url: string, method?: string): unknown {
+  const body = fetchMock.mock.calls.find(([calledUrl, init]) => calledUrl === url && (method === undefined || init?.method === method))?.[1]?.body;
   if (typeof body !== "string") throw new Error(`No JSON body was sent to ${url}`);
   return JSON.parse(body);
 }

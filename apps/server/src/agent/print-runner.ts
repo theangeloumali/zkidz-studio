@@ -21,6 +21,8 @@ export interface PrintArgs {
   readonly maxBudgetUsd?: number;
   readonly model?: string;
   readonly resume?: string;
+  /** An owner-only file holding the rules block (plan §6.9), the same text the SDK path appends. */
+  readonly rulesPath?: string;
 }
 
 /** Never --bare: it skips plugins and MCP discovery and grants Bash and file edits. */
@@ -34,6 +36,7 @@ export function buildPrintArgs(args: PrintArgs): string[] {
     ...optionalFlag("--max-budget-usd", args.maxBudgetUsd),
     ...optionalFlag("--model", args.model),
     ...optionalFlag("--resume", args.resume),
+    ...optionalFlag("--append-system-prompt-file", args.rulesPath),
   ];
 }
 
@@ -42,6 +45,7 @@ export interface PrintQueryOptions {
   readonly mcpConfigPath: string;
   readonly settingsPath: string;
   readonly pluginDir: string;
+  readonly rulesPath?: string;
   readonly spawn?: SpawnClaude;
 }
 
@@ -57,6 +61,7 @@ export function createPrintQuery(config: PrintQueryOptions): QueryFunction {
       maxBudgetUsd,
       model,
       resume,
+      rulesPath: config.rulesPath,
     });
     const spawnClaude = config.spawn ?? nodeSpawn;
     const child = spawnClaude(config.claudePath, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "ignore"] });

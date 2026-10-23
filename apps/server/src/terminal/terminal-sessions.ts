@@ -32,6 +32,8 @@ type PreToolUsePayload = Extract<HookPayload, { hook_event_name: "PreToolUse" }>
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
   const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId);
+  // A resume reuses the session id and so its files folder; the old run's removal must finish before the new write.
+  const pendingCleanups = new Map<string, Promise<void>>();
 
   const publishAll = async (newEvents: readonly NewStudioEvent[]) => {
     for (const newEvent of newEvents) await deps.eventBus.publish(newEvent);
@@ -58,9 +60,13 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       if (record.wasKilled || isUnexpected) {
         deps.cancelProjectJobs(projectId).catch((error: unknown) => deps.logger.error("terminal job cancel failed", { projectId, error }));
       }
-      removeSessionFiles(record.files)
+      const cleanup = removeSessionFiles(record.files)
         .catch((error: unknown) => deps.logger.warn("terminal session files not removed", { error }))
-        .finally(() => publishInBackground(exitEvents));
+        .finally(() => {
+          if (pendingCleanups.get(projectId) === cleanup) pendingCleanups.delete(projectId);
+          publishInBackground(exitEvents);
+        });
+      pendingCleanups.set(projectId, cleanup);
     });
   };
 
@@ -98,6 +104,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
 
   return {
     async open(request) {
+      await pendingCleanups.get(request.projectId);
       const record = await launchSession(deps, request);
       records.set(record.sessionId, record);
       watchLifecycle(record);

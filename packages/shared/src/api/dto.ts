@@ -18,6 +18,8 @@ import { FrameRateSchema, IdSchema, IsoTimestampSchema, JobPercentSchema, VideoI
 export const RULE_TEXT_MAX_CHARS = 500;
 /** A title comes from a dropped file name, and file names stop at 255 on every desktop filesystem. */
 export const PROJECT_TITLE_MAX_CHARS = 255;
+/** Every enabled rule joins every system prompt, so their number is capped too. */
+export const RULES_ENABLED_MAX = 50;
 
 export const ProjectSchema = z.strictObject({
   id: IdSchema,
@@ -123,3 +125,17 @@ export type Rule = z.infer<typeof RuleSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 export type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;
+
+export const PROJECT_MAX_TURNS_CAP = 200;
+export const PROJECT_BUDGET_USD_CAP = 100;
+/** Per-project agent limits: maxTurns in modes A and B, budgetUsd in mode A only (plan §6.6). */
+export const ProjectSettingsSchema = z.strictObject({
+  maxTurns: z.int().min(1).max(PROJECT_MAX_TURNS_CAP),
+  budgetUsd: z.number().positive().max(PROJECT_BUDGET_USD_CAP),
+});
+export const ProjectSettingsUpdateSchema = ProjectSettingsSchema.partial();
+export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
+/** The house styles the onboarding cards offer (plan §9.1, `/setup/style`). */
+export const StyleIdSchema = z.enum(["zkidz", "plain", "loud"]);
+export const StyleChoiceSchema = z.strictObject({ styleId: StyleIdSchema });
+export type StyleId = z.infer<typeof StyleIdSchema>;

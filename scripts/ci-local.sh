@@ -2,18 +2,18 @@
 # Created by The Angelo Umali.
 # Local CI, run before every merge: the Linux jobs the GitHub workflows ran, against the pinned tools. The workflows are
 # manual-only because per-push runs emailed every failure. Linux x64 only (the pinned scanners are Linux builds).
-# The lint, scan and install run in turn; then every check that shares nothing runs side by side, the engine suite split
-# over ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
+# The lint, scan and install run in turn; then every check that shares nothing runs side by side, each test lane capped
+# at ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
 set -uo pipefail
 
 USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
-REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=scripts/lib/ci-lanes.sh
 source "$REPO_ROOT/scripts/lib/ci-lanes.sh"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-ENGINE_JOBS="${ZKS_CI_JOBS:-6}"
+LANE_WORKERS="${ZKS_CI_JOBS:-6}"
 # A zero or non-numeric count would leave the lane loop waiting forever.
 for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
   if [[ -n "${!count_var:-}" && ! "${!count_var}" =~ ^[1-9][0-9]*$ ]]; then
@@ -29,7 +29,7 @@ for arg in "$@"; do
   case "$arg" in
     --release) release=1 ;;
     --list) list=1 ;;
-    --list-jobs) echo "$ENGINE_JOBS" && exit 0 ;;
+    --list-jobs) echo "$LANE_WORKERS" && exit 0 ;;
     --list-lanes) list_lanes=1 ;;
     *) echo "$USAGE" >&2 && exit 2 ;;
   esac
@@ -64,8 +64,6 @@ fi
 cd "$REPO_ROOT" || exit 1
 merge_target=origin/develop
 ((release)) && merge_target=origin/main
-log_dir="${TMPDIR:-/tmp}/zks-ci-local-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$log_dir"
 
 # A release tarball fetched once into CACHE_DIR and checked against its pin; prints the binary's path.
 pinned_binary() {
@@ -101,27 +99,32 @@ step_gitleaks() {
     PATH="$(dirname "$bin"):$PATH" bash .github/scripts/gitleaks-scan.sh "$base"
 }
 
-step_install() { pnpm install --frozen-lockfile; }
+# zks setup runs here, before the lanes, because both the engine and the server suite read the pinned tools.
+step_install() { pnpm install --frozen-lockfile && pnpm -s zks setup; }
 
-# pnpm verify's parts, run as separate lanes.
+# The pinned ffmpeg and Chrome for this step's subshell; one on PATH would make renders machine-dependent.
+export_pinned_tools() {
+  ZKS_FFMPEG=$(pnpm -s zks tools path ffmpeg) && ZKS_CHROME=$(pnpm -s zks tools path chrome-headless-shell) &&
+    export ZKS_FFMPEG ZKS_CHROME
+}
+
+# pnpm verify's parts, run as separate lanes. Vitest defaults to a worker per core in every lane, which oversubscribed
+# the machine beside the engine pool: forks failed to start and PGlite hooks timed out.
 step_format() { node scripts/check-attribution.mjs && pnpm exec prettier --check .; }
 step_lint() { pnpm -r lint; }
 step_typecheck() { pnpm -r typecheck; }
-step_test-server() { pnpm -F @zks/server test; }
-step_test-other() { pnpm -r --filter '!@zks/server' test; }
+step_test-server() { export_pinned_tools && VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -F @zks/server test; }
+step_test-other() { VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -r --workspace-concurrency=1 --filter '!@zks/server' test; }
 
 # The engine and golden frames with the pinned ffmpeg and Chrome, the overlay renderer tests forbidden to skip, one
 # process per test module. Each process gets its own scratch ZKS_HOME from tests/support.py.
 step_engine() {
-  local ffmpeg chrome results
-  pnpm -s zks setup &&
-    ffmpeg=$(pnpm -s zks tools path ffmpeg) &&
-    chrome=$(pnpm -s zks tools path chrome-headless-shell) &&
-    uv sync --project packages/engine --locked || return 1
+  local results
+  export_pinned_tools && uv sync --project packages/engine --locked || return 1
   results=$(mktemp -d)
   # shellcheck disable=SC2016 # the module, results dir and python reach bash -c as $1, $2 and $3
   (cd packages/engine/tests && ls test_*.py parity/test_*.py) | sed 's#/#.#; s#\.py$##' |
-    ZKS_FFMPEG="$ffmpeg" ZKS_CHROME="$chrome" ZKS_REQUIRE_HF=1 xargs -P "$ENGINE_JOBS" -I{} \
+    ZKS_REQUIRE_HF=1 xargs -P "$LANE_WORKERS" -I{} \
       bash -c 'cd packages/engine/tests && "$3" -m unittest "$1" >"$2/$1.log" 2>&1 || touch "$2/$1.failed"' _ {} "$results" "$REPO_ROOT/packages/engine/.venv/bin/python"
   grep -h -E '^Ran [0-9]+ tests? in ' "$results"/*.log | awk '{tests += $2} END {print "Ran " tests " engine tests"}'
   local failed=("$results"/*.failed)
@@ -132,6 +135,8 @@ step_engine() {
     return 1
   fi
   rm -rf "$results"
+  # The demo project renders a master through every engine step, so it shares the engine's venv and pinned tools.
+  "$REPO_ROOT/packages/engine/.venv/bin/python" -m unittest discover -s examples/demo
 }
 
 # A first install on a clean machine: the single setup command into a throwaway ZKS_HOME, then the doctor.
@@ -144,6 +149,18 @@ step_setup-doctor() {
   return "$status"
 }
 
+# Sourced (by the tests), it only defines the steps.
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
+
+# One run at a time per machine: overlapping runs from parallel sessions pushed vitest past its worker-start timeout.
+exec 9>"${ZKS_CI_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/zks-ci-local.lock}"
+if ! flock -n 9; then
+  echo "ci-local: waiting for another ci-local run on this machine to finish" >&2
+  flock 9
+fi
+
+log_dir="${TMPDIR:-/tmp}/zks-ci-local-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$log_dir"
 failed=()
 reported=()
 report() {

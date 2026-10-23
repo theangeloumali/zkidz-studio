@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "talking-head-short",
+  "name": "Talking-head short",
+  "description": "Trims pauses and retakes, adds a hook title, captions and punch-ins.",
+  "ingestMode": "single",
+  "prompt": "Cut this into a 60-second short. Trim the pauses and the retakes, caption every line in English (translate anything that is not), mask the swears, and add a hook title."
+}

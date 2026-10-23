@@ -2,10 +2,11 @@
 // Read-only project tools: project_info, get_capabilities, read_transcript (plan §6.8).
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { mediaAssets, rules } from "@zks/db/schema";
+import { mediaAssets } from "@zks/db/schema";
 import { STUDIO_TOOLS } from "@zks/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { hasErrorCode } from "@zks/db";
+import { readEnabledRuleTexts } from "../../rules/rule-reader.ts";
 import { implementTool } from "../define-tool.ts";
 import type { MediaAssetRow } from "../../dto.ts";
 import { loadProject } from "../project-files.ts";
@@ -29,8 +30,8 @@ const projectInfo = implementTool("project_info", {
       .from(mediaAssets)
       .where(and(eq(mediaAssets.projectId, context.projectId), inArray(mediaAssets.kind, [...CLIP_KINDS])))
       .orderBy(asc(mediaAssets.createdAt));
-    const ruleRows = await context.db.select({ text: rules.text }).from(rules).where(eq(rules.enabled, true)).orderBy(asc(rules.createdAt));
-    return { output: { videoId: project.videoId, clips: clipRows.flatMap(toClipInfo), theme: DEFAULT_THEME, rules: ruleRows.map((rule) => rule.text) } };
+    const ruleTexts = await readEnabledRuleTexts(context.db);
+    return { output: { videoId: project.videoId, clips: clipRows.flatMap(toClipInfo), theme: DEFAULT_THEME, rules: ruleTexts } };
   },
 });
 

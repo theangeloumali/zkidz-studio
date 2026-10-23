@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "plain",
+  "name": "Plain",
+  "description": "Captions and cuts only. No title cards, no sound effects.",
+  "theme": "zkidz",
+  "cardTiers": [],
+  "sfx": "none",
+  "intro": false,
+  "guidance": "Captions and cuts only. Caption every spoken line on the plate at bottom 1750. Add no title cards, no hook title, no sound effects and no brand intro. Punch-ins on jump cuts stay.",
+  "sample": [{ "kind": "caption", "at": 0.2, "end": 4.8, "text": "Captions only, no cards.", "bottom": 1750 }]
+}

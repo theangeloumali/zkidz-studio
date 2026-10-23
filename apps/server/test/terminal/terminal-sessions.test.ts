@@ -45,6 +45,18 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(stubReport(session).argv.slice(0, 2)).toEqual(["--resume", RESUMED_SESSION_ID]);
   });
 
+  it("resumes the same session right after a kill, before the old session's files are gone", async () => {
+    fixture = await createTerminalFixture();
+    const first = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
+    await waitFor(() => first.pty.snapshot().includes("READY"));
+    fixture.sessions.kill(PROJECT_ID);
+    while (fixture.sessions.findByProject(PROJECT_ID) !== undefined) await new Promise(setImmediate);
+
+    const reopened = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
+    await waitFor(() => reopened.pty.snapshot().includes("READY"));
+    expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--resume", RESUMED_SESSION_ID]);
+  });
+
   it("reports claude_missing when the resolved binary is gone", async () => {
     fixture = await createTerminalFixture({}, { isClaudeMissing: true });
 

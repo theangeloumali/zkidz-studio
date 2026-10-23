@@ -10,13 +10,17 @@ import {
   MediaAssetSchema,
   PROJECT_TITLE_MAX_CHARS,
   ProjectSchema,
+  ProjectSettingsSchema,
+  ProjectSettingsUpdateSchema,
   RULE_TEXT_MAX_CHARS,
   RuleSchema,
   SettingsSchema,
   SettingsUpdateSchema,
   SpecSummarySchema,
   SpecVersionSchema,
+  StyleChoiceSchema,
 } from "./dto.ts";
+import { HomeTemplatesSchema, StartTemplateRequestSchema, StartTemplateResponseSchema, StyleCardsSchema } from "./onboarding.ts";
 import { EventsQuerySchema } from "./sse.ts";
 import { HookPayloadSchema, HookResponseSchema, OpenTerminalResponseSchema, TerminalSocketQuerySchema, TerminalTicketSchema } from "./terminal.ts";
 
@@ -106,7 +110,12 @@ export const API_ROUTES = {
   revealDeliverables: { method: "POST", path: "/api/projects/:projectId/reveal", body: null, response: OkSchema },
 
   listRules: { method: "GET", path: "/api/rules", response: z.strictObject({ rules: z.array(RuleSchema) }) },
-  createRule: { method: "POST", path: "/api/rules", body: z.strictObject({ text: RuleTextSchema, sourceQuote: z.string().optional() }), response: RuleSchema },
+  createRule: {
+    method: "POST",
+    path: "/api/rules",
+    body: z.strictObject({ text: RuleTextSchema, sourceQuote: z.string().trim().max(RULE_TEXT_MAX_CHARS).optional() }),
+    response: RuleSchema,
+  },
   updateRule: { method: "PATCH", path: "/api/rules/:ruleId", body: z.strictObject({ isEnabled: z.boolean() }), response: RuleSchema },
   deleteRule: { method: "DELETE", path: "/api/rules/:ruleId", body: null, response: OkSchema },
 
@@ -140,6 +149,18 @@ export const API_ROUTES = {
   terminalSocket: { method: "GET", path: "/api/terminal/:sessionId/ws", query: TerminalSocketQuerySchema, response: "websocket" },
   /** Called by the PTY's Claude Code with `Authorization: Bearer $ZKS_HOOK_TOKEN`, not by the browser. */
   terminalHooks: { method: "POST", path: "/api/terminal/:sessionId/hooks", body: HookPayloadSchema, response: HookResponseSchema },
+
+  getProjectSettings: { method: "GET", path: "/api/projects/:projectId/settings", response: ProjectSettingsSchema },
+  updateProjectSettings: { method: "PUT", path: "/api/projects/:projectId/settings", body: ProjectSettingsUpdateSchema, response: ProjectSettingsSchema },
+  /** Phase 6: the house style new edits start from, and the bundled demo project for a first run with no footage. */
+  getStyle: { method: "GET", path: "/api/style", response: StyleChoiceSchema },
+  setStyle: { method: "PUT", path: "/api/style", body: StyleChoiceSchema, response: StyleChoiceSchema },
+  openDemoProject: { method: "POST", path: "/api/projects/demo", body: null, response: ProjectSchema },
+  /** The shipped presets, validated server-side so the web never keeps its own copy. */
+  listStylePresets: { method: "GET", path: "/api/style/presets", response: StyleCardsSchema },
+  listTemplates: { method: "GET", path: "/api/templates", response: HomeTemplatesSchema },
+  /** Stores the template's ingest mode on the project and starts the matching ingest job. */
+  startTemplate: { method: "POST", path: "/api/projects/:projectId/template", body: StartTemplateRequestSchema, response: StartTemplateResponseSchema },
 } as const satisfies Record<string, ApiRoute>;
 
 export type ApiRouteName = keyof typeof API_ROUTES;

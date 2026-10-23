@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "screen-recording-showcase",
+  "name": "Screen-recording showcase",
+  "description": "Places your screen recording as a panel over the camera, synced to what you say.",
+  "ingestMode": "showcase",
+  "prompt": "Put the screen recording in a panel over my face cam, synced to when I mention it. Captions at the bottom, hook title up top."
+}

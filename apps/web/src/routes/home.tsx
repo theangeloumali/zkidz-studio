@@ -5,6 +5,7 @@ import { DropZone } from "../components/drop-zone.tsx";
 import { InPlacePicker } from "../components/in-place-picker.tsx";
 import { RecentProjects } from "../components/recent-projects.tsx";
 import { UploadList } from "../components/upload-list.tsx";
+import { StartTemplates } from "../templates/start-templates.tsx";
 import { editorPath } from "../lib/routes.ts";
 import { useAddMedia, type AddMediaResult } from "./use-add-media.ts";
 
@@ -24,6 +25,7 @@ export function HomeRoute() {
         </div>
       </div>
       <RecentProjects />
+      <StartTemplates />
       <InPlacePicker
         isOpen={isPickerOpen}
         onClose={() => setIsPickerOpen(false)}

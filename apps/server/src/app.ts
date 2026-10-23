@@ -10,7 +10,9 @@ import { registerDoctorRoutes } from "./doctor/routes.ts";
 import type { DoctorRunner } from "./doctor/runner.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
+import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
 import type { Logger } from "./logging/logger.ts";
+import type { OnboardingServices } from "./onboarding/onboarding-services.ts";
 import type { UploadLimits } from "./media-io/store.ts";
 import { registerEventRoutes } from "./routes/events.ts";
 import { registerFsRoutes } from "./routes/fs.ts";
@@ -18,6 +20,7 @@ import { registerJobRoutes } from "./routes/jobs.ts";
 import { registerMediaStreamRoute } from "./routes/media-stream.ts";
 import { registerMediaRoutes } from "./routes/media.ts";
 import { registerProjectRoutes } from "./routes/projects.ts";
+import { registerRuleRoutes } from "./rules/routes.ts";
 import type { Security } from "./security/index.ts";
 
 export interface AppDependencies {
@@ -33,11 +36,14 @@ export interface AppDependencies {
   readonly agent?: Pick<AgentServices, "registerRoutes">;
   /** GET /api/doctor; main.ts always passes it. */
   readonly runDoctor?: DoctorRunner;
+  /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
+  readonly onboarding?: OnboardingServices;
 }
 
 export function createApp(deps: AppDependencies): Hono {
   const app = new Hono();
   app.use("*", deps.security.middleware);
+  registerJsonBodyLimit(app);
 
   registerProjectRoutes(app, deps);
   registerMediaRoutes(app, deps);
@@ -45,8 +51,10 @@ export function createApp(deps: AppDependencies): Hono {
   registerFsRoutes(app, deps);
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus);
+  registerRuleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
+  deps.onboarding?.registerRoutes(app);
   app.all("/api/*", () => {
     throw notFound();
   });

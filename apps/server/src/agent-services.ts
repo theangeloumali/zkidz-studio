@@ -17,6 +17,8 @@ import type { SecretStore } from "./auth/secret-store.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
 import type { Logger } from "./logging/logger.ts";
+import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
+import { loadSessionSetup } from "./rules/session-setup.ts";
 import { allowedHostsFor } from "./security/request-guards.ts";
 import { createSessionToken, tokensMatch } from "./security/token.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts";
@@ -29,8 +31,8 @@ import type { ToolContext } from "./tools/context.ts";
 import { createStudioMcpServer, registerEngineJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
 const REQUIRED_SKILLS = ["zkidz-studio:edit-director", "zkidz-studio:cut-spec"];
-// ASSUMPTION: defaults until §6b's per-project settings land. No model: both the SDK and the terminal use the account's default.
-const SESSION_LIMITS: SessionLimits = { maxTurns: 40, maxBudgetUsd: 5 };
+// No model: both the SDK and the terminal use the account's default.
+const SESSION_LIMITS: SessionLimits = { maxTurns: DEFAULT_PROJECT_SETTINGS.maxTurns, maxBudgetUsd: DEFAULT_PROJECT_SETTINGS.budgetUsd };
 /** No claude on PATH: pty-host still needs an absolute path, and this one makes every open fail as claude_missing. */
 const MISSING_CLAUDE_NAME = "claude-not-installed";
 
@@ -88,6 +90,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     query: printSessions?.query ?? deps.query,
     broker,
     limits: SESSION_LIMITS,
+    loadSessionSetup: (project) => loadSessionSetup(deps.database, project.id),
     studioMcpServer: printSessions === undefined ? (project) => createStudioMcpServer(toolContextFor(project.id)) : null,
     cancelProjectJobs,
   });

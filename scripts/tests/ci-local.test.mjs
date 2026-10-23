@@ -1,5 +1,8 @@
 // Created by The Angelo Umali.
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -48,6 +51,69 @@ describe("ci-local", () => {
       expect(outcome.status, `${name}=${value}`).toBe(2);
       expect(outcome.stderr).toContain(name);
     }
+  });
+
+  /**
+   * Sources the script with a fake pnpm on PATH, runs the steps each in its own subshell as the real run does, and
+   * returns pnpm's calls as "<VITEST_MAX_WORKERS> <ZKS_FFMPEG> <ZKS_CHROME> <args>".
+   * @param {string[]} steps @param {Record<string, string>} envOverrides
+   */
+  function pnpmCallsOf(steps, envOverrides = {}) {
+    const fakeBinDir = mkdtempSync(join(tmpdir(), "zks-ci-local-"));
+    const callLog = join(fakeBinDir, "calls.log");
+    const fakePnpm = [
+      "#!/usr/bin/env bash",
+      'if [[ "$1 $2 $3 $4" == "-s zks tools path" ]]; then echo "/pinned/$5"; exit 0; fi',
+      `echo "\${VITEST_MAX_WORKERS:-unset} \${ZKS_FFMPEG:-none} \${ZKS_CHROME:-none} $*" >>"${callLog}"`,
+    ].join("\n");
+    try {
+      writeFileSync(join(fakeBinDir, "pnpm"), `${fakePnpm}\n`, { mode: 0o755 });
+      // Cleared because ci:local's own lane exports them to this test.
+      const env = { ...process.env, VITEST_MAX_WORKERS: "", ZKS_FFMPEG: "", ZKS_CHROME: "", ...envOverrides, PATH: `${fakeBinDir}:${process.env["PATH"]}` };
+      const runSteps = steps.map((step) => `(step_${step})`).join(" && ");
+      const outcome = spawnSync("bash", ["-c", `script=$1 && set -- && source "$script" && ${runSteps}`, "_", SCRIPT], { encoding: "utf8", env });
+      expect(outcome.status, outcome.stderr).toBe(0);
+      return readFileSync(callLog, "utf8").trim().split("\n");
+    } finally {
+      rmSync(fakeBinDir, { recursive: true, force: true });
+    }
+  }
+
+  // Unbounded, vitest forks one worker per core in each lane beside the engine pool, and load-flaky timeouts followed.
+  it.each([
+    ["the default", {}, "6"],
+    ["ZKS_CI_JOBS", { ZKS_CI_JOBS: "3" }, "3"],
+  ])("caps each test lane at ZKS_CI_JOBS workers, one package at a time (%s)", (_label, envOverrides, workers) => {
+    expect(pnpmCallsOf(["test-server", "test-other"], envOverrides).map((call) => call.replace(/^(\S+) \S+ \S+ /, "$1 "))).toEqual([
+      `${workers} -F @zks/server test`,
+      `${workers} -r --workspace-concurrency=1 --filter !@zks/server test`,
+    ]);
+  });
+
+  // The server's real demo render (demo-runner.test.ts) skips without them, so the gate would never render the demo.
+  it("installs the pinned tools before the lanes and hands them to the server suite", () => {
+    expect(pnpmCallsOf(["install", "test-server"])).toEqual([
+      "unset none none install --frozen-lockfile",
+      "unset none none -s zks setup",
+      "6 /pinned/ffmpeg /pinned/chrome-headless-shell -F @zks/server test",
+    ]);
+  });
+
+  // Sourced, $0 is the caller's shell, so a root taken from it pointed pnpm at whatever workspace enclosed the caller.
+  it("resolves the repo root from the script itself when sourced from elsewhere", () => {
+    const outcome = spawnSync("bash", ["-c", 'script=$1 && set -- && source "$script" && echo "$REPO_ROOT"', "_", SCRIPT], { encoding: "utf8", cwd: tmpdir() });
+    expect(outcome.stdout.trim()).toBe(fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, ""));
+  });
+
+  // Overlapping runs from parallel sessions pushed vitest past its 60 s worker-start timeout, so runs take turns.
+  it("waits for another ci-local run on this machine to finish before starting", () => {
+    const lockFile = join(mkdtempSync(join(tmpdir(), "zks-ci-lock-")), "ci-local.lock");
+    const holder = spawnSync("bash", ["-c", `exec 9>"${lockFile}"; flock 9; timeout 3 bash "${SCRIPT}" 2>&1; echo "status=$?"`], {
+      encoding: "utf8",
+      env: { ...process.env, ZKS_CI_LOCK: lockFile },
+    });
+    expect(holder.stdout).toContain("waiting for another ci-local run");
+    expect(holder.stdout).toContain("status=124");
   });
 
   it("rejects an unknown option", () => {

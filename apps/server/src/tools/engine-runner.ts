@@ -38,7 +38,7 @@ export function createCliEngineRunner(options: CliEngineOptions): EngineRunner {
   };
 }
 
-function buildEngineEnv(options: CliEngineOptions): Record<string, string> {
+export function buildEngineEnv(options: Pick<CliEngineOptions, "proxyOptIn" | "parentEnv">): Record<string, string> {
   const parentEnv = options.parentEnv ?? process.env;
   const localeNames = Object.keys(parentEnv).filter((name) => name.startsWith("LC_"));
   const names = [...OS_BASICS, ...localeNames, ...ENGINE_OVERRIDES, ...(options.proxyOptIn === true ? PROXY_VARS : [])];

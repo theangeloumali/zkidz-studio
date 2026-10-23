@@ -1,0 +1,148 @@
+/* Created by The Angelo Umali. */
+/* Overlay sizes are cqw of the 9:16 stage, so the sample keeps the 1080x1920 proportions at any card width. */
+.style-sample-stage {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border-radius: var(--radius-inset);
+  background:
+    radial-gradient(circle at 30% 40%, color-mix(in oklab, var(--color-video-steel) 70%, transparent), transparent 65%),
+    radial-gradient(circle at 80% 18%, color-mix(in oklab, var(--color-video-gold-rule) 35%, transparent), transparent 50%), var(--color-video-ink);
+  container-type: inline-size;
+}
+
+.style-sample-hook {
+  position: absolute;
+  inset: 16% 8% auto;
+  display: grid;
+  justify-items: start;
+  gap: 1.5cqw;
+  font-stretch: var(--font-stretch-condensed);
+  font-weight: 900;
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.style-sample-kicker {
+  padding: 0.8cqw 2.4cqw;
+  background: var(--color-video-gold);
+  color: var(--color-video-ink);
+  font-size: 4.2cqw;
+  letter-spacing: 0.04em;
+}
+
+.style-sample-line {
+  font-size: 13cqw;
+}
+
+.style-sample[data-style="loud"] .style-sample-line {
+  font-size: 19cqw;
+}
+
+.style-sample-white {
+  color: var(--color-video-paper);
+}
+
+.style-sample-gold {
+  color: var(--color-video-gold);
+}
+
+.style-sample-rule {
+  width: 34%;
+  height: 1.2cqw;
+  background: var(--color-video-gold);
+}
+
+.style-sample-caption {
+  position: absolute;
+  inset: auto 7% calc(100% * 170 / 1920);
+  padding: 1.8cqw 3cqw;
+  border-radius: 1.6cqw;
+  background: color-mix(in oklab, var(--color-video-ink) 82%, transparent);
+  color: var(--color-video-paper);
+  font-size: 5.4cqw;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.style-sample-stamp {
+  position: absolute;
+  inset: 52% auto auto 50%;
+  padding: 1cqw 4cqw;
+  border: 1.2cqw solid var(--color-video-gold);
+  color: var(--color-video-gold);
+  font-size: 16cqw;
+  font-stretch: var(--font-stretch-condensed);
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+
+.style-sample-progress {
+  position: relative;
+  height: 0.375rem;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+
+/* scaleX keeps progress on the compositor; width would relayout every frame. */
+.style-sample-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* Hidden until the cue's at, gone after its end: the later exit animation wins once it starts. */
+.style-sample[data-playing="true"] .style-sample-cue {
+  animation:
+    style-sample-title var(--dur-2) var(--ease-out) var(--cue-at) both,
+    style-sample-out var(--dur-1) ease-in var(--cue-end) forwards;
+}
+
+.style-sample[data-playing="true"] .style-sample-fill {
+  animation: style-sample-progress 5s linear both;
+}
+
+.style-sample[data-playing="done"] .style-sample-fill {
+  transform: scaleX(1);
+}
+
+/* The translate property, not transform, so the stamp keeps its own rotation while it enters. */
+@keyframes style-sample-title {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes style-sample-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes style-sample-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes style-sample-progress {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Reduced motion keeps the timing and progress but drops the title's travel. */
+@media (prefers-reduced-motion: reduce) {
+  .style-sample[data-playing="true"] .style-sample-cue {
+    animation-name: style-sample-fade, style-sample-out;
+  }
+}

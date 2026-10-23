@@ -12,7 +12,7 @@ export interface AddMediaResult {
   readonly addedCount: number;
 }
 
-function titleFrom(fileName: string): string {
+export function titleFrom(fileName: string): string {
   const base = fileName.replace(/\.[^.]+$/, "").trim();
   return base === "" ? fileName : base;
 }

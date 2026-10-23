@@ -10,6 +10,7 @@ import { projectDir } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
 import { HttpError } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
+import type { SessionSetup } from "../rules/session-setup.ts";
 import { assertNever } from "./assert-never.ts";
 import type { DecisionBroker, DecisionRequest } from "./decisions.ts";
 import type { QueryFunction } from "./query-function.ts";
@@ -34,6 +35,8 @@ export interface AgentManagerDeps {
   readonly query: QueryFunction;
   readonly broker: DecisionBroker;
   readonly limits: SessionLimits;
+  /** Per-project limits and the rules block, read at every start so a new rule reaches the next session. */
+  readonly loadSessionSetup?: (project: ProjectRow) => Promise<SessionSetup>;
   /** null on the `-p` path, whose child reaches the studio tools through the HTTP twin instead. */
   readonly studioMcpServer: ((project: ProjectRow) => McpServerConfig) | null;
   readonly cancelProjectJobs: (projectId: string) => Promise<void>;
@@ -165,16 +168,26 @@ export class AgentManager {
     const { database, secretStore, studioHome } = this.#deps;
     const credential = await loadAgentCredential(database, secretStore);
     if (credential === null) throw new HttpError(409, "Connect Claude before sending a prompt");
-    const [settings, resume] = await Promise.all([readSettings(database), request.resume ?? findResumeSessionId(database, project.id, SDK_AUTH_MODES)]);
+    const [settings, resume, setup] = await Promise.all([
+      readSettings(database),
+      request.resume ?? findResumeSessionId(database, project.id, SDK_AUTH_MODES),
+      this.#deps.loadSessionSetup?.(project),
+    ]);
     await ensureAgentConfigDir(agentConfigDir(studioHome));
     const recorder = new SessionRecorder({ database, projectId: project.id, credential });
     const env = buildAgentEnv(credential, { studioHome, appVersion: this.#deps.appVersion, proxyOptIn: settings.proxyOptIn });
-    const options = this.#sessionOptions({ project, credential, env, recorder });
+    const options = this.#sessionOptions({ project, credential, env, recorder, setup });
     const session = createAgentSession({ ...options, ...(resume === undefined ? {} : { resume }) });
     return { project, session, recorder, attempt: request.attempt };
   }
 
-  #sessionOptions(start: { project: ProjectRow; credential: AgentCredential; env: Record<string, string>; recorder: SessionRecorder }): AgentSessionOptions {
+  #sessionOptions(start: {
+    project: ProjectRow;
+    credential: AgentCredential;
+    env: Record<string, string>;
+    recorder: SessionRecorder;
+    setup: SessionSetup | undefined;
+  }): AgentSessionOptions {
     const { project, credential } = start;
     const deps = this.#deps;
     return {
@@ -187,8 +200,9 @@ export class AgentManager {
         credential,
         env: start.env,
         broker: deps.broker,
-        limits: deps.limits,
+        limits: { ...deps.limits, ...start.setup?.limits },
         studioMcpServer: deps.studioMcpServer?.(project) ?? null,
+        ...(start.setup === undefined ? {} : { systemPromptAppend: start.setup.systemPromptAppend }),
       }),
       publish: deps.broker.publish,
       broker: deps.broker,

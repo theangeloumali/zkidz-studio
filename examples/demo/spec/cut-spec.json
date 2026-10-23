@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "sourceAssetId": "0d3f6c1e-5b7a-4c2e-9f10-2a6b8c4d5e01",
+  "durationS": 6,
+  "fps": { "num": 30000, "den": 1001 },
+  "removals": [{ "at": 2.7, "end": 3.3, "reason": "pause between the two lines", "pin": true }]
+}

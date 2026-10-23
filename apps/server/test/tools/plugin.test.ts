@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
-const BUNDLED_SKILLS = ["cut-spec", "edit-director"];
+const BUNDLED_SKILLS = ["cut-spec", "edit-director", "style-rules"];
 
 describe("studio plugin", () => {
   it("declares no hooks and no MCP servers", async () => {

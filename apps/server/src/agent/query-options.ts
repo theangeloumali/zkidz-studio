@@ -26,6 +26,13 @@ export interface QueryOptionsInput {
   readonly broker: DecisionBroker;
   readonly limits: SessionLimits;
   readonly studioMcpServer: McpServerConfig | null;
+  /** The user's rules block; "" when they have none, undefined to leave the SDK default prompt. */
+  readonly systemPromptAppend?: string;
+}
+
+/** snapshot: false, because sessions resume and a recorded prompt would hide a rule saved since. */
+function rulesSystemPrompt(append: string): Options["systemPrompt"] {
+  return { type: "preset", preset: "claude_code", ...(append === "" ? {} : { append }), snapshot: false };
 }
 
 export function buildQueryOptions(input: QueryOptionsInput): Options {
@@ -47,5 +54,6 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     ...(input.credential.kind === "apiKey" ? { maxBudgetUsd: limits.maxBudgetUsd } : {}),
     ...(limits.model === undefined ? {} : { model: limits.model }),
     fallbackModel: FALLBACK_MODELS,
+    ...(input.systemPromptAppend === undefined ? {} : { systemPrompt: rulesSystemPrompt(input.systemPromptAppend) }),
   };
 }

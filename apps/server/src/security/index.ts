@@ -6,7 +6,7 @@ import { confinePath, openConfined, type ConfinedFile } from "./confine-path.ts"
 import { assertLoopbackHost, CONTAINER_MARKER_PATHS, hasContainerMarker } from "./loopback-bind.ts";
 import { createRequestGuard } from "./request-guards.ts";
 
-export { PathEscapeError, type ConfinedFile, type PathEscapeReason } from "./confine-path.ts";
+export { PathEscapeError, type PathEscapeReason } from "./confine-path.ts";
 export { NonLoopbackBindError } from "./loopback-bind.ts";
 
 export interface SecurityConfig {

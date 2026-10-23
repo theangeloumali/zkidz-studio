@@ -13,8 +13,7 @@
   },
   "dependencies": {
     "@puppeteer/browsers": "3.2.4",
-    "@zks/shared": "workspace:*",
-    "zod": "^4.6.7"
+    "@zks/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

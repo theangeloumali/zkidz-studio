@@ -16,6 +16,8 @@ import { FrameRateSchema, IdSchema, IsoTimestampSchema, JobPercentSchema, VideoI
 
 /** Rules panel cap (plan §6.9). */
 export const RULE_TEXT_MAX_CHARS = 500;
+/** A title comes from a dropped file name, and file names stop at 255 on every desktop filesystem. */
+export const PROJECT_TITLE_MAX_CHARS = 255;
 
 export const ProjectSchema = z.strictObject({
   id: IdSchema,

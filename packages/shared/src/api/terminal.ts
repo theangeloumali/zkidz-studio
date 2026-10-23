@@ -1,10 +1,13 @@
 // Created by The Angelo Umali.
 // Mode T wiring (plan §6.3): the PTY WebSocket ticket and the HTTP hooks bridge.
 import { z } from "zod";
-import { IsoTimestampSchema } from "../primitives.ts";
+import { IdSchema, IsoTimestampSchema } from "../primitives.ts";
 
 /** A ticket comes from a CSRF-checked POST, works once and expires after this. */
 export const TERMINAL_TICKET_TTL_S = 30;
+
+/** The open (or reattached) PTY; its id is also the hooks bridge and MCP twin path segment. */
+export const OpenTerminalResponseSchema = z.strictObject({ sessionId: IdSchema });
 
 export const TerminalTicketSchema = z.strictObject({ ticket: z.string().min(32), expiresAt: IsoTimestampSchema });
 export const TerminalSocketQuerySchema = z.strictObject({ ticket: z.string().min(32) });

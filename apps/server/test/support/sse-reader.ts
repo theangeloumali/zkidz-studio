@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // Reads SSE frames off a streamed Response; the server's `retry:` frame marks the subscription as live.
-export interface SseFrame {
+interface SseFrame {
   readonly id: string | undefined;
   readonly data: unknown;
 }

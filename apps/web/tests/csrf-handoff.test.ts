@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { CSRF_HEADER } from "@zks/shared";
+import { API_ROUTES, CSRF_HEADER } from "@zks/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeUploadRequest, PROJECT_ID, makeAsset, makeProject } from "./fakes.ts";
 
@@ -25,7 +25,9 @@ async function loadApi() {
   vi.resetModules();
   const client = await import("../src/api/client.ts");
   const upload = await import("../src/api/upload.ts");
-  return { ...client, ...upload };
+  const createProject = (title: string) =>
+    client.requestJson(API_ROUTES.createProject.response, API_ROUTES.createProject.path, { method: "POST", body: { title } });
+  return { ...client, ...upload, createProject };
 }
 
 describe("CSRF token handoff", () => {

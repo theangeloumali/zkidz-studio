@@ -78,17 +78,13 @@ export function fetchProject(projectId: string) {
   return requestJson(API_ROUTES.getProject.response, routeUrl(API_ROUTES.getProject.path, { projectId }));
 }
 
-export function createProject(title: string) {
-  return requestJson(API_ROUTES.createProject.response, API_ROUTES.createProject.path, { method: "POST", body: { title } });
-}
-
 export async function fetchMedia(projectId: string) {
   const { assets } = await requestJson(API_ROUTES.listMedia.response, routeUrl(API_ROUTES.listMedia.path, { projectId }));
   return assets;
 }
 
-export function registerInPlace(projectId: string, path: string) {
-  return requestJson(API_ROUTES.registerInPlace.response, routeUrl(API_ROUTES.registerInPlace.path, { projectId }), { method: "POST", body: { path } });
+export function createProjectInPlace(path: string, title: string) {
+  return requestJson(API_ROUTES.createProjectInPlace.response, API_ROUTES.createProjectInPlace.path, { method: "POST", body: { path, title } });
 }
 
 export function listFolder(path: string | undefined) {

@@ -2,6 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileVideo } from "lucide-react";
 import { useParams } from "react-router";
+import { ProjectAgent } from "../agent/project-agent.tsx";
 import { mediaQuery, projectQuery } from "../api/queries.ts";
 import { useProjectEvents } from "../events/use-project-events.ts";
 import { useEventsStore } from "../events/store.ts";
@@ -57,6 +58,12 @@ export function EditorRoute() {
             ))}
           </ul>
         )}
+      </section>
+      <section aria-labelledby="agent-title" className="flex flex-col gap-4">
+        <h2 id="agent-title" className="text-ui-lg font-semibold">
+          Agent
+        </h2>
+        <ProjectAgent projectId={projectId} />
       </section>
     </div>
   );

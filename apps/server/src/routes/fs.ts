@@ -8,7 +8,7 @@ import type { Hono } from "hono";
 import { checkUserPath, isWithinDir } from "../fs/path-policy.ts";
 import { HttpError, parseOrBadRequest } from "../http/http-error.ts";
 import { assertLoopbackPeer } from "../http/loopback-peer.ts";
-import { resolveExistingPath } from "./media.ts";
+import { resolveExistingPath } from "./media-in-place.ts";
 
 type FolderEntry = { name: string; isDirectory: boolean; bytes?: number };
 

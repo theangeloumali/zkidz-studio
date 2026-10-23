@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { stat } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ProjectSchema } from "@zks/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -32,6 +32,17 @@ describe("projects", () => {
     const first = await createProject("Same Title");
     const second = await createProject("Same Title");
     expect([first.slug, second.slug]).toEqual(["same-title", "same-title-2"]);
+  });
+
+  it("never adopts a leftover folder: parallel creates of its title take fresh slugs and its files survive", async () => {
+    const leftoverRaw = join(projectDir(server.studioHome, "leftover-title"), "media", "raw");
+    await mkdir(leftoverRaw, { recursive: true });
+    await writeFile(join(leftoverRaw, "precious.mp4"), "footage from before a database reset");
+
+    const created = await Promise.all([createProject("Leftover Title"), createProject("Leftover Title")]);
+
+    expect(created.map((project) => project.slug).sort()).toEqual(["leftover-title-2", "leftover-title-3"]);
+    expect(await readFile(join(leftoverRaw, "precious.mp4"), "utf8")).toBe("footage from before a database reset");
   });
 
   it("falls back to a generic slug when the title has no usable characters", async () => {

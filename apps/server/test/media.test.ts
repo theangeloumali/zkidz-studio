@@ -1,11 +1,11 @@
 // Created by The Angelo Umali.
-import { mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { MediaAssetSchema, UPLOAD_FILENAME_HEADER } from "@zks/shared";
+import { API_ROUTES, MediaAssetSchema, UPLOAD_FILENAME_HEADER } from "@zks/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { projectDir } from "../src/config.ts";
 import { DEFAULT_UPLOAD_LIMITS } from "../src/media-io/store.ts";
-import { hasFfmpeg, makeMediaFixtures, type MediaFixtures } from "./support/media-fixtures.ts";
+import { chunkedBody, hasFfmpeg, makeMediaFixtures, type MediaFixtures } from "./support/media-fixtures.ts";
 import { connectionFrom, createTestServer, getRequest, insertProject, postJson, TEST_HOST, type TestServer } from "./support/test-server.ts";
 
 const ffmpegAvailable = await hasFfmpeg();
@@ -26,19 +26,6 @@ afterAll(async () => {
 function upload(projectId: string, body: NonNullable<RequestInit["body"]>, displayName = "My Clip.mp4", extraHeaders: Record<string, string> = {}) {
   const headers = { host: TEST_HOST, "content-type": "application/octet-stream", [UPLOAD_FILENAME_HEADER]: encodeURIComponent(displayName), ...extraHeaders };
   return server.app.request(`/api/projects/${projectId}/media`, { method: "POST", headers, body, duplex: "half" }, connectionFrom("127.0.0.1"));
-}
-
-/** A body with no Content-Length, so only the streaming cap can stop it. */
-function chunkedBody(totalBytes: number): ReadableStream<Uint8Array> {
-  let sentBytes = 0;
-  return new ReadableStream({
-    pull(controller) {
-      if (sentBytes >= totalBytes) return controller.close();
-      const chunk = new Uint8Array(Math.min(8192, totalBytes - sentBytes));
-      sentBytes += chunk.length;
-      controller.enqueue(chunk);
-    },
-  });
 }
 
 async function rawMediaFiles(slug: string): Promise<string[]> {
@@ -74,7 +61,7 @@ describe.skipIf(!ffmpegAvailable)("POST /api/projects/:projectId/media", () => {
 
   it("stops a chunked body at the file cap and deletes the partial file", async () => {
     const project = await insertProject(server);
-    const response = await upload(project.id, chunkedBody(SMALL_FILE_CAP * 2));
+    const response = await upload(project.id, chunkedBody(new Uint8Array(SMALL_FILE_CAP * 2)));
     expect(response.status).toBe(413);
     expect(await rawMediaFiles(project.slug)).toEqual([]);
   });
@@ -101,37 +88,6 @@ describe.skipIf(!ffmpegAvailable)("POST /api/projects/:projectId/media", () => {
       connectionFrom("127.0.0.1"),
     );
     expect(response.status).toBe(400);
-  });
-});
-
-describe.skipIf(!ffmpegAvailable)("POST /api/projects/:projectId/media/in-place", () => {
-  it("registers a single file by its realpath without copying it", async () => {
-    const project = await insertProject(server);
-    const response = await postJson(server, `/api/projects/${project.id}/media/in-place`, { path: fixtures.clipMp4 });
-    expect(response.status).toBe(201);
-    const asset = MediaAssetSchema.parse(await response.json());
-    expect(asset).toMatchObject({ isInPlace: true, name: "clip.mp4", kind: "camera", bytes: (await stat(fixtures.clipMp4)).size });
-    expect(await rawMediaFiles(project.slug)).toEqual([]);
-  });
-
-  it.each([
-    ["a relative path", "clips/a.mp4", 400],
-    ["a traversal", "/tmp/../etc/passwd", 400],
-    ["a UNC share", "\\\\server\\share\\a.mp4", 400],
-    ["a missing file", "/definitely/not/here.mp4", 404],
-  ])("rejects %s", async (_label, candidatePath, expectedStatus) => {
-    const project = await insertProject(server);
-    expect((await postJson(server, `/api/projects/${project.id}/media/in-place`, { path: candidatePath })).status).toBe(expectedStatus);
-  });
-
-  it("rejects a directory, anything inside ZKS_HOME and a playlist", async () => {
-    const project = await insertProject(server);
-    const insideHome = join(server.studioHome, "inside.mp4");
-    await writeFile(insideHome, await readFile(fixtures.clipMp4));
-    const route = `/api/projects/${project.id}/media/in-place`;
-    expect((await postJson(server, route, { path: fixtures.dir })).status).toBe(400);
-    expect((await postJson(server, route, { path: insideHome })).status).toBe(400);
-    expect((await postJson(server, route, { path: fixtures.playlistAsMp4 })).status).toBe(415);
   });
 });
 
@@ -168,10 +124,10 @@ describe.skipIf(!ffmpegAvailable)("GET /api/media/:assetId", () => {
   });
 
   it("stops serving an in-place file once its path no longer resolves to the registered realpath", async () => {
-    const project = await insertProject(server);
     const original = join(fixtures.dir, "in-place-original.mp4");
     await writeFile(original, await readFile(fixtures.clipMp4));
-    const asset = MediaAssetSchema.parse(await (await postJson(server, `/api/projects/${project.id}/media/in-place`, { path: original })).json());
+    const created = await postJson(server, API_ROUTES.createProjectInPlace.path, { title: "Moved", path: original });
+    const { asset } = API_ROUTES.createProjectInPlace.response.parse(await created.json());
     expect((await getRequest(server, `/api/media/${asset.id}`)).status).toBe(200);
 
     await rm(original);

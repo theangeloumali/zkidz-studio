@@ -89,6 +89,7 @@ describe("findAttributionProblems", () => {
 
   it("exempts JSON, lockfiles, licence texts and binaries", () => {
     writeRepoFile("package.json", "{}\n");
+    writeRepoFile("fixtures/session.ndjson", '{"type":"result"}\n');
     writeRepoFile("pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
     writeRepoFile("LICENSE", "Apache License\n");
     writeRepoFile("fonts/OFL-Archivo.txt", "Copyright\n");

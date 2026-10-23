@@ -5,7 +5,6 @@ import { z } from "zod";
 export const CANVAS = { width: 1080, height: 1920 } as const;
 
 export const IdSchema = z.uuid();
-export const AssetIdSchema = IdSchema;
 export const IsoTimestampSchema = z.iso.datetime({ offset: true });
 
 /** Engine video id: `v1` for the full edit, `v1r` for its Reels cut. */

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-export interface CommandOutput {
+interface CommandOutput {
   code: number | null;
   stdout: string;
   stderr: string;

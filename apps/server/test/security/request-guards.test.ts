@@ -2,6 +2,7 @@
 import { API_ROUTES, CSRF_HEADER, isStateChangingMethod } from "@zks/shared";
 import { describe, expect, it } from "vitest";
 import { buildGuardedApp, sendRequest, TEST_APP_HOST, TEST_APP_PORT, TEST_PREVIEW_PORT, validWriteHeaders, type HeaderOverrides } from "./test-app.ts";
+import { STUDIO_MCP_ROUTES } from "../../src/tools/mcp-paths.ts";
 
 describe("Host allowlist (DNS rebinding)", () => {
   it.each([TEST_APP_HOST, `localhost:${TEST_APP_PORT}`, `[::1]:${TEST_APP_PORT}`, `LOCALHOST:${TEST_APP_PORT}`])("accepts %s", async (host) => {
@@ -80,6 +81,7 @@ describe("Origin + CSRF header on state-changing methods", () => {
     const { app, csrfToken } = buildGuardedApp();
     const headers = { ...validWriteHeaders(csrfToken), "content-type": "application/octet-stream" };
     expect((await sendRequest(app, "/api/projects/p1/media", { method: "POST", headers, body: "bytes" })).status).toBe(200);
+    expect((await sendRequest(app, API_ROUTES.createProjectWithMedia.path, { method: "POST", headers, body: "bytes" })).status).toBe(200);
     expect((await sendRequest(app, "/api/projects/p1/media/extra", { method: "POST", headers, body: "bytes" })).status).toBe(403);
     expect((await sendRequest(app, "/api/rules", { method: "POST", headers, body: "bytes" })).status).toBe(403);
   });
@@ -110,6 +112,7 @@ describe("Origin + CSRF header on state-changing methods", () => {
     const { app, csrfToken } = buildGuardedApp();
     const headers = { ...validWriteHeaders(csrfToken), "content-type": "application/octet-stream", ...overrides };
     expect((await sendRequest(app, "/api/projects/p1/media", { method: "POST", headers, body: "bytes" })).status).toBe(403);
+    expect((await sendRequest(app, API_ROUTES.createProjectWithMedia.path, { method: "POST", headers, body: "bytes" })).status).toBe(403);
   });
 
   it("gives each launch its own token", () => {
@@ -120,5 +123,71 @@ describe("Origin + CSRF header on state-changing methods", () => {
     const { app, csrfToken } = buildGuardedApp();
     const response = await sendRequest(app, "/api/connect", { headers: { "sec-fetch-site": "same-origin" } });
     expect(response.headers.get(CSRF_HEADER)).toBe(csrfToken);
+  });
+});
+
+describe("bearer carve-out for the hooks bridge and the MCP twin (plan §11)", () => {
+  const SESSION_ID = "0b6f3c1e-8a2d-4c5b-9e7f-1a2b3c4d5e6f";
+  const atSession = (path: string) => path.replace(":sessionId", SESSION_ID);
+  // app.test.ts checks the mounted routes stay behind the same carve-out.
+  const BEARER_ROUTES = [
+    ["POST", atSession(API_ROUTES.terminalHooks.path)],
+    ["GET", atSession(STUDIO_MCP_ROUTES.listTools)],
+    ["POST", atSession(STUDIO_MCP_ROUTES.callTool)],
+  ] as const;
+  // What the hook relay and bin/zks-mcp.mjs send: no Origin, no CSRF header, no fetch metadata.
+  const machineHeaders = (method: string): HeaderOverrides => ({
+    authorization: "Bearer session-token",
+    ...(method === "POST" ? { "content-type": "application/json" } : {}),
+  });
+
+  it.each(BEARER_ROUTES)("lets a bearer %s %s through without Origin or CSRF", async (method, path) => {
+    const { app } = buildGuardedApp();
+    expect((await sendRequest(app, path, { method, headers: machineHeaders(method), body: method === "POST" ? "{}" : undefined })).status).toBe(200);
+  });
+
+  it.each(BEARER_ROUTES)("answers 401 to a tokenless %s %s", async (method, path) => {
+    const { app } = buildGuardedApp();
+    const headers = { ...machineHeaders(method), authorization: undefined };
+    const response = await sendRequest(app, path, { method, headers, body: method === "POST" ? "{}" : undefined });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  it.each(BEARER_ROUTES)("still rejects a foreign Origin on %s %s with a token", async (method, path) => {
+    const { app } = buildGuardedApp();
+    const headers = { ...machineHeaders(method), origin: "https://evil.example" };
+    expect((await sendRequest(app, path, { method, headers, body: method === "POST" ? "{}" : undefined })).status).toBe(403);
+  });
+
+  it.each(BEARER_ROUTES)("keeps the Host allowlist and Sec-Fetch-Site on %s %s", async (method, path) => {
+    const { app } = buildGuardedApp();
+    const body = method === "POST" ? "{}" : undefined;
+    expect((await sendRequest(app, path, { method, headers: { ...machineHeaders(method), host: "evil.example:4317" }, body })).status).toBe(403);
+    expect((await sendRequest(app, path, { method, headers: { ...machineHeaders(method), "sec-fetch-site": "cross-site" }, body })).status).toBe(403);
+  });
+
+  it("still requires a JSON body on a bearer write", async () => {
+    const { app } = buildGuardedApp();
+    const headers = { ...machineHeaders("POST"), "content-type": "text/plain" };
+    expect((await sendRequest(app, atSession(API_ROUTES.terminalHooks.path), { method: "POST", headers, body: "{}" })).status).toBe(403);
+  });
+
+  it.each([
+    ["the ticket route", "POST", atSession(API_ROUTES.terminalTicket.path)],
+    ["a path below hooks", "POST", `${atSession(API_ROUTES.terminalHooks.path)}/x`],
+    ["a non-UUID session id", "POST", "/api/terminal/p1/hooks"],
+    ["an uppercase session id", "POST", `/api/terminal/${SESSION_ID.toUpperCase()}/hooks`],
+    ["a GET on the call route", "GET", atSession(STUDIO_MCP_ROUTES.callTool)],
+  ])("does not extend the carve-out to %s", async (_label, method, path) => {
+    const { app } = buildGuardedApp();
+    const response = await sendRequest(app, path, { method, headers: machineHeaders("POST"), body: method === "POST" ? "{}" : undefined });
+    // Browser rules apply: a tokenless-looking write is refused for Origin, and a read passes to the route.
+    expect(response.status).toBe(method === "POST" ? 403 : 200);
+  });
+
+  it("treats a GET on the hooks path as an ordinary read, not a bearer route", async () => {
+    const { app } = buildGuardedApp();
+    expect((await sendRequest(app, atSession(API_ROUTES.terminalHooks.path))).status).toBe(200);
   });
 });

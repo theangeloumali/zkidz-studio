@@ -54,6 +54,8 @@ const LINE_BY_FILENAME = {
 // JSON, lockfiles, licence texts and binaries cannot or need not hold the line (D11).
 const EXEMPT_EXTENSIONS = new Set([
   ".json",
+  // Every NDJSON line must parse as JSON, so a comment line would break the transcript.
+  ".ndjson",
   ".lock",
   ".txt",
   ".png",

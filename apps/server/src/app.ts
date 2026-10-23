@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
+import type { AgentServices } from "./agent-services.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { notFound, toHttpError } from "./http/http-error.ts";
 import type { Logger } from "./logging/logger.ts";
@@ -26,6 +27,8 @@ export interface AppDependencies {
   readonly uploadLimits: UploadLimits;
   readonly webDistDir: string;
   readonly logger: Logger;
+  /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
+  readonly agent?: Pick<AgentServices, "registerRoutes">;
 }
 
 export function createApp(deps: AppDependencies): Hono {
@@ -38,6 +41,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerFsRoutes(app, deps);
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus);
+  deps.agent?.registerRoutes(app);
   app.all("/api/*", () => {
     throw notFound();
   });

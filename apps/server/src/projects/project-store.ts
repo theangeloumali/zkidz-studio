@@ -1,9 +1,9 @@
 // Created by The Angelo Umali.
-import type { StudioDatabase } from "@zks/db";
+import { hasErrorCode, type StudioDatabase } from "@zks/db";
 import { projects } from "@zks/db/schema";
 import { IdSchema } from "@zks/shared";
 import { eq } from "drizzle-orm";
-import { ensureProjectDirs } from "../config.ts";
+import { createProjectDirs } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
 import { HttpError, notFound } from "../http/http-error.ts";
 
@@ -20,7 +20,7 @@ export async function findProjectOrThrow(database: StudioDatabase, rawProjectId:
   return project;
 }
 
-export function slugifyTitle(title: string): string {
+function slugifyTitle(title: string): string {
   const slug = title
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
@@ -31,7 +31,10 @@ export function slugifyTitle(title: string): string {
   return slug === "" ? FALLBACK_SLUG : slug;
 }
 
-/** The slug names the project's folder, so the row and the folders exist together or not at all. */
+/**
+ * The slug names the project's folder, so the row and the folders exist together or not at all. A folder left over
+ * under that slug is skipped like a taken row, so the returned project's folder is always this call's own.
+ */
 export async function createProject(database: StudioDatabase, studioHome: string, title: string): Promise<ProjectRow> {
   const baseSlug = slugifyTitle(title);
   for (let attempt = 1; attempt <= MAX_SLUG_ATTEMPTS; attempt += 1) {
@@ -39,12 +42,13 @@ export async function createProject(database: StudioDatabase, studioHome: string
     const [project] = await database.insert(projects).values({ slug, title }).onConflictDoNothing({ target: projects.slug }).returning();
     if (project === undefined) continue;
     try {
-      await ensureProjectDirs(studioHome, slug);
+      await createProjectDirs(studioHome, slug);
+      return project;
     } catch (error) {
       await database.delete(projects).where(eq(projects.id, project.id));
+      if (hasErrorCode(error, "EEXIST")) continue;
       throw error;
     }
-    return project;
   }
   throw new HttpError(409, "Too many projects share this title");
 }

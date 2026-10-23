@@ -8,6 +8,7 @@ import {
   DoctorCheckSchema,
   JobSchema,
   MediaAssetSchema,
+  PROJECT_TITLE_MAX_CHARS,
   ProjectSchema,
   RULE_TEXT_MAX_CHARS,
   RuleSchema,
@@ -17,11 +18,13 @@ import {
   SpecVersionSchema,
 } from "./dto.ts";
 import { EventsQuerySchema } from "./sse.ts";
-import { HookPayloadSchema, HookResponseSchema, TerminalSocketQuerySchema, TerminalTicketSchema } from "./terminal.ts";
+import { HookPayloadSchema, HookResponseSchema, OpenTerminalResponseSchema, TerminalSocketQuerySchema, TerminalTicketSchema } from "./terminal.ts";
 
 export const CSRF_HEADER = "x-zks-csrf";
 /** The original filename travels as display text only (plan §9.4). */
 export const UPLOAD_FILENAME_HEADER = "x-zks-filename";
+/** encodeURIComponent'd title for createProjectWithMedia; the body is the clip, so the title rides in a header. */
+export const PROJECT_TITLE_HEADER = "x-zks-project-title";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -48,12 +51,14 @@ export const DecisionRequestSchema = z.discriminatedUnion("kind", [
 ]);
 
 const RuleTextSchema = z.string().trim().min(1).max(RULE_TEXT_MAX_CHARS);
+export const ProjectTitleSchema = z.string().trim().min(1).max(PROJECT_TITLE_MAX_CHARS);
+const ProjectWithAssetSchema = z.strictObject({ project: ProjectSchema, asset: MediaAssetSchema });
 
 export const API_ROUTES = {
   events: { method: "GET", path: "/api/events", query: EventsQuerySchema, response: "sse" },
 
   listProjects: { method: "GET", path: "/api/projects", response: z.strictObject({ projects: z.array(ProjectSchema) }) },
-  createProject: { method: "POST", path: "/api/projects", body: z.strictObject({ title: z.string().trim().min(1) }), response: ProjectSchema },
+  createProject: { method: "POST", path: "/api/projects", body: z.strictObject({ title: ProjectTitleSchema }), response: ProjectSchema },
   getProject: { method: "GET", path: "/api/projects/:projectId", response: ProjectSchema },
   submitPrompt: { method: "POST", path: "/api/projects/:projectId/prompt", body: z.strictObject({ text: z.string().trim().min(1) }), response: OkSchema },
   decide: { method: "POST", path: "/api/projects/:projectId/decisions", body: DecisionRequestSchema, response: OkSchema },
@@ -62,11 +67,14 @@ export const API_ROUTES = {
 
   listMedia: { method: "GET", path: "/api/projects/:projectId/media", response: z.strictObject({ assets: z.array(MediaAssetSchema) }) },
   uploadMedia: { method: "POST", path: "/api/projects/:projectId/media", body: "binary", response: MediaAssetSchema },
-  registerInPlace: {
+  /** uploadMedia plus PROJECT_TITLE_HEADER: the project exists only if the clip is accepted. */
+  createProjectWithMedia: { method: "POST", path: "/api/projects/media", body: "binary", response: ProjectWithAssetSchema },
+  /** A file used where it lies, never copied: the project exists only if the file is accepted. */
+  createProjectInPlace: {
     method: "POST",
-    path: "/api/projects/:projectId/media/in-place",
-    body: z.strictObject({ path: z.string().min(1) }),
-    response: MediaAssetSchema,
+    path: "/api/projects/in-place",
+    body: z.strictObject({ path: z.string().min(1), title: ProjectTitleSchema }),
+    response: ProjectWithAssetSchema,
   },
   listFolder: {
     method: "GET",
@@ -121,6 +129,7 @@ export const API_ROUTES = {
   getSettings: { method: "GET", path: "/api/settings", response: SettingsSchema },
   updateSettings: { method: "PUT", path: "/api/settings", body: SettingsUpdateSchema, response: SettingsSchema },
 
+  openTerminal: { method: "POST", path: "/api/projects/:projectId/terminal", body: null, response: OpenTerminalResponseSchema },
   terminalTicket: { method: "POST", path: "/api/terminal/:sessionId/ticket", body: null, response: TerminalTicketSchema },
   terminalSocket: { method: "GET", path: "/api/terminal/:sessionId/ws", query: TerminalSocketQuerySchema, response: "websocket" },
   /** Called by the PTY's Claude Code with `Authorization: Bearer $ZKS_HOOK_TOKEN`, not by the browser. */

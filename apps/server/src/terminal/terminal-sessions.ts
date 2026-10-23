@@ -1,0 +1,149 @@
+// Created by The Angelo Umali.
+// Mode T session registry (plan §6.3): hooks → policy + events, Esc to stop, Kill to close.
+import type { HookPayload, HookResponse } from "@zks/shared";
+import type { NewStudioEvent } from "../events/event-bus.ts";
+import { hookToStudioEvents } from "./hook-events.ts";
+import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
+import { encodePrompt } from "./prompt-input.ts";
+import { removeSessionFiles } from "./session-files.ts";
+import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
+
+export type { TerminalSession, TerminalSessionsDeps } from "./session-launch.ts";
+
+/** Spike 07: SessionStart lands about 3 s after spawn; past this the user is likely signing in. */
+const SESSION_START_TIMEOUT_MS = 30_000;
+
+export interface TerminalSessions {
+  open(request: OpenTerminalRequest): Promise<TerminalSession>;
+  find(sessionId: string): TerminalSession | undefined;
+  findByProject(projectId: string): TerminalSession | undefined;
+  isHookAuthorized(sessionId: string, presentedToken: string | undefined): boolean;
+  /** The stdio twin refuses every call until SessionStart arrives (plan §6.3). */
+  isMcpCallAllowed(sessionId: string, presentedToken: string | undefined): boolean;
+  handleHook(sessionId: string, payload: HookPayload): Promise<HookResponse>;
+  submitPrompt(projectId: string, text: string): boolean;
+  stop(projectId: string): boolean;
+  kill(projectId: string): boolean;
+  killAll(): void;
+}
+
+type PreToolUsePayload = Extract<HookPayload, { hook_event_name: "PreToolUse" }>;
+
+export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
+  const records = new Map<string, SessionRecord>();
+  const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId);
+
+  const publishAll = async (newEvents: readonly NewStudioEvent[]) => {
+    for (const newEvent of newEvents) await deps.eventBus.publish(newEvent);
+  };
+  const publishInBackground = (newEvents: readonly NewStudioEvent[]) => {
+    publishAll(newEvents).catch((error: unknown) => deps.logger.error("terminal event publish failed", { error }));
+  };
+
+  const watchLifecycle = (record: SessionRecord) => {
+    const { projectId } = record;
+    record.sessionStartTimer = setTimeout(() => {
+      if (!record.hasStarted) publishInBackground([{ type: "terminal.state", projectId, state: "waiting" }]);
+    }, deps.sessionStartTimeoutMs ?? SESSION_START_TIMEOUT_MS);
+    record.sessionStartTimer.unref();
+
+    record.pty.onExit((exitCode) => {
+      clearTimeout(record.sessionStartTimer);
+      records.delete(record.sessionId);
+      const isUnexpected = !record.wasKilled && exitCode !== 0;
+      const exitEvents: NewStudioEvent[] = [{ type: "terminal.state", projectId, state: "exited", exitCode }];
+      if (isUnexpected) {
+        exitEvents.push({ type: "session.error", projectId, kind: "terminal_exited", message: `Claude Code exited with code ${exitCode}.`, action: "Restart" });
+      }
+      if (record.wasKilled || isUnexpected) {
+        deps.cancelProjectJobs(projectId).catch((error: unknown) => deps.logger.error("terminal job cancel failed", { projectId, error }));
+      }
+      removeSessionFiles(record.files)
+        .catch((error: unknown) => deps.logger.warn("terminal session files not removed", { error }))
+        .finally(() => publishInBackground(exitEvents));
+    });
+  };
+
+  const killRecord = (record: SessionRecord) => {
+    record.wasKilled = true;
+    record.pty.kill();
+  };
+
+  const eventContext = (record: SessionRecord, payload: HookPayload) => ({
+    projectId: record.projectId,
+    model: record.model,
+    isCatalogTool: "tool_name" in payload && typeof payload.tool_name === "string" && deps.studioToolNames.includes(payload.tool_name),
+  });
+
+  // Always an explicit answer: Claude Code blocks the tool only when the bridge is unreachable (spike 07), not on a 500.
+  const answerPreToolUse = async (record: SessionRecord, payload: PreToolUsePayload): Promise<HookResponse> => {
+    const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
+    const decision = await decideTerminalTool(payload.tool_name, payload.tool_input, scope).catch((error: unknown): TerminalToolDecision => {
+      deps.logger.error("terminal tool policy failed", { error });
+      return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
+    });
+    try {
+      await publishAll(hookToStudioEvents(payload, { ...eventContext(record, payload), decision }));
+    } catch (error) {
+      deps.logger.error("terminal tool event not published", { error });
+    }
+    return preToolUseAnswer(decision);
+  };
+
+  const withProjectRecord = (projectId: string, act: (record: SessionRecord) => void): boolean => {
+    const record = findRecordByProject(projectId);
+    if (record === undefined) return false;
+    act(record);
+    return true;
+  };
+
+  return {
+    async open(request) {
+      const record = await launchSession(deps, request);
+      records.set(record.sessionId, record);
+      watchLifecycle(record);
+      await publishAll([{ type: "terminal.state", projectId: request.projectId, state: "starting" }]);
+      return record;
+    },
+    find: (sessionId) => records.get(sessionId),
+    findByProject: findRecordByProject,
+    isHookAuthorized(sessionId, presentedToken) {
+      const record = records.get(sessionId);
+      return record !== undefined && deps.tokensMatch(record.hookToken, presentedToken);
+    },
+    isMcpCallAllowed(sessionId, presentedToken) {
+      const record = records.get(sessionId);
+      return record !== undefined && record.hasStarted && deps.tokensMatch(record.mcpToken, presentedToken);
+    },
+    async handleHook(sessionId, payload) {
+      const record = records.get(sessionId);
+      // The session can end between the route's token check and here; its tools still get an explicit answer.
+      if (record === undefined) {
+        return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This Claude session has ended." }) : {};
+      }
+      if (payload.hook_event_name === "PreToolUse") return answerPreToolUse(record, payload);
+      if (payload.hook_event_name === "SessionStart") {
+        clearTimeout(record.sessionStartTimer);
+        // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run.
+        if (payload.permission_mode !== undefined && payload.permission_mode !== "default") {
+          killRecord(record);
+          return {};
+        }
+        record.hasStarted = true;
+      }
+      await publishAll(hookToStudioEvents(payload, eventContext(record, payload)));
+      return {};
+    },
+    submitPrompt: (projectId, text) => withProjectRecord(projectId, (record) => record.pty.write(encodePrompt(text))),
+    stop: (projectId) => withProjectRecord(projectId, (record) => record.pty.interrupt()),
+    kill: (projectId) => withProjectRecord(projectId, killRecord),
+    killAll() {
+      for (const record of records.values()) killRecord(record);
+    },
+  };
+}
+
+function preToolUseAnswer(decision: TerminalToolDecision): HookResponse {
+  const reason = decision.isAllowed ? {} : { permissionDecisionReason: decision.reason };
+  return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision.isAllowed ? "allow" : "deny", ...reason } };
+}

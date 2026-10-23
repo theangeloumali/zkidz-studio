@@ -28,7 +28,13 @@ export interface TestServer {
   readonly close: () => Promise<void>;
 }
 
-export async function createTestServer(overrides: Partial<AppDependencies> = {}): Promise<TestServer> {
+/** What a function override sees, so app deps such as the agent services can be built over the same database. */
+export type TestServerBase = Pick<TestServer, "eventBus" | "jobRunner" | "studioHome" | "scratchDir"> & {
+  readonly database: StudioDatabaseHandle;
+  readonly logger: AppDependencies["logger"];
+};
+
+export async function createTestServer(overrides: Partial<AppDependencies> | ((base: TestServerBase) => Partial<AppDependencies>) = {}): Promise<TestServer> {
   const scratchDir = await mkdtemp(join(tmpdir(), "zks-server-"));
   const studioHome = join(scratchDir, "home");
   await ensureStudioHome(studioHome);
@@ -38,6 +44,7 @@ export async function createTestServer(overrides: Partial<AppDependencies> = {})
   const logger = createLogger((line) => logLines.push(line));
   const eventBus = new EventBus(database.db);
   const jobRunner = new JobRunner({ database: database.db, eventBus, logger });
+  const appOverrides = typeof overrides === "function" ? overrides({ database, eventBus, jobRunner, studioHome, scratchDir, logger }) : overrides;
   const app = createApp({
     database: database.db,
     studioHome,
@@ -47,7 +54,7 @@ export async function createTestServer(overrides: Partial<AppDependencies> = {})
     uploadLimits: DEFAULT_UPLOAD_LIMITS,
     webDistDir: join(scratchDir, "web-dist"),
     logger,
-    ...overrides,
+    ...appOverrides,
   });
   return {
     app,

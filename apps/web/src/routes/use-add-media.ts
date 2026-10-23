@@ -2,9 +2,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@zks/shared";
 import { useCallback, useState } from "react";
-import { createProject, registerInPlace } from "../api/client.ts";
+import { createProjectInPlace } from "../api/client.ts";
 import { queryKeys } from "../api/queries.ts";
-import { uploadFile } from "../api/upload.ts";
+import { createProjectWithMedia, uploadFile } from "../api/upload.ts";
 import type { UploadItem, UploadState } from "../components/upload-list.tsx";
 
 export interface AddMediaResult {
@@ -34,14 +34,12 @@ export function useAddMedia() {
   }, []);
 
   const run = useCallback(
-    async (title: string, addAll: (project: Project) => Promise<number>) => {
+    async (work: () => Promise<AddMediaResult | null>) => {
       setIsBusy(true);
       setError(null);
       setResult(null);
       try {
-        const project = await createProject(title);
-        const addedCount = await addAll(project);
-        setResult({ project, addedCount });
+        setResult(await work());
       } catch (caught) {
         setError(errorText(caught));
       } finally {
@@ -54,8 +52,7 @@ export function useAddMedia() {
 
   const addFiles = useCallback(
     (files: readonly File[]) => {
-      const [first] = files;
-      if (!first) return;
+      if (files.length === 0) return;
       const items = files.map((file, index) => ({
         key: `${Date.now()}-${index}`,
         name: file.name,
@@ -63,19 +60,23 @@ export function useAddMedia() {
         state: { kind: "uploading", fraction: 0 } as const,
       }));
       setUploads(items);
-      void run(titleFrom(first.name), async (project) => {
+      void run(async () => {
+        // The project is born with its first accepted file, so an all-rejected drop creates nothing.
+        let project: Project | null = null;
         let addedCount = 0;
         for (const [index, file] of files.entries()) {
           const key = items[index]?.key ?? "";
+          const onProgress = (fraction: number) => setUploadState(key, { kind: "uploading", fraction });
           try {
-            await uploadFile({ projectId: project.id, file, onProgress: (fraction) => setUploadState(key, { kind: "uploading", fraction }) });
+            if (project) await uploadFile({ projectId: project.id, file, onProgress });
+            else project = (await createProjectWithMedia({ title: titleFrom(file.name), file, onProgress })).project;
             setUploadState(key, { kind: "done" });
             addedCount += 1;
           } catch (caught) {
             setUploadState(key, { kind: "failed", reason: errorText(caught) });
           }
         }
-        return addedCount;
+        return project ? { project, addedCount } : null;
       });
     },
     [run, setUploadState],
@@ -85,9 +86,9 @@ export function useAddMedia() {
     (path: string) => {
       setUploads([]);
       const name = path.split(/[\\/]/).pop() ?? path;
-      void run(titleFrom(name), async (project) => {
-        await registerInPlace(project.id, path);
-        return 1;
+      void run(async () => {
+        const { project } = await createProjectInPlace(path, titleFrom(name));
+        return { project, addedCount: 1 };
       });
     },
     [run],

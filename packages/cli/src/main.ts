@@ -8,7 +8,7 @@ import { createContext, resolveZksHome } from "./context.ts";
 import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
 import { runSetup } from "./setup.ts";
-import { toolExecutablePath } from "./tools.ts";
+import { pinnedToolPath } from "./tools.ts";
 
 const USAGE = "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name> | zks tools path <tool>";
 const EXIT_USAGE = 2;
@@ -43,14 +43,14 @@ function pathRoots(): PathRoots {
   return { zksHome: resolveZksHome(), homeDir: os.homedir() };
 }
 
-/** For CI and the server to hand the engine the pinned build (ZKS_FFMPEG, ZKS_CHROME) instead of one found on PATH. */
+/** The pinned build for CI and the server to hand the engine (ZKS_FFMPEG, ZKS_CHROME): never an override, which may be stale. */
 function printToolPath(context: ReturnType<typeof createContext>, args: string[]): number {
   const [action, name] = args;
   if (action !== "path" || !name || !isToolName(context, name)) {
     console.error(USAGE);
     return EXIT_USAGE;
   }
-  const executable = toolExecutablePath(context, name);
+  const executable = pinnedToolPath(context, name);
   if (!executable || !existsSync(executable)) {
     console.error(`${name} is not installed at ${executable ?? "its pinned location"}. Run: pnpm zks setup`);
     return 1;

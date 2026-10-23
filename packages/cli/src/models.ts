@@ -15,7 +15,7 @@ export interface ModelStatus {
 
 const BYTES_PER_MB = 1024 * 1024;
 
-export function modelPath(context: ZksContext, model: ModelPin): string {
+function modelPath(context: ZksContext, model: ModelPin): string {
   return path.join(context.modelsDir, model.file);
 }
 

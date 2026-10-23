@@ -107,37 +107,18 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
         <PreviewPlayer cuts={cuts} spans={spans} composition={composition} clock={clock} />
       </div>
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-ui font-semibold">Timeline</h3>
-          {cuts !== null && (
-            <p className="font-mono text-ui-sm text-copy-muted tabular-nums">
-              Edited · {formatDuration(editedDuration(spans))} (from {formatDuration(cuts.durationS)})
-            </p>
-          )}
-        </div>
-        <ul className="legend" aria-label="Timeline key">
-          <li className="legend-item">
-            <span className="sw sw-seg" aria-hidden="true" />
-            Shot
-          </li>
-          <li className="legend-item">
-            <span className="sw sw-punch" aria-hidden="true" />
-            Punch-in
-          </li>
-          <li className="legend-item">
-            <span className="sw sw-cut" aria-hidden="true" />
-            Cut
-          </li>
-          <li className="legend-item">
-            <span className="sw sw-blur" aria-hidden="true" />
-            Blur
-          </li>
-        </ul>
         <Timeline
           tracks={tracks}
           sourceDurationS={cuts?.durationS ?? 0}
           keptSpans={spans}
           clock={clock}
+          meta={
+            cuts !== null && (
+              <p className="font-mono text-ui-sm text-copy-muted tabular-nums">
+                Edited · {formatDuration(editedDuration(spans))} (from {formatDuration(cuts.durationS)})
+              </p>
+            )
+          }
           videoLaneExtras={
             pendingRequest !== null && (
               <CutChips

@@ -10,6 +10,8 @@ const BUILD_WAIT_MS = 60_000;
 /** One frame at 60 Hz (plan §9.2), plus Chrome's 0.1 ms performance.now() coarsening: an on-time frame reads 16.6-16.8. */
 const FRAME_BUDGET_MS = 16.7 + 0.1;
 const FRAME_SAMPLE_MS = 3_000;
+/** Spec §6.1: the timeline never holds more than this many DOM nodes, at any zoom. */
+const TIMELINE_NODE_CAP = 600;
 const appApiUrl = `http://127.0.0.1:${process.env["ZKS_E2E_PORT"]}/api/projects`;
 
 async function control<Result>(request: APIRequestContext, path: string): Promise<Result> {
@@ -144,30 +146,70 @@ test("a rejected cut candidate never reaches the cut spec", async ({ page, reque
   for (const [index, candidate] of proposal.candidates.entries()) if (index !== fillerIndex) expect(keptCandidateIds).not.toContain(candidate.id);
 });
 
+type FrameDriver = "scroll" | "zoom";
+
+/** Per-frame deltas while `driver` moves the timeline every frame, plus the editor document's own long tasks (over 50 ms) meanwhile. */
+function sampleFrames(page: Page, driver: FrameDriver) {
+  return page.evaluate(
+    async ({ sampleMs, driver }) => {
+      const scroller = document.querySelector(".timeline-scroll");
+      if (scroller === null) throw new Error("no timeline scroller");
+      const longTaskMs: number[] = [];
+      // "self" only: the cross-origin overlay preview's play-start work is reported as its own task (not the timeline's).
+      const ownDurations = (entries: PerformanceEntryList) => entries.filter((entry) => entry.name === "self").map((entry) => entry.duration);
+      const observer = new PerformanceObserver((list) => longTaskMs.push(...ownDurations(list.getEntries())));
+      observer.observe({ type: "longtask" });
+      const pointerX = scroller.getBoundingClientRect().left + scroller.clientWidth / 2;
+      const deltas: number[] = [];
+      const startMs = performance.now();
+      let lastMs = startMs;
+      await new Promise<void>((resolve) => {
+        const onFrame = (nowMs: number) => {
+          // Back to Chrome's 0.1 ms grid: a raw 16.8 delta can read 16.800000000000182 and fail the inclusive budget.
+          deltas.push(Math.round((nowMs - lastMs) * 10) / 10);
+          lastMs = nowMs;
+          const progress = (nowMs - startMs) / sampleMs;
+          if (driver === "scroll") scroller.scrollLeft = progress * (scroller.scrollWidth - scroller.clientWidth);
+          // Fit → 40 px/s over the first half, back to Fit over the second; the clamp holds each end.
+          else scroller.dispatchEvent(new WheelEvent("wheel", { ctrlKey: true, deltaY: progress < 0.5 ? -40 : 40, clientX: pointerX, cancelable: true }));
+          if (progress < 1) requestAnimationFrame(onFrame);
+          else resolve();
+        };
+        requestAnimationFrame(onFrame);
+      });
+      longTaskMs.push(...ownDurations(observer.takeRecords()));
+      observer.disconnect();
+      return { frameDeltasMs: deltas.slice(1), longTaskMs };
+    },
+    { sampleMs: FRAME_SAMPLE_MS, driver },
+  );
+}
+
+function expectSmooth({ frameDeltasMs, longTaskMs }: Awaited<ReturnType<typeof sampleFrames>>) {
+  const sorted = frameDeltasMs.toSorted((first, second) => first - second);
+  const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Infinity;
+  expect(p95Ms, `p95 of ${sorted.length} frames`).toBeLessThanOrEqual(FRAME_BUDGET_MS);
+  expect(longTaskMs, "long tasks over 50 ms").toEqual([]);
+}
+
+const timelineNodeCount = (page: Page) => page.locator(".timeline-scroll *").count();
+
 test("a 2,000-cue timeline scrolls and plays inside one 60 Hz frame at p95", async ({ page, request }) => {
   await openEditor(page, request, (project) => project.bulkProjectId);
   await expect(page.getByTestId("lane-cues").getByRole("listitem").first()).toBeVisible();
   await page.getByRole("button", { name: "Play" }).click();
-  const frameDeltasMs = await page.evaluate(async (sampleMs) => {
-    const scroller = document.querySelector(".timeline-scroll");
-    if (scroller === null) throw new Error("no timeline scroller");
-    const deltas: number[] = [];
-    const startMs = performance.now();
-    let lastMs = startMs;
-    await new Promise<void>((resolve) => {
-      const onFrame = (nowMs: number) => {
-        // Back to Chrome's 0.1 ms grid: a raw 16.8 delta can read 16.800000000000182 and fail the inclusive budget.
-        deltas.push(Math.round((nowMs - lastMs) * 10) / 10);
-        lastMs = nowMs;
-        scroller.scrollLeft = ((nowMs - startMs) / sampleMs) * (scroller.scrollWidth - scroller.clientWidth);
-        if (nowMs - startMs < sampleMs) requestAnimationFrame(onFrame);
-        else resolve();
-      };
-      requestAnimationFrame(onFrame);
-    });
-    return deltas.slice(1);
-  }, FRAME_SAMPLE_MS);
-  const sorted = frameDeltasMs.toSorted((first, second) => first - second);
-  const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Infinity;
-  expect(p95Ms, `p95 of ${sorted.length} frames`).toBeLessThanOrEqual(FRAME_BUDGET_MS);
+  expectSmooth(await sampleFrames(page, "scroll"));
+});
+
+test("a 2,000-cue timeline zooms Fit → 40 px/s → Fit inside one 60 Hz frame at p95, under 600 nodes at each end", async ({ page, request }) => {
+  await openEditor(page, request, (project) => project.bulkProjectId);
+  await expect(page.getByTestId("lane-cues").getByRole("listitem").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Zoom in" })).toBeDisabled();
+  expect(await timelineNodeCount(page)).toBeLessThanOrEqual(TIMELINE_NODE_CAP);
+  await page.getByRole("button", { name: "Fit" }).click();
+  await expect(page.getByRole("button", { name: "Fit" })).toBeDisabled();
+  expect(await timelineNodeCount(page)).toBeLessThanOrEqual(TIMELINE_NODE_CAP);
+
+  expectSmooth(await sampleFrames(page, "zoom"));
+  await expect(page.getByRole("button", { name: "Fit" })).toBeDisabled();
 });

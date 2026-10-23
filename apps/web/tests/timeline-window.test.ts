@@ -42,4 +42,8 @@ describe("mountedWindow", () => {
       expect(endS - startS).toBeLessThan(96 + 20);
     }
   });
+
+  it("snaps to a quarter of the viewport, so a zoomed-out window steps in minutes, not 10 s", () => {
+    expect(mountedWindow(10, 610)).toEqual({ startS: -600, endS: 1350 });
+  });
 });

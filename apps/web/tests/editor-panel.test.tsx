@@ -2,13 +2,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
-import { PREVIEW_LOADED_MESSAGE, PREVIEW_SEEK_MESSAGE, type Cue, type CutSpec, type PlayerEdl } from "@zks/shared";
+import { PREVIEW_LOADED_MESSAGE, PREVIEW_SEEK_MESSAGE, type CutSpec, type PlayerEdl } from "@zks/shared";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorPanel } from "../src/editor/editor-panel.tsx";
-import { createPlaybackClock } from "../src/editor/playback-clock.ts";
-import { Timeline } from "../src/editor/timeline.tsx";
-import { buildTimelineTracks } from "../src/editor/timeline-items.ts";
 import { useEventsStore } from "../src/events/store.ts";
 import { SAMPLE_EVENTS } from "./event-fixtures.ts";
 import { PROJECT_ID, jsonResponse } from "./fakes.ts";
@@ -63,43 +60,6 @@ function stubEditorApi(extra: Parameters<typeof stubFetch>[0] = {}) {
     ...extra,
   });
 }
-
-describe("Timeline", () => {
-  it("keeps 2,000 blocks out of the DOM except the ones near the viewport", () => {
-    const cueSheet = Array.from({ length: 2000 }, (_, index): Cue => ({ kind: "keyword", at: index * 2, end: index * 2 + 1.5, text: `Cue ${index}` }));
-    const tracks = buildTimelineTracks(null, cueSheet);
-    renderWithProviders(
-      <Timeline tracks={tracks} sourceDurationS={4000} keptSpans={[{ at: 0, end: 4000 }]} clock={createPlaybackClock({ durationS: 4000 })} />,
-    );
-
-    const renderedCues = within(screen.getByTestId("lane-cues")).getAllByRole("listitem");
-    expect(tracks.cues).toHaveLength(2000);
-    expect(renderedCues.length).toBeGreaterThan(5);
-    expect(renderedCues.length).toBeLessThan(40);
-  });
-
-  it("draws cues too thin to see at this scale as one run named for what it holds", () => {
-    // 1.2 px wide and 0.8 px apart at 40 px/s: under the 2 px floor for both.
-    const cueSheet = Array.from({ length: 50 }, (_, index): Cue => ({
-      kind: "keyword",
-      at: 2 + index * 0.05,
-      end: 2 + index * 0.05 + 0.03,
-      text: `Tick ${index}`,
-    }));
-    renderWithProviders(
-      <Timeline
-        tracks={buildTimelineTracks(null, cueSheet)}
-        sourceDurationS={30}
-        keptSpans={[{ at: 0, end: 30 }]}
-        clock={createPlaybackClock({ durationS: 30 })}
-      />,
-    );
-
-    const lane = within(screen.getByTestId("lane-cues"));
-    expect(lane.getAllByRole("listitem")).toHaveLength(1);
-    expect(lane.getByRole("listitem", { name: "50 cues, 0:02–0:04" })).toHaveAttribute("title", "50 cues, 0:02–0:04");
-  });
-});
 
 describe("EditorPanel", () => {
   beforeEach(() => useEventsStore.setState({ feeds: {} }));

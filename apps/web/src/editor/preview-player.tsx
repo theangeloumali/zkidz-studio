@@ -2,6 +2,7 @@
 import { CANVAS, PREVIEW_SEEK_MESSAGE, PreviewLoadedMessageSchema, type CutSpec, type PreviewSeekMessage } from "@zks/shared";
 import { Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ICON_BUTTON_CLASS } from "../components/button-class.ts";
 import { formatTimecode } from "../lib/format.ts";
 import { editedDuration, editedToSource, sourceToEdited, type TimeSpan } from "./edl.ts";
 import type { PlaybackClock } from "./playback-clock.ts";
@@ -201,7 +202,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock }: PreviewPlayer
       <div className="transport">
         <button
           type="button"
-          className="grid size-(--target-min) place-items-center rounded-control border border-line-strong text-copy hover:bg-surface active:scale-[0.97] disabled:opacity-50"
+          className={ICON_BUTTON_CLASS}
           aria-label={isPlaying ? "Pause" : "Play"}
           disabled={cuts === null}
           onClick={() => (clock.isPlaying() ? clock.pause() : clock.play())}

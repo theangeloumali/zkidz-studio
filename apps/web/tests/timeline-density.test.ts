@@ -34,11 +34,32 @@ describe("mergeDensityRuns", () => {
     ]);
   });
 
-  it("keeps a lone thin block as itself, and never merges cut marks or sound effects", () => {
+  it("keeps a lone thin block, a lone cut mark and a lone sound effect as themselves", () => {
     const lone = caption(0, 50, 50.5);
     const cut: TimelineBlock = { id: "cut-0", variant: "cut", at: 10, end: 10.5, label: "um" };
-    const bleep: TimelineBlock = { id: "sfx-0", variant: "sfx", at: 11, end: 11.5, label: "Bleep" };
+    const bleep: TimelineBlock = { id: "sfx-0", variant: "sfx", at: 30, end: 30.5, label: "Bleep" };
 
     expect(mergeDensityRuns([lone, cut, bleep], 0.5, "items")).toEqual([cut, bleep, lone]);
+  });
+
+  it("merges cut marks closer than 3 px into one mark, apart from the thin-block rule", () => {
+    const cut = (position: number, at: number): TimelineBlock => ({ id: `cut-${position}`, variant: "cut", at, end: at + 1, label: "um" });
+    // At 1 px/s: 2 px gaps merge, the 3 px gap does not.
+    const drawn = mergeDensityRuns([cut(0, 0), cut(1, 3), cut(2, 6), cut(3, 10)], 1, "edits");
+
+    expect(drawn.map((block) => [block.variant, block.at, block.end, isDensityRun(block) ? block.runCount : 1])).toEqual([
+      ["cut", 0, 7, 3],
+      ["cut", 10, 11, 1],
+    ]);
+  });
+
+  it("merges sound effects closer than 8 px into one diamond titled with their count", () => {
+    const bleep = (position: number, at: number): TimelineBlock => ({ id: `sfx-${position}`, variant: "sfx", at, end: at + 0.4, label: "Bleep" });
+    // At 2 px/s, 3 s apart is 6 px: under the 8 px rule.
+    const drawn = mergeDensityRuns([bleep(0, 10), bleep(1, 13), bleep(2, 16), bleep(3, 40)], 2, "sound effects");
+
+    expect(drawn).toHaveLength(2);
+    expect(drawn[0]).toMatchObject({ variant: "sfx", at: 10, label: "3 sound effects", runCount: 3 });
+    expect(drawn[1]).toMatchObject({ id: "sfx-3", label: "Bleep" });
   });
 });

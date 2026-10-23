@@ -3,14 +3,14 @@ import { useId, useState } from "react";
 import { connectApiKey, type Connection } from "../api/agent-client.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { FIELD_CLASS } from "../components/field-class.ts";
-import { StatusLine, errorText, isStatus, type StatusTone } from "./status-line.tsx";
+import { StatusLine, errorText, isErrorCode, type StatusTone } from "./status-line.tsx";
 import { useConnect } from "./use-connect.ts";
 
 function keyStatus(connection: Connection, check: ReturnType<typeof useConnect<string>>, isEmpty: boolean): [string, StatusTone] {
   if (isEmpty) return ["Paste a key first.", "danger"];
   if (check.isPending) return ["Checking key…", "neutral"];
-  if (isStatus(check.error, 401)) {
-    return ["Anthropic rejected this key (401). Copy it again from the Claude Console and paste it here.", "danger"];
+  if (isErrorCode(check.error, "key_rejected")) {
+    return ["Anthropic rejected this key. Copy it again from the Claude Console and paste it here.", "danger"];
   }
   if (check.isError) return [errorText(check.error, "The key could not be checked"), "danger"];
   if (connection.mode === "api_key" && connection.keyLast4) return [`Key works · ending in ${connection.keyLast4}`, "success"];

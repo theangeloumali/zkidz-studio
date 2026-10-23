@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import type { ApiErrorCode } from "@zks/shared";
 import { ApiError } from "../api/client.ts";
 
 export type StatusTone = "neutral" | "success" | "danger";
@@ -18,6 +19,6 @@ export function errorText(error: unknown, prefix: string): string {
   return `${prefix}: ${error instanceof Error ? error.message : "unknown error"}`;
 }
 
-export function isStatus(error: unknown, status: number): boolean {
-  return error instanceof ApiError && error.status === status;
+export function isErrorCode(error: unknown, code: ApiErrorCode): boolean {
+  return error instanceof ApiError && error.code === code;
 }

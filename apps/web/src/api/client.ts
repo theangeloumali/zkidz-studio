@@ -1,20 +1,23 @@
 // Created by The Angelo Umali.
-import { API_ROUTES, CSRF_HEADER, isStateChangingMethod } from "@zks/shared";
+import { API_ROUTES, ApiErrorCodeSchema, CSRF_HEADER, isStateChangingMethod, type ApiErrorCode } from "@zks/shared";
 import { z } from "zod";
 
 // The server sends its per-launch token on every response; same-origin script is the only reader (ADR 0006).
 let launchCsrfToken: string | null = null;
 let pendingTokenFetch: Promise<string> | null = null;
 
-// No shared error DTO exists yet; accept either common shape and fall back to the status text.
-const ErrorBodySchema = z.object({ error: z.string().optional(), message: z.string().optional() });
+// Looser than the shared ApiErrorBodySchema on purpose: `message` bodies and codes newer than this build still parse.
+const ErrorBodySchema = z.object({ error: z.string().optional(), message: z.string().optional(), code: z.string().optional() });
 
 export class ApiError extends Error {
   readonly status: number;
+  /** The server's stable reason; UI copy keys off this, never the HTTP status. */
+  readonly code: ApiErrorCode | undefined;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: ApiErrorCode) {
     super(message);
     this.status = status;
+    this.code = code;
     this.name = "ApiError";
   }
 }
@@ -68,7 +71,11 @@ export async function requestJson<Schema extends z.ZodType>(schema: Schema, url:
   const response = await fetch(url, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   rememberCsrfToken(response);
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(errorMessageFrom(body, response.statusText || `Request failed (${response.status})`), response.status);
+  if (!response.ok) {
+    // A code this build does not know is dropped, not fatal: the message still shows.
+    const code = ApiErrorCodeSchema.safeParse(ErrorBodySchema.safeParse(body).data?.code);
+    throw new ApiError(errorMessageFrom(body, response.statusText || `Request failed (${response.status})`), response.status, code.data);
+  }
   return schema.parse(body);
 }
 

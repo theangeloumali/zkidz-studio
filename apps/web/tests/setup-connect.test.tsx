@@ -80,13 +80,15 @@ describe("SetupRoute", () => {
     expect(await screen.findByText("Key works · ending in 1234")).toBeInTheDocument();
   });
 
-  it("says Anthropic rejected the key on a 401", async () => {
-    stubSetup(NOT_CONNECTED, { "POST /api/connect/api-key": () => jsonResponse({ error: "invalid x-api-key" }, 401) });
+  it("says Anthropic rejected the key when the server answers key_rejected", async () => {
+    stubSetup(NOT_CONNECTED, {
+      "POST /api/connect/api-key": () => jsonResponse({ error: "Anthropic rejected this key", code: "key_rejected" }, 400),
+    });
     renderWithProviders(<SetupRoute />);
     await chooseApiKey();
     await userEvent.type(screen.getByLabelText("API key"), "sk-ant-bad");
     await userEvent.click(screen.getByRole("button", { name: "Check key" }));
-    expect(await screen.findByText(/Anthropic rejected this key \(401\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Anthropic rejected this key\. Copy it again/)).toBeInTheDocument();
   });
 
   it("checks a cloud profile for the chosen provider", async () => {

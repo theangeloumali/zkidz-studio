@@ -19,11 +19,17 @@ from support import make_edl, media_file, playlist_file, seconds  # first: it se
 from test_gpu_render import write_png_header
 
 from zks_engine import pipeline
+from zks_engine import backends
 from zks_engine import blur
 from zks_engine import ffio
 from zks_engine import render_final
+from zks_engine.backends import graph as backend_graph
 
 UPRIGHT_4K = (2160, 3840)
+CPU = backends.get("cpu")
+GPU_ROUTE = render_final.Route(backends.get("nvidia"), True, "", UPRIGHT_4K)
+CPU_ROUTE = render_final.Route(CPU, False, "", UPRIGHT_4K)
+VAAPI_ROUTE = render_final.Route(backends.get("vaapi"), False, "", UPRIGHT_4K)
 
 
 class RangeExprTests(unittest.TestCase):
@@ -61,24 +67,41 @@ class RangeExprTests(unittest.TestCase):
 
 class GraphTests(unittest.TestCase):
     def test_cpu_graph_has_no_hwdownload_and_drops_rotation(self):
-        graph = render_final.build_graph(make_edl([(0, 30), (60, 90)], [1.0, 1.08]), cuda=False)
+        graph = backend_graph.composite(CPU, make_edl([(0, 30), (60, 90)], [1.0, 1.08]))
         self.assertNotIn("hwdownload", graph)
         self.assertIn("settb=1001/30000,setpts=N", graph)
         self.assertIn(pipeline.DROP_ROTATION, graph)
 
-    def test_cuda_graph_selects_then_turns_then_downloads(self):
-        graph = render_final.build_graph(make_edl([(0, 30)]), cuda=True, orientation="transpose_cuda=dir=clock")
-        self.assertLess(graph.index("select="), graph.index("transpose_cuda"))
-        self.assertLess(graph.index("transpose_cuda"), graph.index("hwdownload"))
-
-    def test_half_turn_runs_after_download(self):
-        graph = render_final.build_graph(make_edl([(0, 30)]), cuda=True, orientation="hflip,vflip")
-        self.assertLess(graph.index("hwdownload"), graph.index("hflip,vflip"))
-
     def test_no_regions_leaves_no_blur(self):
-        graph = render_final.build_graph(make_edl([(0, 30)]), cuda=False)
+        graph = backend_graph.composite(CPU, make_edl([(0, 30)]))
         self.assertNotIn("gblur", graph)
         self.assertIn("[upright]split[a][b]", graph)
+
+
+class RouteTests(unittest.TestCase):
+    """Which composite a source takes: nvidia's CUDA/OpenCL graph, or the CPU-filter graph between a backend's decode and encoder."""
+
+    def route(self, name, rotation=0, opencl=True, filters=("transpose_cuda",)):
+        stream = {"width": 1920, "height": 1080, "side_data_list": [{"rotation": rotation}] if rotation else []}
+        with (mock.patch.object(render_final, "probe_video", return_value=stream), mock.patch.object(render_final, "has_opencl", return_value=opencl),
+              mock.patch.object(render_final, "has_filter", side_effect=lambda name: name in filters)):
+            return render_final.route_for(Path("clip.mp4"), backends.get(name))
+
+    def test_upright_footage_on_nvidia_takes_the_cuda_composite(self):
+        self.assertEqual(self.route("nvidia"), render_final.Route(backends.get("nvidia"), True, "", (1920, 1080)))
+
+    def test_a_quarter_turn_stays_on_cuda_only_when_ffmpeg_has_transpose_cuda(self):
+        self.assertEqual(self.route("nvidia", rotation=-90).gpu_turn, "transpose_cuda=dir=clock")
+        fallback = self.route("nvidia", rotation=-90, filters=())
+        self.assertEqual((fallback.on_gpu, fallback.frame_size), (False, (1080, 1920)))
+
+    def test_a_half_turn_or_no_opencl_takes_the_cpu_filter_graph(self):
+        self.assertFalse(self.route("nvidia", rotation=180).on_gpu)
+        self.assertFalse(self.route("nvidia", opencl=False).on_gpu)
+
+    def test_every_other_backend_takes_the_cpu_filter_graph(self):
+        for name in ("videotoolbox", "qsv", "amf", "vaapi", "cpu"):
+            self.assertFalse(self.route(name).on_gpu, name)
 
 
 class BlurTests(unittest.TestCase):
@@ -101,7 +124,7 @@ class BlurTests(unittest.TestCase):
 
     def test_graph_gates_each_box_and_the_single_overlay_on_edited_frames(self):
         regions = self.regions((seconds(250), seconds(650), 100, 50, 200, 300, "a"), (seconds(10), seconds(20), 0, 0, 50, 50, "b"))
-        graph = render_final.build_graph(self.timeline, cuda=False, regions=regions, frame_size=UPRIGHT_4K)
+        graph = backend_graph.composite(CPU, self.timeline, regions=regions, frame_size=UPRIGHT_4K)
         # Box (200, 100, 400, 600) on the 1/8 grid (25, 12, 50, 76), one cell wider on every side so the upscale's
         # edge ramp falls outside the box, not over its text.
         self.assertIn("drawbox=x=24:y=11:w=52:h=78:color=white:t=fill:enable='between(n,250,349)'", graph)
@@ -112,7 +135,7 @@ class BlurTests(unittest.TestCase):
     def test_blur_cost_does_not_grow_with_regions(self):
         # One split -> crop -> overlay chain per region took v5 (18 regions) from 145 fps to 2.6 fps.
         many = self.regions(*[(seconds(10), seconds(20), 10 * i, 10 * i, 100, 100, str(i)) for i in range(18)])
-        graph = render_final.build_graph(self.timeline, cuda=False, regions=many, frame_size=UPRIGHT_4K)
+        graph = backend_graph.composite(CPU, self.timeline, regions=many, frame_size=UPRIGHT_4K)
         self.assertEqual(graph.count("drawbox="), 18)
         self.assertEqual((graph.count("alphamerge"), graph.count("gblur"), graph.count("overlay=0:0")), (1, 1, 1))
 
@@ -122,7 +145,7 @@ class BlurTests(unittest.TestCase):
         timeline = make_edl([(0, 10), (20, 30)], [1.0, 1.08])
         for blurs in ([], [[0, seconds(25), 0, 0, 1080, 400, "a"], [seconds(5), seconds(22), 500, 1500, 900, 900, "b"]]):
             regions = render_final.blur_regions({"blur": blurs}, timeline, (432, 768))
-            graph = render_final.build_graph(timeline, cuda=False, regions=regions, frame_size=(432, 768))
+            graph = backend_graph.composite(CPU, timeline, regions=regions, frame_size=(432, 768))
             result = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=432x768:rate=30000/1001:duration=1",
                                      "-f", "lavfi", "-i", "color=black@0:size=1080x1920:rate=30000/1001:duration=1,format=rgba",
                                      "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True)
@@ -251,9 +274,9 @@ class IntroTests(unittest.TestCase):
             render_final.intro_of("v1", self.edl)
 
     def test_the_chunks_break_at_the_insert(self):
-        before, after = render_final.intro_bounds(9000, 120)
+        before, after = render_final.intro_bounds(9000, 120, 4)
         self.assertEqual((before[0][0], before[-1][1], after[0][0], after[-1][1]), (0, 120, 120, 9000))
-        self.assertEqual(len(before) + len(after), render_final.RENDER_JOBS)
+        self.assertEqual(len(before) + len(after), 4)
         self.assertTrue(all(first < last for first, last in before + after))
 
     def test_missing_frames_or_a_wrong_track_stop_the_render(self):
@@ -272,7 +295,7 @@ class IntroTests(unittest.TestCase):
 
     def test_the_intro_chunk_scales_on_the_gpu_and_encodes_like_the_edit(self):
         intro = {"frames": 60, "frames_dir": self.work / "frames" / "v1.intro"}
-        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4")
+        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4", GPU_ROUTE)
         graph = command[command.index("-vf") + 1]
         self.assertIn("libplacebo=w=2160:h=3840", graph)
         self.assertEqual(command[command.index("-frames:v") + 1], "60")
@@ -283,7 +306,7 @@ class IntroTests(unittest.TestCase):
 
     def test_every_chunk_writes_its_progress_and_the_total_reads_the_last_frame(self):
         intro = {"frames": 60, "frames_dir": self.work / "frames" / "v1.intro"}
-        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4")
+        command = render_final.intro_command(intro, self.edl, render_final.UHD, render_final.UHD_ENCODER, self.work / "intro.mp4", GPU_ROUTE)
         self.assertEqual(command[command.index("-progress") + 1], str(self.work / "intro.progress"))
         report = self.work / "00.progress"
         report.write_text("frame=10\nprogress=continue\nframe=42\nprogress=continue\n", encoding="utf-8")
@@ -332,10 +355,17 @@ class IntroTests(unittest.TestCase):
         self.assertLess(level(1.7, 3.3), 0.001)
         self.assertGreater(level(3.7, 4.8), 0.1)
 
-    def test_the_cpu_path_refuses_an_intro(self):
-        with self.assertRaisesRegex(SystemExit, "CUDA"):
-            render_final.encode_master("v1", False, False, False, None, self.edl, {}, "", render_final.OUTPUT, "", [], None, None, None,
-                                       intro={"frames": 60})
+    def test_off_the_cuda_path_the_intro_scales_on_the_cpu_and_uploads_like_the_edit(self):
+        intro = {"frames": 60, "frames_dir": self.work / "frames" / "v1.intro"}
+        vaapi = VAAPI_ROUTE.backend
+        command = render_final.intro_command(intro, self.edl, render_final.UHD, vaapi.uhd, self.work / "intro.mp4", VAAPI_ROUTE)
+        self.assertEqual(command[command.index("-vf") + 1], backend_graph.intro_filter(vaapi, render_final.UHD))
+        self.assertLess(command.index("vaapi=va:/dev/dri/renderD128"), command.index("-i"))
+
+    def test_zooms_and_the_matte_refuse_the_cpu_filter_graph(self):
+        for extra in ({"zooms": [{"start": 0, "end": 10, "preset": "snap", "cx": 0.5, "cy": 0.5}]}, {"matte": [{"start": 0, "end": 10}]}):
+            with self.assertRaisesRegex(SystemExit, "NVIDIA"):
+                render_final.encode_master("v1", {**self.edl, **extra}, {}, None, CPU_ROUTE, render_final.OUTPUT, [], None, None, None)
 
 
 if __name__ == "__main__":
@@ -470,7 +500,16 @@ class UserMediaInputTests(unittest.TestCase):
 
     def chunk(self, source):
         piece = make_edl([(0, 30)])
-        return render_final.chunk_command(piece, 0, {}, source, "", UPRIGHT_4K, "", [], self.root / "frames", self.root / "c.mp4")
+        return render_final.chunk_command(piece, 0, {}, source, GPU_ROUTE, UPRIGHT_4K, [], self.root / "frames", self.root / "c.mp4")
+
+    def test_a_cpu_filter_chunk_decodes_with_its_backend_and_runs_the_composite(self):
+        piece = make_edl([(0, 30)])
+        with mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
+            command = render_final.chunk_command(piece, 0, {}, self.clip, VAAPI_ROUTE, render_final.OUTPUT, [], self.root / "frames", self.root / "c.mp4")
+        self.assertEqual(command[command.index("-filter_complex") + 1], backend_graph.composite(VAAPI_ROUTE.backend, piece, frame_size=UPRIGHT_4K))
+        hardware = " ".join(command[:command.index("-ss")])
+        self.assertIn("-init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -hwaccel vaapi -hwaccel_device va", hardware)
+        self.assertNotIn("opencl", " ".join(command))
 
     def test_the_chunk_command_reads_the_source_under_the_whitelists(self):
         with mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
@@ -493,8 +532,8 @@ class UserMediaInputTests(unittest.TestCase):
         edl = make_edl([(0, 30)])
         with (mock.patch.object(render_final.subprocess, "run") as run, mock.patch("zks_engine.pipeline.subprocess.run") as probe,
               self.assertRaises(ffio.MediaRejected)):
-            render_final.encode_master("v1", False, False, False, self.playlist, edl, {}, "", UPRIGHT_4K, "", [], self.root / "frames",
-                                       self.root / "a.wav", self.root / "out.mp4")
+            render_final.encode_master("v1", edl, {}, self.playlist, CPU_ROUTE, UPRIGHT_4K, [], self.root / "frames", self.root / "a.wav",
+                                       self.root / "out.mp4")
         run.assert_not_called()
         probe.assert_not_called()
 

@@ -57,6 +57,7 @@ describe("the player EDL", () => {
       cutsVersion: 1,
       durationS: 30,
       keptS: 26,
+      preview: null,
       segments: [
         { sourceAtS: 0, sourceEndS: 2, editedAtS: 0 },
         { sourceAtS: 4, sourceEndS: 10, editedAtS: 2 },
@@ -86,6 +87,19 @@ describe("the composition rebuild", () => {
     expect(compositionUrl.origin).toBe("http://127.0.0.1:4318");
     expect(compositionUrl.pathname).toBe(`/compositions/${fixture.context.projectId}/v1/index.html`);
     expect(builds.filter((build) => build.projectRoot === fixture.projectRoot).map((build) => build.videoId)).toEqual(["v1", "v1"]);
+  });
+
+  it("hands a page opened after the build the composition it missed", async () => {
+    const fixture = await fixtureWithCuts();
+    await getRequest(server, edlPath(fixture));
+    await vi.waitFor(() => expect(fixture.events.some((event) => event.type === "preview.ready")).toBe(true));
+    const ready = fixture.events.find((event) => event.type === "preview.ready");
+
+    const reopened = await getRequest(server, edlPath(fixture));
+
+    expect(ready?.type).toBe("preview.ready");
+    if (ready?.type !== "preview.ready") return;
+    expect(await reopened.json()).toMatchObject({ preview: { compositionUrl: ready.compositionUrl, edlVersion: ready.edlVersion } });
   });
 
   it("announces nothing when the build fails", async () => {

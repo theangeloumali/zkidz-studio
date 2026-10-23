@@ -42,6 +42,7 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
   const openVideoKeys = new Set<string>();
   const watchedProjectIds = new Set<string>();
   const buildStates = new Map<string, BuildState>();
+  const latestPreviews = new Map<string, PlayerEdl["preview"]>();
   let buildCount = 0;
 
   const watchProject = (projectId: string) => {
@@ -80,6 +81,7 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
       await deps.buildComposition({ projectRoot, videoId });
       buildCount += 1;
       const compositionUrl = `http://${LOOPBACK_HOST}:${deps.previewPort}${COMPOSITION_PATH_PREFIX}/${projectId}/${videoId}/index.html?build=${buildCount}`;
+      latestPreviews.set(videoKeyOf(projectId, videoId), { compositionUrl, edlVersion: cuts.version });
       await deps.eventBus.publish({ type: "preview.ready", projectId, videoId, edlVersion: cuts.version, compositionUrl });
     } catch (error) {
       deps.logger.error("preview build failed", { projectId, videoId, error });
@@ -91,9 +93,8 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
       const project = await findProjectOrThrow(deps.database, c.req.param("projectId"));
       const videoId = VideoIdSchema.safeParse(c.req.param("videoId"));
       if (!videoId.success) throw notFound();
-      const playerEdl = await readPlayerEdl(deps.database, project.id, videoId.data);
-
       const videoKey = videoKeyOf(project.id, videoId.data);
+      const playerEdl = await readPlayerEdl(deps.database, project.id, videoId.data, latestPreviews.get(videoKey) ?? null);
       watchProject(project.id);
       if (!openVideoKeys.has(videoKey)) {
         openVideoKeys.add(videoKey);
@@ -113,7 +114,7 @@ async function readCutSpec(database: StudioDatabase, projectId: string, videoId:
   return { version: cutsVersion.version, spec: cuts.data };
 }
 
-async function readPlayerEdl(database: StudioDatabase, projectId: string, videoId: string): Promise<PlayerEdl> {
+async function readPlayerEdl(database: StudioDatabase, projectId: string, videoId: string, preview: PlayerEdl["preview"]): Promise<PlayerEdl> {
   const cuts = await readCutSpec(database, projectId, videoId);
   let editedAtS = 0;
   const segments = keptSpansOf(cuts.spec).map((keptSpan) => {
@@ -121,7 +122,7 @@ async function readPlayerEdl(database: StudioDatabase, projectId: string, videoI
     editedAtS += keptSpan.end - keptSpan.at;
     return segment;
   });
-  return { videoId, cutsVersion: cuts.version, durationS: cuts.spec.durationS, keptS: editedAtS, segments };
+  return { videoId, cutsVersion: cuts.version, durationS: cuts.spec.durationS, keptS: editedAtS, segments, preview };
 }
 
 const videoKeyOf = (projectId: string, videoId: string) => `${projectId}/${videoId}`;

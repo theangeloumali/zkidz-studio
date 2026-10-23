@@ -21,12 +21,14 @@ const NO_SPANS: readonly TimeSpan[] = [];
 
 const spansOfEdl = (edl: PlayerEdl): TimeSpan[] => edl.segments.map((segment) => ({ at: segment.sourceAtS, end: segment.sourceEndS }));
 
-function usePreviewComposition(projectId: string, videoId: string | undefined): PreviewComposition | null {
+// A live preview.ready wins; the EDL's last build covers a page opened after that event went out.
+function usePreviewComposition(projectId: string, videoId: string | undefined, builtPreview: PlayerEdl["preview"] | undefined): PreviewComposition | null {
   const events = useEventsStore((state) => state.feeds[projectId]?.events);
   return useMemo(() => {
     const ready = events?.findLast((event) => event.type === "preview.ready" && event.videoId === videoId);
-    return ready?.type === "preview.ready" ? { url: ready.compositionUrl, edlVersion: ready.edlVersion } : null;
-  }, [events, videoId]);
+    if (ready?.type === "preview.ready") return { url: ready.compositionUrl, edlVersion: ready.edlVersion };
+    return builtPreview ? { url: builtPreview.compositionUrl, edlVersion: builtPreview.edlVersion } : null;
+  }, [events, videoId, builtPreview]);
 }
 
 function usePendingCutRequest(projectId: string, submittedRequestIds: ReadonlySet<string>) {
@@ -69,7 +71,7 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
   const tracks = useMemo(() => buildTimelineTracks(cuts, cueSheet), [cuts, cueSheet]);
   const [clock] = useState(() => createPlaybackClock({ durationS: 0 }));
   useEffect(() => () => clock.pause(), [clock]);
-  const composition = usePreviewComposition(projectId, cutsSummary?.videoId);
+  const composition = usePreviewComposition(projectId, cutsSummary?.videoId, playerEdl?.preview);
 
   const [submittedRequestIds, setSubmittedRequestIds] = useState<ReadonlySet<string>>(new Set());
   const pendingRequest = usePendingCutRequest(projectId, submittedRequestIds);

@@ -49,6 +49,7 @@ function playerEdl(overrides: Partial<PlayerEdl> = {}): PlayerEdl {
       { sourceAtS: 0, sourceEndS: 10, editedAtS: 0 },
       { sourceAtS: 12, sourceEndS: 30, editedAtS: 10 },
     ],
+    preview: null,
     ...overrides,
   };
 }
@@ -177,6 +178,27 @@ describe("EditorPanel", () => {
     const overlay = screen.getByTitle("Overlay preview");
     expect(overlay).toHaveAttribute("sandbox", "allow-scripts");
     expect(overlay).toHaveAttribute("data-edl-version", "5");
+  });
+
+  it("shows the composition built before the page opened, with no preview.ready on its feed", async () => {
+    const compositionUrl = "http://127.0.0.1:4318/compositions/p/v1/index.html?build=4";
+    stubEditorApi({ [`GET ${EDL_URL}`]: () => jsonResponse(playerEdl({ preview: { compositionUrl, edlVersion: 3 } })) });
+    renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+    const overlay = await screen.findByTitle("Overlay preview");
+    expect(overlay).toHaveAttribute("src", compositionUrl);
+    expect(overlay).toHaveAttribute("data-edl-version", "3");
+  });
+
+  it("prefers a live preview.ready over the composition the EDL reported", async () => {
+    stubEditorApi({
+      [`GET ${EDL_URL}`]: () => jsonResponse(playerEdl({ preview: { compositionUrl: "http://127.0.0.1:4318/old/index.html", edlVersion: 3 } })),
+    });
+    renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+    await screen.findByTitle("Overlay preview");
+    act(() => useEventsStore.getState().receive({ ...SAMPLE_EVENTS["preview.ready"], edlVersion: 5 }));
+
+    expect(screen.getByTitle("Overlay preview")).toHaveAttribute("data-edl-version", "5");
   });
 
   it("has no axe violations", async () => {

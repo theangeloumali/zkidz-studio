@@ -149,6 +149,8 @@ export const PlayerEdlSchema = z.strictObject({
   durationS: z.number().positive(),
   keptS: z.number().nonnegative(),
   segments: z.array(z.strictObject({ sourceAtS: z.number().nonnegative(), sourceEndS: z.number().positive(), editedAtS: z.number().nonnegative() })),
+  // The last built composition, so a page opened after its preview.ready still shows the overlay.
+  preview: z.strictObject({ compositionUrl: z.url(), edlVersion: z.int().positive() }).nullable(),
 });
 export type SpecSummary = z.infer<typeof SpecSummarySchema>;
 export type SpecVersion = z.infer<typeof SpecVersionSchema>;

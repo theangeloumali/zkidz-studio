@@ -42,6 +42,19 @@ test("the preview catches up within 3 s of each of 40 replayed set_cuts/add_cue 
   await expect(page.getByTestId("lane-cues").getByRole("listitem").first()).toBeVisible();
 });
 
+test("an editor reloaded after the build still shows that build's overlay", async ({ page, request }) => {
+  await openEditor(page, request);
+  // An odd step no other test writes adds one cue, so the frame has text to find.
+  await control(request, "replay?step=109");
+  const cueText = overlayFrame(page).getByText(`${CUE_CALL_TEXT} 109`);
+  await expect(cueText).toBeAttached({ timeout: BUILD_WAIT_MS });
+
+  await page.reload();
+
+  await expect(page.getByText("Events: Live")).toBeVisible();
+  await expect(cueText).toBeAttached({ timeout: CATCH_UP_MS });
+});
+
 test("playing seeks the overlay so a cue shows over its words", async ({ page, request }) => {
   await openEditor(page, request);
   await control(request, "hostile-cue");

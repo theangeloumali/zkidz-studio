@@ -1,6 +1,9 @@
 # Created by The Angelo Umali.
 import os
+import re
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from support import needs_renderer  # first: it sets a scratch ZKS_HOME
@@ -51,3 +54,27 @@ class NeedsRendererTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HasFfmpegTests(unittest.TestCase):
+    """CI hands the engine the pinned ffmpeg through ZKS_FFMPEG with none on PATH, so the guards must follow ZKS_FFMPEG."""
+
+    def test_follows_zks_ffmpeg_with_nothing_on_path(self):
+        from support import has_ffmpeg
+
+        with tempfile.TemporaryDirectory() as tools:
+            for name in ("ffmpeg", "ffprobe"):
+                tool = Path(tools) / name
+                tool.write_text("")
+                tool.chmod(0o755)
+            with mock.patch.dict(os.environ, {"ZKS_FFMPEG": str(Path(tools) / "ffmpeg"), "PATH": ""}):
+                self.assertTrue(has_ffmpeg())
+
+    def test_no_test_looks_ffmpeg_up_on_path_directly(self):
+        offenders = [
+            f"{path.name}:{number}"
+            for path in sorted(Path(__file__).parent.rglob("*.py"))
+            for number, line in enumerate(path.read_text().splitlines(), 1)
+            if re.search(r"""which\(["']ff(mpeg|probe)["']\)""", line)
+        ]
+        self.assertEqual(offenders, [])

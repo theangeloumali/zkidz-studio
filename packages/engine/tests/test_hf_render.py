@@ -14,7 +14,7 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer, write_sheet  # first: it sets a scratch ZKS_HOME
+from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer, write_sheet, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import doctor
 from zks_engine.render_final import PNG_RGBA, png_header
@@ -27,7 +27,7 @@ CANVAS_GALLERY_EVENTS = ENGINE / "tests" / "fixture" / "sfx" / "gallery-canvas.j
 def hyperframes_ready():
     # The file check first: it is free, and doctor.check_chrome launches Chrome.
     return bool((ENGINE / "hf" / "node_modules" / "hyperframes" / "package.json").exists() and shutil.which("node")
-                and shutil.which("ffmpeg") and doctor.check_chrome()[0])
+                and has_ffmpeg() and doctor.check_chrome()[0])
 
 
 def rgba(png, shape=(1920, 1080)):

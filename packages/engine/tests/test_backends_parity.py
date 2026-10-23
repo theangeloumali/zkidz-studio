@@ -1,16 +1,15 @@
 # Created by The Angelo Umali.
 # verify:gpu's engine half: render one fixture per passing backend and hold it to SSIM >= 0.995 against the cpu render.
 import io
-import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-import support  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends, ffio, render_final
+from zks_engine import backends, render_final
 from zks_engine.backends import parity
 
 
@@ -51,7 +50,7 @@ class SsimTests(unittest.TestCase):
             self.assertAlmostEqual(parity.ssim(Path("a.mp4"), Path("b.mp4")), 0.998512)
 
 
-@unittest.skipUnless(shutil.which(ffio.ffmpeg_bin()), "needs ffmpeg")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class CpuRenderTests(unittest.TestCase):
     def test_the_cpu_fixture_renders_every_frame_and_matches_itself(self):
         with tempfile.TemporaryDirectory() as folder:

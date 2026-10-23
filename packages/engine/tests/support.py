@@ -17,7 +17,7 @@ for name in ("ZKS_LOCKS", "ZKS_PROGRESS", "ZKS_MODELS"):
     os.environ.pop(name, None)
 os.environ["ZKS_TOASTS"] = "0"
 
-from zks_engine import edl  # noqa: E402
+from zks_engine import edl, ffio  # noqa: E402
 
 NTSC = {"fps_num": 30000, "fps_den": 1001}
 # Every HyperFrames brand kind once, for the gallery stills, parity sheets and coverage test (test_hf_render.py). Its EDL is
@@ -27,6 +27,11 @@ FIXTURE_MEDIA = ENGINE / "tests" / "fixture" / "images"
 GALLERY_FRAMES = 2908  # 97 s: every gallery cue fits
 HF_SKIP = "needs node and the overlay renderer's packages (pnpm install at the repo root)"
 HYPERFRAMES_SKIP = "needs node, ffmpeg, Chrome and the overlay renderer's packages (pnpm install at the repo root)"
+
+
+def has_ffmpeg():
+    """The ffmpeg the engine runs (ZKS_FFMPEG, else PATH) and the ffprobe beside it; CI puts only the pinned build in ZKS_FFMPEG."""
+    return bool(shutil.which(ffio.ffmpeg_bin()) and shutil.which(ffio.ffprobe_bin()))
 
 
 def hf_installed():

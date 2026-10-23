@@ -1,20 +1,19 @@
 # Created by The Angelo Umali.
 # Unit tests for the CUDA render path: every heavy stage stays on the GPU, and the punch-in and blur land where the CPU path puts them.
-import shutil
 import struct
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
+from support import make_edl, seconds, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, blur
 from zks_engine import prepare
 from zks_engine import render_final
 from zks_engine.pipeline import has_cuda
 
-GPU_COMPOSITE = bool(shutil.which("ffmpeg") and has_cuda() and render_final.has_opencl())
+GPU_COMPOSITE = bool(has_ffmpeg() and has_cuda() and render_final.has_opencl())
 NVIDIA = backends.get("nvidia")
 GPU_SKIP = "needs ffmpeg with CUDA and the NVIDIA OpenCL platform (the GPU composite)"
 

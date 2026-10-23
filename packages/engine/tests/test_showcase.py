@@ -1,12 +1,11 @@
 # Created by The Angelo Umali.
 # showcase pieces: a 16:9 film needs its own panel, and an HLG raw must be tone-mapped like join_sources' pieces.
-import shutil
 import subprocess
 import unittest
 from unittest import mock
 from pathlib import Path
 
-from support import media_file, media_project  # first: it sets a scratch ZKS_HOME
+from support import media_file, media_project, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, ffio, join_sources
 from zks_engine import showcase
@@ -75,7 +74,7 @@ class BackendInsertTests(unittest.TestCase):
         self.assertIn("color=c=black:s=2048x1152", graph)
         self.assertIn("[pv][mask]alphamerge[panel];[fill][panel]overlay=56:1000", graph)
 
-    @unittest.skipUnless(shutil.which(ffio.ffmpeg_bin()), "needs ffmpeg")
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
     def test_the_cpu_insert_graph_runs_in_ffmpeg(self):
         graph = insert_graph(backend=CPU, panel="portrait").replace("[0:v]", "[0:v]format=yuv420p,", 1)
         result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=30000/1001:duration=0.2",

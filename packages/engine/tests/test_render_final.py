@@ -5,7 +5,6 @@ import json
 import math
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import time
@@ -15,7 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import numpy as np
-from support import make_edl, media_file, playlist_file, seconds  # first: it sets a scratch ZKS_HOME
+from support import make_edl, media_file, playlist_file, seconds, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 from test_gpu_render import write_png_header
 
 from zks_engine import pipeline
@@ -41,7 +40,7 @@ class RangeExprTests(unittest.TestCase):
     def test_short_list_stays_flat(self):
         self.assertEqual(render_final.ranges_expr([(0, 10), (20, 30)]), "between(n,0,9)+between(n,20,29)")
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
+    @unittest.skipUnless(has_ffmpeg(), "ffmpeg not installed")
     def test_ffmpeg_parses_150_ranges(self):
         expr = render_final.ranges_expr([(index * 10, index * 10 + 5) for index in range(150)])
         result = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=32x32:rate=30000/1001:duration=1",
@@ -134,7 +133,7 @@ class BlurTests(unittest.TestCase):
         self.assertEqual(graph.count("drawbox="), 18)
         self.assertEqual((graph.count("alphamerge"), graph.count("gblur"), graph.count("overlay=0:0")), (1, 1, 1))
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
+    @unittest.skipUnless(has_ffmpeg(), "ffmpeg not installed")
     def test_ffmpeg_runs_the_graph_with_and_without_regions(self):
         # A small upright stand-in for the 4K source keeps this fast; the graph shape is the same.
         timeline = make_edl([(0, 10), (20, 30)], [1.0, 1.08])
@@ -185,7 +184,7 @@ class SoundtrackTests(unittest.TestCase):
 
 
 
-@unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class RestampTests(unittest.TestCase):
     def test_a_1_1000_mkv_lands_exactly_on_the_png_grid(self):
         """Joined sources are .mkv (time base 1/1000): setpts=N*1001 put frames 1.001 s apart (v8/v11, 2026-09-28)."""
@@ -322,7 +321,7 @@ class IntroTests(unittest.TestCase):
         self.assertEqual([plain[index + 1] for index, arg in enumerate(plain) if arg == "-i"], [str(listing), str(edit)])
         self.assertEqual(plain[plain.index("-map", plain.index("-map") + 1) + 1], "1:a")
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
     def test_the_spliced_soundtrack_pauses_the_edit_for_the_intro(self):
         # A tone for the edit, silence for the intro: the tone stops at the insert and resumes 60 frames later.
         def write(path, samples):

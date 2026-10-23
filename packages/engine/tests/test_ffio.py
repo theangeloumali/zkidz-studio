@@ -2,14 +2,13 @@
 # ffmpeg input policy (plan §7.5): user media is a plain local file, never a playlist, list, URL or image sequence.
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import support  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import HF, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import ffio
 
@@ -75,7 +74,7 @@ class ConcatTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ffio.concat_listing([Path("/tmp/a\nfile '/etc/passwd'.mp4")])
 
-    @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
     def test_a_home_path_with_a_quote_joins(self):
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch) / "O'Brien"
@@ -93,7 +92,7 @@ class ConcatTests(unittest.TestCase):
             self.assertEqual(int(frames.stdout), 12)
 
 
-@unittest.skipUnless(shutil.which("ffprobe") and shutil.which("ffmpeg"), "needs ffmpeg and ffprobe")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg and ffprobe")
 class ProbeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -190,5 +189,5 @@ class PinnedFfprobeTests(unittest.TestCase):
 
     def test_the_overlay_renderer_runs_the_pinned_ffmpeg_too(self):
         bare_call = re.compile(r"""execFile(Sync)?\(\s*["']ffmpeg["']""")
-        offenders = [path.name for path in (support.HF).glob("*.js") if bare_call.search(path.read_text(encoding="utf-8"))]
+        offenders = [path.name for path in HF.glob("*.js") if bare_call.search(path.read_text(encoding="utf-8"))]
         self.assertEqual(offenders, [])

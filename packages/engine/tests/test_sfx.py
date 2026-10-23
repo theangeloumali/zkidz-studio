@@ -1,14 +1,13 @@
 # Created by The Angelo Umali.
 # Unit tests for sfx.py: recipe levels at 48 kHz, determinism, mix guards and an end-to-end mix of a tiny edit.
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import numpy as np
-from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
+from support import make_edl, seconds, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import pipeline, sfx
 
@@ -95,7 +94,7 @@ class MixGuardTests(unittest.TestCase):
         self.assertFalse(silent.any())
 
 
-@unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class MixTests(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()

@@ -13,7 +13,7 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
-from support import make_edl  # first: it sets a scratch ZKS_HOME
+from support import make_edl, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 from zks_engine import ffio
 from zks_engine.edl import FACECAM_ZOOM
 from zks_engine.pipeline import OUTPUT, frame_to_sample
@@ -78,7 +78,7 @@ def ffmpeg(*args):
 
 def skip_without_ffmpeg():
     """CI sets ZKS_REQUIRE_GOLDEN=1 so a missing ffmpeg fails the golden job instead of quietly skipping it."""
-    if shutil.which(ffio.ffmpeg_bin()):
+    if has_ffmpeg():
         return
     if os.environ.get("ZKS_REQUIRE_GOLDEN") == "1":
         raise AssertionError(f"ZKS_REQUIRE_GOLDEN=1 but ffmpeg is not at {ffio.ffmpeg_bin()}")

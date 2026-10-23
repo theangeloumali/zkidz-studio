@@ -2,14 +2,13 @@
 # zks-engine <cmd> --json: the server's contract with the engine is JSON on stdout and the exit code.
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-import support  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import __version__, cli
 
@@ -51,7 +50,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(error["code"], "tool_missing")
         self.assertIn(missing, error["message"])
 
-    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "needs ffmpeg and ffprobe")
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg and ffprobe")
     def test_probe_prints_metadata(self):
         with tempfile.TemporaryDirectory() as scratch:
             clip = Path(scratch) / "clip.mkv"

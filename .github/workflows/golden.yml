@@ -60,7 +60,7 @@ jobs:
       - name: videotoolbox parity
         if: runner.os == 'macOS'
         # Skips, printing why, when the runner VM has no usable hardware encoder.
-        run: uv run --project packages/engine python -m unittest -v parity.test_backend_parity
+        run: uv run --project .. python -m unittest -v parity.test_backend_parity
         working-directory: packages/engine/tests
         env:
           ZKS_PARITY_BACKEND: videotoolbox

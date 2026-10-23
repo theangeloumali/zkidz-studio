@@ -1,14 +1,13 @@
 # Created by The Angelo Umali.
 # join_sources pieces: hwdownload cannot convert NVDEC surfaces, so each clip downloads in its own bit depth; every other
 # backend (and a quarter-turned clip without transpose_cuda) decodes to system frames that autorotate turns.
-import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from support import media_file, media_project  # first: it sets a scratch ZKS_HOME
+from support import media_file, media_project, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, ffio, join_sources
 
@@ -100,7 +99,7 @@ class RateTests(unittest.TestCase):
         self.assertEqual(join_sources.common_rate([clip(fps=(25, 1))]), (25, 1))
 
 
-@unittest.skipUnless(shutil.which(ffio.ffmpeg_bin()), "needs ffmpeg")
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class FrameExactTests(unittest.TestCase):
     """Real decodes on the cpu backend: select by decode index, then restamp, keeps exact counts at every rate."""
 

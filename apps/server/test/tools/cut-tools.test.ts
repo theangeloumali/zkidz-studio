@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { resolveCutReview } from "../../src/tools/cut-review.ts";
+import { findRejectedCandidates, MAX_REJECTED_SPANS, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
@@ -159,6 +159,17 @@ describe("propose_cuts", () => {
     const result = await restartedSetCuts.run({ cuts: cutSpecFor(asset.id, [{ at: rejected.at, end: rejected.end, reason: "cut" }]) }, fixture.context);
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/the user rejected/);
+  });
+
+  // Dropping the oldest rejections once the record filled let a long-rejected cut back in (security review: fail-open).
+  it("never forgets a rejection: duplicates collapse, and a full record refuses new ones", async () => {
+    const fixture = await createToolFixture(server);
+    const spans = Array.from({ length: MAX_REJECTED_SPANS }, (_, index) => ({ id: `r${index}`, at: index, end: index + 0.5 }));
+    await recordRejectedCandidates(fixture.context, spans);
+    await recordRejectedCandidates(fixture.context, [spans[0] ?? { id: "", at: 0, end: 0 }]);
+
+    await expect(recordRejectedCandidates(fixture.context, [{ id: "one-more", at: -2, end: -1 }])).rejects.toThrow(/record of rejected cuts is full/);
+    expect(await findRejectedCandidates(fixture.context, [{ at: 0, end: 0.5 }])).toEqual(["r0"]);
   });
 
   it("refuses an approved candidate id stretched past its own span", async () => {

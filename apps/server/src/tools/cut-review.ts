@@ -19,7 +19,8 @@ const REJECTED_COVERAGE_LIMIT = 0.5;
 // Approvals stay in memory so a restart fails closed; the caps bound that memory, and eviction fails closed too.
 export const MAX_APPROVED_IDS_PER_PROJECT = 1000;
 export const MAX_PROJECTS_WITH_APPROVALS = 100;
-const MAX_REJECTED_SPANS = 5000;
+// Never evicted: a dropped rejection would let that cut back in, so a full record refuses new rejections instead.
+export const MAX_REJECTED_SPANS = 5000;
 const REJECTED_SPANS_REL_PATH = "work/cut-review/rejected.json";
 const RejectedSpansSchema = z.array(z.object({ id: z.string(), at: z.number(), end: z.number() }));
 
@@ -101,14 +102,22 @@ export function recordRejectedCandidates(context: ToolContext, rejected: readonl
   if (rejected.length === 0) return Promise.resolve();
   const previousWrite = rejectedSpanWrites.get(context.projectId) ?? Promise.resolve();
   const write = previousWrite.then(async () => {
-    const spans = [...(await readRejectedSpans(context)), ...rejected.map(({ id, at, end }) => ({ id, at, end }))];
-    await writeFileAtomically(await rejectedSpansPath(context), `${JSON.stringify(spans.slice(-MAX_REJECTED_SPANS))}\n`);
+    const spans = withoutDuplicates([...(await readRejectedSpans(context)), ...rejected.map(({ id, at, end }) => ({ id, at, end }))]);
+    if (spans.length > MAX_REJECTED_SPANS) {
+      throw new ToolError("The record of rejected cuts is full; start a new project for further cut reviews");
+    }
+    await writeFileAtomically(await rejectedSpansPath(context), `${JSON.stringify(spans)}\n`);
   });
   const settled = write.finally(() => {
     if (rejectedSpanWrites.get(context.projectId) === settled) rejectedSpanWrites.delete(context.projectId);
   });
   rejectedSpanWrites.set(context.projectId, settled);
   return write;
+}
+
+function withoutDuplicates(spans: readonly CandidateSpan[]): CandidateSpan[] {
+  const byKey = new Map(spans.map((span) => [`${span.id}|${span.at}|${span.end}`, span]));
+  return [...byKey.values()];
 }
 
 /** Rejected candidates the removals cover past REJECTED_COVERAGE_LIMIT, taken together so a split cut still counts. */

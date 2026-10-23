@@ -3,7 +3,7 @@
 # Local CI, run before every merge: the Linux jobs the GitHub workflows ran, against the pinned tools. The workflows are
 # manual-only because per-push runs emailed every failure. Linux x64 only (the pinned scanners are Linux builds).
 # The lint, scan and install run in turn; then every check that shares nothing runs side by side, each test lane capped
-# at ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
+# at ZKS_CI_JOBS workers (at most four). Every step runs even after one fails, and the exit code is 1 when any step failed.
 set -uo pipefail
 
 USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes] [--list-test-env]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
@@ -24,6 +24,9 @@ for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
     exit 2
   fi
 done
+# Beside the engine pool's CPU renders, six forks per test lane missed vitest's 60 s worker-start timeout; four start.
+VITEST_WORKERS_MAX=4
+VITEST_WORKERS=$((LANE_WORKERS < VITEST_WORKERS_MAX ? LANE_WORKERS : VITEST_WORKERS_MAX))
 
 release=0
 list=0
@@ -34,7 +37,7 @@ for arg in "$@"; do
     --list) list=1 ;;
     --list-jobs) echo "$LANE_WORKERS" && exit 0 ;;
     --list-lanes) list_lanes=1 ;;
-    --list-test-env) echo "VITEST_MAX_WORKERS=$LANE_WORKERS workspace-concurrency=1" && exit 0 ;;
+    --list-test-env) echo "VITEST_MAX_WORKERS=$VITEST_WORKERS workspace-concurrency=1" && exit 0 ;;
     *) echo "$USAGE" >&2 && exit 2 ;;
   esac
 done
@@ -117,8 +120,8 @@ export_pinned_tools() {
 step_format() { node scripts/check-attribution.mjs && pnpm exec prettier --check .; }
 step_lint() { pnpm -r lint; }
 step_typecheck() { pnpm -r typecheck; }
-step_test-server() { export_pinned_tools && VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -F @zks/server test; }
-step_test-other() { VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -r --workspace-concurrency=1 --filter '!@zks/server' test; }
+step_test-server() { export_pinned_tools && VITEST_MAX_WORKERS="$VITEST_WORKERS" pnpm -F @zks/server test; }
+step_test-other() { VITEST_MAX_WORKERS="$VITEST_WORKERS" pnpm -r --workspace-concurrency=1 --filter '!@zks/server' test; }
 
 # The engine and golden frames with the pinned ffmpeg and Chrome, the overlay renderer tests forbidden to skip, one
 # process per test module. Each process gets its own scratch ZKS_HOME from tests/support.py.

@@ -1,16 +1,18 @@
 // Created by The Angelo Umali.
-// Builds the brand HyperFrames composition for one edit: loads the cue files in order the way overlay.html does, maps
-// them through the EDL with the canvas page's timemap, and writes <WORK>/hf/<target>/ (index.html, cues.json, assets).
-// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/build.js v4r:v4+v4r+v4-cc [--events] [--guides] [--layer behind]
+// Builds the brand HyperFrames composition for one edit: loads the JSON cue files in order (cues.js), maps them through
+// the EDL with the canvas page's timemap, and writes <WORK>/hf/<target>/ (index.html, cues.json, assets) in a theme pack's look.
+// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/build.js v4r:v4+v4r+v4-cc [--events] [--guides] [--layer behind] [--theme id]
 //   --events → also edl/<video>.sfx.json for sfx.py (same schema as render-overlays.js --events), from every cue in both layers
 //   --layer behind → hf/<target>.behind/: only the cues with depth "behind" (never captions), drawn under the person matte;
 //   the normal build skips them
-// A hookTitle with `intro: true` also gets the brand pre-roll: hf/<target>.intro/, and an `intro` block in the sfx file
+//   --theme id → themes/<id>/ (default zkidz): palette, type, boil, intro, and the kinds it draws
+// A hookTitle with `intro: true` also gets the brand pre-roll (when the theme has an intro): hf/<target>.intro/, and an `intro` block in the sfx file
 // that sfx.py and render_final.py read.
 const fs = require("fs");
 const path = require("path");
-const vm = require("vm");
 const { createTimemap, sfxEvents } = require("./overlay/timemap");
+const { loadCueSheet } = require("./cues");
+const { loadTheme, DEFAULT_THEME } = require("./theme");
 const { composeDocument } = require("./compose");
 const { REGISTRY } = require("./components");
 const { canvasBrand } = require("./brand/canvas");
@@ -31,25 +33,7 @@ const ASSETS = {
 };
 const CSS = `${fontFaceCss()}
 ${fs.readFileSync(path.join(__dirname, "brand", "brand.css"), "utf8")}`;
-// Cue sheets read the canvas page's colour tables (BRAND.ink, TEAM.bad); these are the same objects.
-const KIT_COLOURS = ["BRAND", "TEAM"];
 const isKnownKind = (kind) => Object.hasOwn(REGISTRY, kind);
-
-// Classic scripts sharing one global scope: the first file declares CUE_SHEET, later ones edit it (reel overrides, captions).
-function loadCueSheet(edl, cueNames) {
-  const { scope } = canvasBrand();
-  const context = vm.createContext({ EDL: edl, console, ...Object.fromEntries(KIT_COLOURS.map((name) => [name, scope[name]])) });
-  for (const name of cueNames) {
-    const file = path.join(WORK, "cues", `${name}.js`);
-    try {
-      vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: file });
-    } catch (error) {
-      if (error.name !== "ReferenceError") throw error;
-      throw new Error(`cues/${name}.js: ${error.message}; cue files get EDL, ${KIT_COLOURS.join(", ")} and nothing else from the page`);
-    }
-  }
-  return vm.runInContext("CUE_SHEET", context);
-}
 
 // The edit's brand pre-roll, from its one hookTitle with `intro: true`. It goes in when that hook ends, or after a vlog-style
 // cold open where the hook's `introAt` pin says it ends (never before the hook has gone): sfx.py puts the insert at the
@@ -142,7 +126,8 @@ function withImages(clips) {
     if (typeof cue.src !== "string" || !cue.src) throw new Error(`${cue.kind} at ${cue.at}: src is required (a repo-relative image path)`);
     const file = path.resolve(REPO, cue.src);
     if (!fs.existsSync(file)) throw new Error(`${cue.kind} at ${cue.at}: no image at ${cue.src} (${file})`);
-    const relative = `media/${index}-${path.basename(file)}`;
+    // The name lands in an src attribute: anything past [\w.-] could close it.
+    const relative = `media/${index}-${path.basename(file).replace(/[^\w.-]/g, "_")}`;
     images[relative] = file;
     return { ...cue, src: relative };
   });
@@ -150,13 +135,15 @@ function withImages(clips) {
 }
 
 // Writes the composition and returns what the renderer needs; warns like the canvas page, throws on an unknown kind.
-function build(target, { guides = false, events = false, variant = "", layer = "front" } = {}) {
+function build(target, { guides = false, events = false, variant = "", layer = "front", theme: themeId = DEFAULT_THEME } = {}) {
   if (!LAYERS.includes(layer)) throw new Error(`--layer is behind (or omitted for the normal pass), not ${layer}`);
   const [video, cueList = video] = target.split(":");
   const cueNames = cueList.split(/[+ ,]/).filter(Boolean);
   const edl = JSON.parse(fs.readFileSync(path.join(WORK, "edl", `${video}.json`), "utf8"));
+  const theme = loadTheme(themeId);
+  canvasBrand().applyTheme(theme);
   const warnings = [];
-  const cues = createTimemap(edl, warnings).mapCues(loadCueSheet(edl, cueNames), {
+  const cues = createTimemap(edl, warnings).mapCues(loadCueSheet(WORK, cueNames), {
     // Cover sheets reuse a video's EDL for timing but must not inherit its cutaways and censor gags.
     includeDerived: cueNames.includes(video),
     isKnownKind,
@@ -167,12 +154,15 @@ function build(target, { guides = false, events = false, variant = "", layer = "
   if (unknown.length) {
     throw new Error(`unknown cue kinds: ${unknown.join(", ")}. Supported: ${Object.keys(REGISTRY).sort().join(", ")}`);
   }
+  // Derived kinds (censor, cutaway) count too: a theme must draw everything the edit puts on screen.
+  const undrawn = [...new Set(cues.map((cue) => cue.kind).filter((kind) => !Object.hasOwn(theme.components, kind)))];
+  if (undrawn.length) throw new Error(`theme ${theme.id} does not draw ${undrawn.join(", ")}; its kinds: ${Object.keys(theme.components).join(", ")}`);
 
   const folder = target.replace(/:/g, "--");
   const behind = layer === "behind";
   const dir = path.join(WORK, "hf", [folder, variant, behind && "behind"].filter(Boolean).join("."));
   const compositionId = `zkidz-${folder.replace(/[^A-Za-z0-9-]/g, "-")}`;
-  const intro = introOf(cues, edl);
+  const intro = theme.intro ? introOf(cues, edl) : null;
   const insert = intro ? insertOf(video) : null;
   // Deferred cards move to the insert in both layers; the Z-split goes over the front one only.
   const moved = insert ? aroundInsert(cues, insert, edl.fps_num / edl.fps_den) : cues;
@@ -212,8 +202,14 @@ function build(target, { guides = false, events = false, variant = "", layer = "
 if (require.main === module) {
   const [target, ...args] = process.argv.slice(2);
   try {
-    const layer = args.includes("--layer") ? args[args.indexOf("--layer") + 1] : "front";
-    const { dir, placed } = build(target, { guides: args.includes("--guides"), events: args.includes("--events"), layer });
+    const valueOf = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
+    const options = {
+      guides: args.includes("--guides"),
+      events: args.includes("--events"),
+      layer: valueOf("--layer", "front"),
+      theme: valueOf("--theme", DEFAULT_THEME),
+    };
+    const { dir, placed } = build(target, options);
     console.log(`${target}: ${placed.length} clips → ${path.join(dir, "index.html")}`);
   } catch (error) {
     console.error(error.message);

@@ -1,0 +1,368 @@
+{
+  "id": "zkidz",
+  "name": "ZKidz",
+  "version": 1,
+  "description": "The ZKidz look: steel ink on warm paper, one gold accent, hand-drawn boil and the Z brand intro.",
+  "tokens": {
+    "ink": "#172230",
+    "muted": "#526171",
+    "lineStrong": "#2e4a64",
+    "steel": "#3b7a9e",
+    "gold": "#c9a838",
+    "goldInk": "#9f7e16",
+    "paper": "#f3efe8",
+    "white": "#ffffff",
+    "line": "rgba(70, 98, 125, 0.18)",
+    "goldBright": "#d5b13a",
+    "steelOnInk": "#8ea9c4",
+    "copyOnInk": "#ece7de",
+    "mutedOnInk": "#95a3b3",
+    "negative": "#b4483c",
+    "logoSteel": "#2E5F74",
+    "logoGold": "#D4AF36"
+  },
+  "type": {
+    "display": {
+      "family": "Newsreader",
+      "size": 96,
+      "weight": 600
+    },
+    "body": {
+      "family": "Inter",
+      "size": 36,
+      "weight": 500
+    },
+    "label": {
+      "family": "Inter",
+      "size": 32,
+      "weight": 600
+    },
+    "kicker": {
+      "family": "Inter",
+      "size": 32,
+      "weight": 600,
+      "trackingEm": 0.18
+    },
+    "hand": {
+      "family": "Caveat",
+      "size": 64,
+      "weight": 700
+    },
+    "mono": {
+      "family": "JetBrains Mono",
+      "size": 32,
+      "weight": 600
+    }
+  },
+  "boil": true,
+  "intro": true,
+  "components": {
+    "hookTitle": {
+      "tier": "core",
+      "purpose": "The opening promise: a kicker tab over one to three short lines, one in the accent. Also the cover format.",
+      "slots": {
+        "kicker": {
+          "maxChars": 32
+        },
+        "lines": {
+          "maxChars": 16
+        }
+      }
+    },
+    "lowerThird": {
+      "tier": "core",
+      "purpose": "Names a speaker or place the first time they appear.",
+      "slots": {
+        "name": {
+          "maxChars": 24
+        },
+        "sub": {
+          "maxChars": 32
+        }
+      }
+    },
+    "chapterCard": {
+      "tier": "core",
+      "purpose": "Marks a new section of the story with an index and a title.",
+      "slots": {
+        "index": {
+          "maxChars": 4
+        },
+        "kicker": {
+          "maxChars": 24
+        },
+        "title": {
+          "maxChars": 22
+        },
+        "sub": {
+          "maxChars": 36
+        }
+      }
+    },
+    "keyword": {
+      "tier": "core",
+      "purpose": "One spoken phrase pulled out as text, on footage, on paper or as a chip.",
+      "slots": {
+        "text": {
+          "maxChars": 32
+        }
+      },
+      "tones": {
+        "chip": {
+          "text": {
+            "maxChars": 27
+          }
+        }
+      }
+    },
+    "caption": {
+      "tier": "core",
+      "purpose": "The spoken words as a subtitle plate in the bottom band.",
+      "slots": {
+        "text": {
+          "maxChars": 60
+        }
+      }
+    },
+    "endCard": {
+      "tier": "core",
+      "purpose": "The closing call to action and sign-off.",
+      "slots": {
+        "cta": {
+          "maxChars": 28
+        },
+        "sign": {
+          "maxChars": 24
+        }
+      }
+    },
+    "censor": {
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    },
+    "cutaway": {
+      "tier": "core",
+      "purpose": "A wipe or title card over removed footage; derived from the cut spec.",
+      "slots": {
+        "title": {
+          "maxChars": 24
+        },
+        "sub": {
+          "maxChars": 36
+        }
+      }
+    },
+    "comment": {
+      "tier": "accent",
+      "purpose": "A viewer comment quoted as a card, to answer it on camera.",
+      "slots": {
+        "text": {
+          "maxChars": 80
+        }
+      }
+    },
+    "handNote": {
+      "tier": "accent",
+      "purpose": "A handwritten aside, optionally striking a word and pointing with an arrow.",
+      "slots": {
+        "text": {
+          "maxChars": 40
+        },
+        "strike": {
+          "maxChars": 24
+        }
+      }
+    },
+    "slamStamp": {
+      "tier": "accent",
+      "purpose": "A one-word verdict stamped onto the frame for emphasis.",
+      "slots": {
+        "text": {
+          "maxChars": 16
+        },
+        "sub": {
+          "maxChars": 24
+        }
+      }
+    },
+    "statTile": {
+      "tier": "accent",
+      "purpose": "One number that counts up, with its label and a late sub line.",
+      "slots": {
+        "prefix": {
+          "maxChars": 3
+        },
+        "suffix": {
+          "maxChars": 6
+        },
+        "label": {
+          "maxChars": 28
+        },
+        "sub": {
+          "maxChars": 36
+        }
+      }
+    },
+    "titleSwap": {
+      "tier": "accent",
+      "purpose": "An old title struck and replaced by a new one on a word.",
+      "slots": {
+        "label": {
+          "maxChars": 24
+        },
+        "old": {
+          "maxChars": 20
+        },
+        "new": {
+          "maxChars": 20
+        }
+      }
+    },
+    "pills": {
+      "tier": "accent",
+      "purpose": "A row of short tags that land one by one on their words.",
+      "slots": {
+        "text": {
+          "maxChars": 32
+        }
+      }
+    },
+    "chips": {
+      "tier": "accent",
+      "purpose": "Named items (tools, things) as chips, one hot.",
+      "slots": {
+        "text": {
+          "maxChars": 30
+        }
+      }
+    },
+    "checklist": {
+      "tier": "accent",
+      "purpose": "Rows ticked or crossed as they are said.",
+      "slots": {
+        "text": {
+          "maxChars": 30
+        }
+      }
+    },
+    "criteriaCard": {
+      "tier": "accent",
+      "purpose": "A titled card of rules or criteria, one row per beat.",
+      "slots": {
+        "kicker": {
+          "maxChars": 24
+        },
+        "title": {
+          "maxChars": 30
+        }
+      }
+    },
+    "timeline": {
+      "tier": "accent",
+      "purpose": "Steps over time along a line, the last one hot.",
+      "slots": {
+        "text": {
+          "maxChars": 32
+        }
+      }
+    },
+    "flowRow": {
+      "tier": "accent",
+      "purpose": "Two or more short items joined by arrows, left to right.",
+      "slots": {
+        "text": {
+          "maxChars": 30
+        },
+        "items": {
+          "maxChars": 12
+        }
+      }
+    },
+    "vsCard": {
+      "tier": "special",
+      "purpose": "Two options side by side for a comparison.",
+      "slots": {}
+    },
+    "splitFlow": {
+      "tier": "special",
+      "purpose": "One idea splitting into two outcomes.",
+      "slots": {
+        "text": {
+          "maxChars": 30
+        }
+      }
+    },
+    "pipeline": {
+      "tier": "special",
+      "purpose": "Exactly three stations of a process, drawn in turn.",
+      "slots": {
+        "labels": {
+          "maxChars": 12
+        }
+      }
+    },
+    "chatCard": {
+      "tier": "special",
+      "purpose": "A chat exchange as bubbles, quoting only the cue's words.",
+      "slots": {
+        "title": {
+          "maxChars": 28
+        }
+      }
+    },
+    "headlineStack": {
+      "tier": "special",
+      "purpose": "Headlines stacking as paper slips, the last one in the accent.",
+      "slots": {
+        "kicker": {
+          "maxChars": 24
+        },
+        "title": {
+          "maxChars": 30
+        },
+        "note": {
+          "maxChars": 40
+        }
+      }
+    },
+    "lineChart": {
+      "tier": "special",
+      "purpose": "A line drawing on with a counting value at its tip and one focus point.",
+      "slots": {
+        "kicker": {
+          "maxChars": 24
+        },
+        "title": {
+          "maxChars": 30
+        },
+        "note": {
+          "maxChars": 40
+        },
+        "suffix": {
+          "maxChars": 6
+        }
+      }
+    },
+    "phoneFrame": {
+      "tier": "special",
+      "purpose": "A phone bezel around a screen recording insert.",
+      "slots": {}
+    },
+    "backdrop": {
+      "tier": "special",
+      "purpose": "A full-frame image drawn behind the person matte.",
+      "slots": {}
+    },
+    "paperCutout": {
+      "tier": "special",
+      "purpose": "A cut-out image on paper, behind or in front of the person.",
+      "slots": {}
+    },
+    "frameEscape": {
+      "tier": "special",
+      "purpose": "Paper over the frame except a window, so the person steps out of it.",
+      "slots": {}
+    }
+  }
+}

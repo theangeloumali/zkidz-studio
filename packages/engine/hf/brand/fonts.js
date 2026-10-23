@@ -62,4 +62,7 @@ function inkLeft(text, { family, weight = 400, size }) {
   return (-face.layout(String(text)).bbox.minX / face.unitsPerEm) * size;
 }
 
-module.exports = { fontAssets, fontFaceCss, fontWarmHtml, advanceWidth, inkLeft };
+// The faces a theme may name: the renderer bundles them and measures text with them.
+const FAMILIES = Object.keys(FACES);
+
+module.exports = { FAMILIES, fontAssets, fontFaceCss, fontWarmHtml, advanceWidth, inkLeft };

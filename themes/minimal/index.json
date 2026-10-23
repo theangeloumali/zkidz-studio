@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "minimal",
+  "name": "Minimal",
+  "components": [
+    {
+      "kind": "caption",
+      "tier": "core",
+      "purpose": "The spoken words as a subtitle plate in the bottom band.",
+      "slots": {
+        "text": 60
+      }
+    },
+    {
+      "kind": "censor",
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    },
+    {
+      "kind": "chapterCard",
+      "tier": "core",
+      "purpose": "Marks a new section of the story with an index and a title.",
+      "slots": {
+        "index": 4,
+        "kicker": 24,
+        "title": 22,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "cutaway",
+      "tier": "core",
+      "purpose": "A wipe or title card over removed footage; derived from the cut spec.",
+      "slots": {
+        "title": 24,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "endCard",
+      "tier": "core",
+      "purpose": "The closing call to action and sign-off.",
+      "slots": {
+        "cta": 28,
+        "sign": 24
+      }
+    },
+    {
+      "kind": "hookTitle",
+      "tier": "core",
+      "purpose": "The opening promise: a kicker tab over one to three short lines, one in the accent. Also the cover format.",
+      "slots": {
+        "kicker": 32,
+        "lines": 16
+      }
+    },
+    {
+      "kind": "keyword",
+      "tier": "core",
+      "purpose": "One spoken phrase pulled out as text, on footage, on paper or as a chip.",
+      "slots": {
+        "text": 32
+      },
+      "tones": {
+        "chip": {
+          "text": 27
+        }
+      }
+    },
+    {
+      "kind": "lowerThird",
+      "tier": "core",
+      "purpose": "Names a speaker or place the first time they appear.",
+      "slots": {
+        "name": 24,
+        "sub": 32
+      }
+    },
+    {
+      "kind": "comment",
+      "tier": "accent",
+      "purpose": "A viewer comment quoted as a card, to answer it on camera.",
+      "slots": {
+        "text": 80
+      }
+    },
+    {
+      "kind": "statTile",
+      "tier": "accent",
+      "purpose": "One number that counts up, with its label and a late sub line.",
+      "slots": {
+        "prefix": 3,
+        "suffix": 6,
+        "label": 28,
+        "sub": 36
+      }
+    }
+  ]
+}

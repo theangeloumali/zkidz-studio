@@ -13,19 +13,16 @@ from support import ENGINE, HYPERFRAMES_SKIP, hf_installed, make_edl, needs_rend
 from test_hf_bridge import assert_seek_safe, build, clip_markup, tweens
 from test_hf_render import hyperframes_ready, rgba
 
-BACKDROP = 'src: "media/fixture/backdrop.png", fit: "cover"'
-CUTOUT = 'src: "media/fixture/cutout.png"'
-LAYER_CUES = f"""const CUE_SHEET = [
-  {{ kind: "keyword", at: 0.2, end: 1.6, text: "Front", tone: "paper" }},
-  {{ kind: "backdrop", at: 0.5, end: 2.5, depth: "behind", {BACKDROP} }},
-  {{ kind: "frameEscape", at: 2.6, end: 4.5, depth: "behind", x: 140, y: 420, w: 800, h: 900, tilt: -4 }},
-  {{ kind: "paperCutout", at: 1.0, end: 3.0, {CUTOUT}, x: 760, y: 1100, scale: 0.45, rot: 6 }},
-  {{ kind: "caption", at: 0.2, end: 2.0, depth: "behind", text: "Captions stay in front" }},
-];
-"""
-HOOK = '{ kind: "hookTitle", at: 0, end: 2, intro: true, depth: "behind", kicker: "Posts", lines: ["Posts itself."], accentLine: 0 }'
-INTRO_CUES = f"const CUE_SHEET = [{HOOK}, {{ kind: \"keyword\", at: 2.5, end: 4, text: \"Front\", tone: \"paper\" }}];\n"
-MISSING_CUES = 'const CUE_SHEET = [{ kind: "backdrop", at: 0.5, end: 2, src: "media/fixture/nope.png" }];\n'
+LAYER_CUES = [
+    {"kind": "keyword", "at": 0.2, "end": 1.6, "text": "Front", "tone": "paper"},
+    {"kind": "backdrop", "at": 0.5, "end": 2.5, "depth": "behind", "src": "media/fixture/backdrop.png", "fit": "cover"},
+    {"kind": "frameEscape", "at": 2.6, "end": 4.5, "depth": "behind", "x": 140, "y": 420, "w": 800, "h": 900, "tilt": -4},
+    {"kind": "paperCutout", "at": 1.0, "end": 3.0, "src": "media/fixture/cutout.png", "x": 760, "y": 1100, "scale": 0.45, "rot": 6},
+    {"kind": "caption", "at": 0.2, "end": 2.0, "depth": "behind", "text": "Captions stay in front"},
+]
+HOOK = {"kind": "hookTitle", "at": 0, "end": 2, "intro": True, "depth": "behind", "kicker": "Posts", "lines": ["Posts itself."], "accentLine": 0}
+INTRO_CUES = [HOOK, {"kind": "keyword", "at": 2.5, "end": 4, "text": "Front", "tone": "paper"}]
+MISSING_CUES = [{"kind": "backdrop", "at": 0.5, "end": 2, "src": "media/fixture/nope.png"}]
 
 
 def kinds(work, folder):

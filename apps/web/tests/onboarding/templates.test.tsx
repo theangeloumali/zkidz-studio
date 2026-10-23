@@ -19,6 +19,7 @@ const DEMO_KEY = `POST ${API_ROUTES.openDemoProject.path}`;
 const TEMPLATES_KEY = `GET ${API_ROUTES.listTemplates.path}`;
 const START_PATH = API_ROUTES.startTemplate.path.replace(":projectId", PROJECT_ID);
 const START_KEY = `POST ${START_PATH}`;
+const CONNECTION_KEY = `GET ${API_ROUTES.getConnection.path}`;
 const CAMERA_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const SECOND_ID = "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e";
 
@@ -32,11 +33,13 @@ function renderTemplates() {
 }
 
 const listTemplates = () => jsonResponse({ templates: SHIPPED_TEMPLATES });
+const connectedAs = (mode: "api_key" | "terminal" | null) => () => jsonResponse({ mode, keyLast4: null, provider: null, claudeVersion: "2.1.300" });
 
-function stubStartFetch() {
+function stubStartFetch(mode: "api_key" | "terminal" | null = "api_key") {
   const fetchMock = stubFetch({
     [PROJECTS_KEY]: () => jsonResponse({ projects: [] }),
     [TEMPLATES_KEY]: listTemplates,
+    [CONNECTION_KEY]: connectedAs(mode),
     [START_KEY]: () => {
       const { templateId } = requestBody(fetchMock, START_PATH, "POST") as { templateId: string };
       return jsonResponse({ templateId, ingestMode: shippedTemplate(templateId).ingestMode, ingestJobId: "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f" });
@@ -161,6 +164,7 @@ describe("Start from a template", () => {
     const fetchMock = stubFetch({
       [PROJECTS_KEY]: () => jsonResponse({ projects: [] }),
       [TEMPLATES_KEY]: listTemplates,
+      [CONNECTION_KEY]: connectedAs("api_key"),
       [START_KEY]: () => jsonResponse({ error: "Both files need a known duration for a showcase" }, 400),
     });
     renderTemplates();
@@ -168,10 +172,38 @@ describe("Start from a template", () => {
     const dialog = await openTemplate(/Talking-head short/);
     await userEvent.upload(within(dialog).getByLabelText("Clip"), video("a", "talk.mp4"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Start the edit" }));
-    act(() => FakeUploadRequest.instances[0]?.respond(201, { project: makeProject(), asset: makeAsset({ id: CAMERA_ID }) }));
+    const create = await nthUpload(0);
+    act(() => create.respond(201, { project: makeProject(), asset: makeAsset({ id: CAMERA_ID }) }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Both files need a known duration for a showcase");
     expect(fetchMock.mock.calls.some(([url]) => url === PROMPT_PATH)).toBe(false);
+  });
+
+  it("creates nothing and points to Setup when no connection is set up", async () => {
+    const fetchMock = stubStartFetch(null);
+    renderTemplates();
+
+    const dialog = await openTemplate(/Talking-head short/);
+    await userEvent.upload(within(dialog).getByLabelText("Clip"), video("a", "talk.mp4"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Start the edit" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Connect Claude before starting a template.");
+    expect(within(dialog).getByRole("link", { name: "Open Setup" })).toHaveAttribute("href", "/setup");
+    expect(FakeUploadRequest.instances).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url]) => url === START_PATH || url === PROMPT_PATH)).toBe(false);
+  });
+
+  it("starts in terminal mode, where the server opens the terminal on the first prompt", async () => {
+    stubStartFetch("terminal");
+    renderTemplates();
+
+    const dialog = await openTemplate(/Talking-head short/);
+    await userEvent.upload(within(dialog).getByLabelText("Clip"), video("a", "talk.mp4"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Start the edit" }));
+
+    const create = await nthUpload(0);
+    act(() => create.respond(201, { project: makeProject(), asset: makeAsset({ id: CAMERA_ID }) }));
+    expect(await screen.findByText("Editor page")).toBeInTheDocument();
   });
 
   it("asks for the missing files instead of starting", async () => {
@@ -193,7 +225,8 @@ describe("Start from a template", () => {
     const dialog = await openTemplate(/Talking-head short/);
     await userEvent.upload(within(dialog).getByLabelText("Clip"), video("x", "notes.mp4"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Start the edit" }));
-    act(() => FakeUploadRequest.instances[0]?.respond(415, { error: "Not a video file" }));
+    const create = await nthUpload(0);
+    act(() => create.respond(415, { error: "Not a video file" }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Not a video file");
     expect(screen.queryByText("Editor page")).not.toBeInTheDocument();

@@ -2,13 +2,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type { HomeTemplate } from "@zks/shared";
 import { queryKeys } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { FIELD_CLASS } from "../components/field-class.ts";
-import { editorPath } from "../lib/routes.ts";
-import { startFromTemplate } from "./start-from-template.ts";
+import { INLINE_LINK_CLASS } from "../components/link-class.ts";
+import { ROUTE_PATHS, editorPath } from "../lib/routes.ts";
+import { NotConnectedError, startFromTemplate } from "./start-from-template.ts";
 import { INGEST_FORMS, type FileSlot } from "./templates.ts";
 
 interface TemplateDialogProps {
@@ -92,6 +93,14 @@ function TemplateForm({ template, onClose }: TemplateFormProps) {
         {errorText && (
           <p role="alert" className="text-ui text-danger">
             {errorText}
+            {!missing && start.error instanceof NotConnectedError && (
+              <>
+                {" "}
+                <Link to={ROUTE_PATHS.setup} className={INLINE_LINK_CLASS}>
+                  Open Setup
+                </Link>
+              </>
+            )}
           </p>
         )}
       </div>

@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import type { HomeTemplate, Project } from "@zks/shared";
-import { submitPrompt } from "../api/agent-client.ts";
+import { fetchConnection, submitPrompt } from "../api/agent-client.ts";
 import { startProjectTemplate } from "../api/onboarding-client.ts";
 import { createProjectWithMedia, uploadFile } from "../api/upload.ts";
 import { titleFrom } from "../routes/use-add-media.ts";
@@ -18,10 +18,22 @@ interface StartOptions {
   readonly prompt: string;
 }
 
-/** Any rejected file or template start stops it before the prompt: the agent never edits footage that was not ingested. */
+export class NotConnectedError extends Error {
+  constructor() {
+    super("Connect Claude before starting a template.");
+    this.name = "NotConnectedError";
+  }
+}
+
+/**
+ * The connection is checked before anything is created: the prompt is the last step, so a missing connection
+ * used to leave a project behind on every retry. A rejected file or template start still stops before the prompt.
+ */
 export async function startFromTemplate({ template, uploads, prompt }: StartOptions): Promise<Project> {
   const [first, ...rest] = uploads;
   if (!first) throw new Error("Add your footage first.");
+  // Terminal mode counts: the server opens the terminal on the first prompt.
+  if (!(await fetchConnection()).mode) throw new NotConnectedError();
   const ignoreProgress = () => undefined;
   const { project, asset } = await createProjectWithMedia({ title: titleFrom(first.file.name), file: first.file, onProgress: ignoreProgress });
   const uploaded = [{ role: first.role, assetId: asset.id }];

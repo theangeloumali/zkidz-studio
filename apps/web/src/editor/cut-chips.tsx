@@ -1,8 +1,9 @@
 // Created by The Angelo Umali.
 import { Check, X } from "lucide-react";
 import type { EventOf } from "../agent/feed-notes.ts";
-import { use } from "react";
-import { formatDuration } from "../lib/format.ts";
+import { use, useMemo } from "react";
+import { formatTimecode } from "../lib/format.ts";
+import { layoutCutChips } from "./cut-chip-layout.ts";
 import { PixelsPerSecondContext } from "./timeline.tsx";
 
 export type CutDecision = "approved" | "rejected";
@@ -17,8 +18,9 @@ interface CutChipsProps {
 /** One chip per proposed cut, sitting on the video lane where it would cut. */
 export function CutChips({ candidates, decisions, onDecide }: CutChipsProps) {
   const pixelsPerSecond = use(PixelsPerSecondContext);
+  const boxes = useMemo(() => layoutCutChips(candidates, pixelsPerSecond), [candidates, pixelsPerSecond]);
   return candidates.map((candidate) => {
-    const span = `${formatDuration(candidate.at)}–${formatDuration(candidate.end)}`;
+    const span = `${formatTimecode(candidate.at)}–${formatTimecode(candidate.end)}`;
     const decision = decisions[candidate.id];
     return (
       <li
@@ -26,7 +28,7 @@ export function CutChips({ candidates, decisions, onDecide }: CutChipsProps) {
         className="cut-chip"
         data-decision={decision ?? "pending"}
         title={`${candidate.reason}: “${candidate.context}”`}
-        style={{ left: candidate.at * pixelsPerSecond, width: (candidate.end - candidate.at) * pixelsPerSecond }}
+        style={boxes.get(candidate.id)}
       >
         <button
           type="button"

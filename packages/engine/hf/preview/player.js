@@ -7,6 +7,14 @@
   for (const element of document.querySelectorAll("[data-style]")) element.style.cssText = element.dataset.style;
 
   const root = document.getElementById("root");
+  // Cues are laid out on the 1080x1920 canvas; the frame is player-sized, so the canvas scales to its width.
+  const canvasWidth = Number(root.dataset.width);
+  root.style.width = `${canvasWidth}px`;
+  root.style.height = `${root.dataset.height}px`;
+  root.style.transformOrigin = "0 0";
+  const fitToFrame = () => (root.style.transform = `scale(${window.innerWidth / canvasWidth})`);
+  fitToFrame();
+  window.addEventListener("resize", fitToFrame);
   const readJson = (id) => JSON.parse(document.getElementById(id).textContent);
   gsap.registerPlugin(CustomEase);
   for (const [easeId, easePath] of Object.entries(readJson("hf-eases"))) CustomEase.create(easeId, easePath);

@@ -104,6 +104,7 @@ describe("AgentPane", () => {
   it("sends the cut decisions to the cut-candidates route the reviewer waits on", async () => {
     const fetchMock = stubAgentApi();
     renderPane([SAMPLE_EVENTS["cuts.proposed"]]);
+    expect(screen.getByText("0:03.2–0:03.9")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Apply cuts" }));
     expect(requestBody(fetchMock, CUT_CANDIDATES)).toEqual({ approved: ["cut-1"], rejected: [] });
     expect(await screen.findByText("Sent.")).toBeInTheDocument();

@@ -67,4 +67,19 @@ describe("createPlaybackClock", () => {
     clock.seek(2);
     expect(clock.now()).toBe(2);
   });
+
+  it("restarts from the top when played at the end, seeking the followed media there first", () => {
+    const time = manualTime();
+    const clock = createPlaybackClock({ durationS: 26, ...time });
+    let mediaS: number | null = 26;
+    clock.follow(() => mediaS);
+    // The player seeks its media on every notify, as preview-player's syncToClock does.
+    clock.subscribe((editedS) => (mediaS = editedS));
+    clock.seek(26);
+    clock.play();
+    expect(mediaS).toBe(0);
+    time.advance(16);
+    expect(clock.isPlaying()).toBe(true);
+    expect(clock.now()).toBe(0);
+  });
 });

@@ -17,10 +17,11 @@ function loadPlayer(clipCount) {
     return { id: `c${index}`, dataset: { start: String(index), duration: "1" }, classList };
   });
   const tweens = clips.map((clip) => ({ target: `#${clip.id} .word`, at: Number(clip.dataset.start), to: { opacity: 1 } }));
+  const root = { dataset: { duration: String(clipCount), width: "1080", height: "1920" }, style: {} };
   const jsonScripts = { "hf-eases": "{}", "hf-tweens": JSON.stringify(tweens) };
   const document = {
     querySelectorAll: (selector) => (selector === ".clip" ? clips : []),
-    getElementById: (id) => (id === "root" ? { dataset: { duration: String(clipCount) } } : { textContent: jsonScripts[id] }),
+    getElementById: (id) => (id === "root" ? root : { textContent: jsonScripts[id] }),
   };
   const gsap = {
     registerPlugin() {},
@@ -30,12 +31,16 @@ function loadPlayer(clipCount) {
       return { set: add, fromTo: add, to: add, seek: () => seekedTargets.push(...targets) };
     },
   };
-  let onMessage = () => {};
+  const listeners = {};
   const parent = { postMessage() {} };
-  const window = { parent, addEventListener: (_, listener) => (onMessage = listener) };
+  const window = { parent, innerWidth: 306, addEventListener: (type, listener) => (listeners[type] = listener) };
   vm.runInNewContext(PLAYER_SOURCE, { document, window, gsap, CustomEase: { create() {} } });
-  const seek = (time) => onMessage({ source: parent, data: { type: "zks.preview.seek", time } });
-  return { seek, liveToggles, seekedTargets, builtTargets };
+  const seek = (time) => listeners.message({ source: parent, data: { type: "zks.preview.seek", time } });
+  const resizeTo = (innerWidth) => {
+    window.innerWidth = innerWidth;
+    listeners.resize?.();
+  };
+  return { seek, resizeTo, root, liveToggles, seekedTargets, builtTargets };
 }
 
 test("a seek toggles .live only on the clips whose state changed, so 2,000 cues cost a frame nothing", () => {
@@ -64,4 +69,14 @@ test("a clip's tweens are built the first time it is live, so loading 2,000 cues
   seek(10.5);
   seek(10.6);
   assert.deepEqual(builtTargets, ["#c0 .word", "#c10 .word"]);
+});
+
+test("the 1080x1920 composition scales to the frame's width, and follows a resize", () => {
+  const { root, resizeTo } = loadPlayer(1);
+  assert.equal(root.style.width, "1080px");
+  assert.equal(root.style.height, "1920px");
+  assert.equal(root.style.transformOrigin, "0 0");
+  assert.equal(root.style.transform, `scale(${306 / 1080})`);
+  resizeTo(540);
+  assert.equal(root.style.transform, "scale(0.5)");
 });

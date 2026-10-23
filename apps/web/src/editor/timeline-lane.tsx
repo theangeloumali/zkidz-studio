@@ -33,6 +33,8 @@ function LaneBlock({ block, pixelsPerSecond }: { readonly block: DrawnBlock; rea
   );
 }
 
+const itemCountText = (count: number) => (count === 0 ? "no items" : count === 1 ? "1 item" : `${count} items`);
+
 interface TimelineLaneProps {
   readonly trackId: TrackId;
   readonly blocks: readonly DrawnBlock[];
@@ -45,7 +47,7 @@ interface TimelineLaneProps {
 export function TimelineLane({ trackId, blocks, itemCount, pixelsPerSecond, children }: TimelineLaneProps) {
   const { label, Icon } = TRACK_META[trackId];
   return (
-    <div className="track" data-track={trackId} role="group" aria-label={itemCount > 0 ? `${label}, ${itemCount} items` : `${label}, no items`}>
+    <div className="track" data-track={trackId} role="group" aria-label={`${label}, ${itemCountText(itemCount)}`}>
       <span className="track-label" id={`track-${trackId}`}>
         <Icon aria-hidden="true" className="size-3.5 text-copy-dim" />
         {label}

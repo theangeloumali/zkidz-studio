@@ -70,7 +70,8 @@ export function createPlaybackClock(options: ClockOptions): PlaybackClock {
   const clock: PlaybackClock = {
     play() {
       if (anchorMs !== null) return;
-      if (anchorS >= durationS) anchorS = 0;
+      // At the end, rewind and tell listeners first, so the followed media seeks before the first frame reads it.
+      if (anchorS >= durationS) clock.seek(0);
       anchorMs = readNow();
       frameHandle = requestFrame(onFrame);
     },

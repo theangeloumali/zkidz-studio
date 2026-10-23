@@ -23,6 +23,8 @@ beforeAll(async () => {
   await mkdir(join(compositionDir, "vendor"), { recursive: true });
   await writeFile(join(compositionDir, "index.html"), COMPOSITION_HTML);
   await writeFile(join(compositionDir, "vendor/gsap.min.js"), "window.gsap = {};");
+  await mkdir(join(compositionDir, "fonts"), { recursive: true });
+  await writeFile(join(compositionDir, "fonts/Caveat.ttf"), "ttf");
   compositionPath = `/compositions/${project.id}/v1`;
 });
 afterAll(async () => {
@@ -45,7 +47,7 @@ describe("the 4318 preview origin", () => {
     expect(await response.text()).toBe(COMPOSITION_HTML);
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("content-security-policy")).toBe(
-      `default-src 'self'; connect-src 'none'; frame-ancestors http://127.0.0.1:${APP_PORT} http://localhost:${APP_PORT} http://[::1]:${APP_PORT}`,
+      `default-src 'self'; connect-src 'none'; frame-ancestors http://127.0.0.1:${APP_PORT} http://localhost:${APP_PORT}`,
     );
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
@@ -59,6 +61,23 @@ describe("the 4318 preview origin", () => {
       .find((directive) => directive.startsWith("frame-ancestors"));
     expect(response.status).toBe(200);
     expect(frameAncestors?.split(" ")).toContain(`http://localhost:${APP_PORT}`);
+  });
+
+  it("serves fonts to the sandboxed frame's null origin, and nothing else cross-origin", async () => {
+    const font = await requestPreview(`${compositionPath}/fonts/Caveat.ttf`);
+    const page = await requestPreview(`${compositionPath}/index.html`);
+    const script = await requestPreview(`${compositionPath}/vendor/gsap.min.js`);
+
+    expect(font.status).toBe(200);
+    expect(font.headers.get("content-type")).toBe("font/ttf");
+    expect(font.headers.get("access-control-allow-origin")).toBe("*");
+    expect(page.headers.get("access-control-allow-origin")).toBeNull();
+    expect(script.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("names no IPv6 literal in frame-ancestors, which Chrome rejects as a source", async () => {
+    const response = await requestPreview(`${compositionPath}/index.html`);
+    expect(response.headers.get("content-security-policy")).not.toContain("[::1]");
   });
 
   it("serves the composition's own scripts", async () => {

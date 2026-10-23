@@ -142,9 +142,11 @@ describe("EditorPanel", () => {
       }),
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "Approve cut 0:03–0:04" }));
-    await userEvent.click(screen.getByRole("button", { name: "Reject cut 0:06–0:08" }));
-    expect(screen.getByRole("button", { name: "Approve cut 0:03–0:04" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(await screen.findByRole("button", { name: "Approve cut 0:03.0–0:04.0" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reject cut 0:06.0–0:08.0" }));
+    expect(screen.getByRole("button", { name: "Approve cut 0:03.0–0:04.0" })).toHaveAttribute("aria-pressed", "true");
+    // Tenths, so a sub-second cut never reads as "0:09–0:09".
+    expect(screen.getByRole("button", { name: "Approve cut 0:09.0–0:09.5" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Send cut decisions" }));
 
     await waitFor(() => expect(requestBody(fetchMock, DECIDE_URL)).toEqual({ approved: ["keep-me"], rejected: ["drop-me", "undecided"] }));

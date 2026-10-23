@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { decideCutCandidates } from "../api/client.ts";
 import { buttonClass } from "../components/button-class.ts";
-import { formatDuration } from "../lib/format.ts";
+import { formatTimecode } from "../lib/format.ts";
 import { CardShell } from "./card-shell.tsx";
 import { DecisionFooter } from "./decision-footer.tsx";
 import type { EventOf } from "./feed-notes.ts";
@@ -37,7 +37,7 @@ export function CutsCard({ projectId, event }: { readonly projectId: string; rea
               />
               <span className="min-w-0 break-words">
                 <span className="font-mono text-ui-sm text-copy-muted tabular-nums">
-                  {formatDuration(candidate.at)}–{formatDuration(candidate.end)}
+                  {formatTimecode(candidate.at)}–{formatTimecode(candidate.end)}
                 </span>{" "}
                 <q>{candidate.context}</q>
                 <span className="block text-ui-sm text-copy-muted">{candidate.reason}</span>

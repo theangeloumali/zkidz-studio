@@ -31,10 +31,14 @@ const COMPOSITION_CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".webp": "image/webp",
+  ".ttf": "font/ttf",
   ".woff2": "font/woff2",
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
 };
+
+// The sandboxed frame has a null origin, so its @font-face loads are cross-origin and need CORS; nothing else gets it.
+const isFontType = (contentType: string) => contentType.startsWith("font/");
 
 /** Where the engine's preview build writes a video's composition inside its project. */
 const compositionDirOf = (projectRoot: string, videoId: string) => join(projectRoot, "work", "preview", videoId);
@@ -59,6 +63,7 @@ export function createPreviewOrigin(deps: PreviewOriginDependencies): Hono {
     const { handle, realPath } = await openConfined(compositionDir, c.req.path.slice(filePrefix.length));
     const contentType = COMPOSITION_CONTENT_TYPES[extname(realPath).toLowerCase()] ?? "application/octet-stream";
     c.header("Content-Type", contentType);
+    if (isFontType(contentType)) c.header("Access-Control-Allow-Origin", "*");
     return c.body(Readable.toWeb(handle.createReadStream()));
   });
   app.all("*", (c) => {
@@ -75,7 +80,9 @@ export function createPreviewOrigin(deps: PreviewOriginDependencies): Hono {
 }
 
 function buildPreviewHeaders(appPort: number): Readonly<Record<string, string>> {
+  // Chrome rejects an IPv6 literal as a CSP source, so the app opened as [::1] cannot frame the preview.
   const frameAncestors = allowedHostsFor(appPort)
+    .filter((host) => !host.startsWith("["))
     .map((host) => `http://${host}`)
     .join(" ");
   return {

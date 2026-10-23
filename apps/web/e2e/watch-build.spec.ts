@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Watching the agent build against the real preview build: spec writes reach the 4318 frame within 3 s, playback seeks
 // it, hostile cue text stays text, restore swaps the preview, rejected cuts stay out, and the timeline holds 60 fps.
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { CUE_CALL_TEXT, HOSTILE_CUE_TEXT, type HarnessProject } from "./harness/script.ts";
 
 const CATCH_UP_MS = 3_000;
@@ -57,7 +57,27 @@ test("an editor reloaded after the build still shows that build's overlay", asyn
   await expect(cueText).toBeAttached({ timeout: CATCH_UP_MS });
 });
 
-test("playing seeks the overlay so a cue shows over its words", async ({ page, request }) => {
+/** Share of the element's screenshot pixels that are near-white, decoded in the page (no image library in the web app). */
+async function nearWhiteShare(page: Page, element: Locator): Promise<number> {
+  const pngBase64 = (await element.screenshot()).toString("base64");
+  return page.evaluate(async (base64) => {
+    // An <img>, not fetch: the app's CSP allows data: images but no data: connections.
+    const image = new Image();
+    image.src = `data:image/png;base64,${base64}`;
+    await image.decode();
+    const canvas = new OffscreenCanvas(image.naturalWidth, image.naturalHeight);
+    const context = canvas.getContext("2d");
+    if (context === null) throw new Error("no 2d context");
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let nearWhite = 0;
+    for (let offset = 0; offset < data.length; offset += 4)
+      if (Math.min(data[offset] ?? 0, data[offset + 1] ?? 0, data[offset + 2] ?? 0) >= 245) nearWhite += 1;
+    return nearWhite / (data.length / 4);
+  }, pngBase64);
+}
+
+test("playing seeks the overlay so a cue shows over its words, inside the player", async ({ page, request }) => {
   await openEditor(page, request);
   await control(request, "hostile-cue");
   await control(request, "replay?step=101");
@@ -66,6 +86,33 @@ test("playing seeks the overlay so a cue shows over its words", async ({ page, r
   await expect(cueText).toBeHidden();
   await page.getByRole("button", { name: "Play" }).click();
   await expect(cueText).toBeVisible({ timeout: CATCH_UP_MS });
+
+  // toBeVisible ignores clipping: an unscaled 1080 px canvas puts the cue past the 306 px frame's edge.
+  const player = await overlay(page).boundingBox();
+  const cue = await cueText.boundingBox();
+  if (player === null || cue === null) throw new Error("no player or cue box");
+  expect(cue.x).toBeGreaterThanOrEqual(player.x);
+  expect(cue.y).toBeGreaterThanOrEqual(player.y);
+  expect(cue.x + cue.width).toBeLessThanOrEqual(player.x + player.width);
+  expect(cue.y + cue.height).toBeLessThanOrEqual(player.y + player.height);
+});
+
+test("the overlay frame is see-through in the dark theme and loads every brand font", async ({ page, request }) => {
+  await openEditor(page, request);
+  await expect(overlay(page)).toBeAttached({ timeout: BUILD_WAIT_MS });
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme", "light");
+  const frame = page.frame({ url: /\/compositions\// });
+  if (frame === null) throw new Error("no overlay frame");
+  await frame.waitForFunction(() => document.getElementById("root") !== null);
+
+  // A color-scheme mismatch paints an opaque white canvas behind a cross-origin frame.
+  expect(await nearWhiteShare(page, page.locator(".player"))).toBeLessThan(0.5);
+  const fontStatuses = await frame.evaluate(async () => {
+    await Promise.allSettled([...document.fonts].map((face) => face.load()));
+    return [...document.fonts].map((face) => `${face.family} ${face.status}`);
+  });
+  expect(fontStatuses.length).toBeGreaterThanOrEqual(4);
+  for (const status of fontStatuses) expect(status).toMatch(/ loaded$/);
 });
 
 test("hostile cue text renders as text, and the frame can neither reach the API nor post a form", async ({ page, request }) => {
@@ -127,6 +174,10 @@ test("a rejected cut candidate never reaches the cut spec", async ({ page, reque
   const proposal = await control<{ candidates: { id: string; kind: string }[] }>(request, "propose");
   const fillerIndex = proposal.candidates.findIndex((candidate) => candidate.kind === "filler");
   const stutterIndex = proposal.candidates.findIndex((candidate) => candidate.kind === "stutter");
+  // A real click, not a forced one: the short filler's own Reject must not sit under the pause chip after it.
+  const fillerReject = page.getByRole("button", { name: /^Reject cut/ }).nth(fillerIndex);
+  await fillerReject.click({ timeout: 5_000 });
+  await expect(fillerReject).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("button", { name: /^Approve cut/ })
     .nth(fillerIndex)

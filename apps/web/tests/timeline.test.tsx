@@ -111,6 +111,12 @@ describe("Timeline lanes", () => {
     expect(screen.getByRole("group", { name: "Cues, 412 items" })).toHaveTextContent(/Cues\s*412/);
     expect(screen.getByRole("group", { name: "Captions, no items" })).toBeInTheDocument();
   });
+
+  it("says item, not items, for a lane holding one", () => {
+    renderTimeline(bulkCues.slice(0, 1), BULK_DURATION_S);
+
+    expect(screen.getByRole("group", { name: "Cues, 1 item" })).toBeInTheDocument();
+  });
 });
 
 describe("Timeline zoom", () => {

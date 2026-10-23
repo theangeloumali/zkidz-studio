@@ -17,6 +17,8 @@
   width: 100%;
   height: 100%;
   border: 0;
+  /* A frame whose color-scheme differs from its page's gets an opaque backdrop; the overlay page declares none. */
+  color-scheme: normal;
 }
 
 .footage {
@@ -302,7 +304,6 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  min-width: 3.25rem;
   padding: 0 2px;
   border: 1px dashed var(--color-danger);
   border-radius: var(--radius-inset);

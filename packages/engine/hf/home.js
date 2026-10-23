@@ -17,4 +17,7 @@ const dataDir = (name) => process.env[`ZKS_${name.toUpperCase()}`] || path.join(
 // Twin of ffio.ffmpeg_bin: the pinned ZKS_FFMPEG, PATH only in a dev checkout.
 const ffmpegBin = () => process.env.ZKS_FFMPEG || "ffmpeg";
 
-module.exports = { dataDir, ffmpegBin };
+// The pinned chrome-headless-shell (ZKS_CHROME), which HyperFrames reads ahead of its own cache; unset only in a dev checkout.
+const hyperframesChromeEnv = (env = process.env) => (env.ZKS_CHROME ? { PRODUCER_HEADLESS_SHELL_PATH: env.ZKS_CHROME } : {});
+
+module.exports = { dataDir, ffmpegBin, hyperframesChromeEnv };

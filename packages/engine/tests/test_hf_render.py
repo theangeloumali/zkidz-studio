@@ -25,7 +25,6 @@ CANVAS_GALLERY_EVENTS = ENGINE / "tests" / "fixture" / "sfx" / "gallery-canvas.j
 
 
 def hyperframes_ready():
-    # The file check first: it is free, and doctor.check_chrome launches Chrome.
     return bool((ENGINE / "hf" / "node_modules" / "hyperframes" / "package.json").exists() and shutil.which("node")
                 and has_ffmpeg() and doctor.check_chrome()[0])
 

@@ -3,7 +3,6 @@
 # Usage: python -m zks_engine.doctor [--render]   (--render: only the overlay/composite prerequisites)
 # Installs nothing: `pnpm zks doctor --fetch` downloads the tools.lock.json pins and verifies each SHA-256.
 # Exit 1 when a required check fails.
-import functools
 import importlib.util
 import json
 import os
@@ -18,9 +17,8 @@ from .transcribe import whispercpp
 
 FETCH_MOVED = "doctor --fetch moved to `pnpm zks doctor --fetch`, which installs the tools.lock.json pins and verifies each SHA-256"
 OVERLAY_PAGE = HF_DIR / "overlay" / "overlay.html"
-CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chrome", "chromium", "chromium-browser")
-CHROME_PATHS = (Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
-                Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"))
+# HyperFrames' own lookup when ZKS_CHROME is unset (a dev checkout): its cache, then puppeteer's.
+CHROME_CACHES = (Path(".cache", "hyperframes", "chrome"), Path(".cache", "puppeteer"))
 
 
 def kit_files():
@@ -53,12 +51,16 @@ def check_kit():
     return True, f"overlay kit in {HF_DIR}"
 
 
-@functools.cache
 def check_chrome():
-    """HyperFrames captures frames in Chrome; ZKS_CHROME names one outside the usual places."""
-    found = os.environ.get("ZKS_CHROME") or next(filter(None, map(shutil.which, CHROME_NAMES)), None)
-    found = found or next((str(path) for path in CHROME_PATHS if path.exists()), None)
-    return (True, f"Chrome at {found}") if found else (False, "no Chrome found (set ZKS_CHROME)")
+    """The Chrome the overlay renderer launches: the pinned ZKS_CHROME, else the newest headless shell in HyperFrames' cache."""
+    if os.environ.get("ZKS_CHROME"):
+        chrome = Path(os.environ["ZKS_CHROME"])
+        return (True, f"Chrome at {chrome}") if chrome.is_file() else (False, f"no Chrome at ZKS_CHROME={chrome}; run pnpm zks setup")
+    for cache in CHROME_CACHES:
+        shells = sorted((path for path in (Path.home() / cache).glob("chrome-headless-shell/*/*/chrome-headless-shell*") if path.is_file()), reverse=True)
+        if shells:
+            return True, f"Chrome at {shells[0]}"
+    return False, "no Chrome for the overlay renderer; run pnpm zks setup"
 
 
 def check_hyperframes():

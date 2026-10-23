@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +32,28 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
     const outcome = runCli(["deploy"]);
     expect(outcome.status).toBe(2);
     expect(outcome.stderr).toMatch(/usage: zks (setup|doctor|models)/);
+  });
+
+  // CI and the server hand the engine these paths (ZKS_FFMPEG, ZKS_CHROME), so the renders use the pinned builds.
+  it("prints the pinned Chrome path once it is installed, and fails with the setup hint before", () => {
+    const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
+    const missing = runCli(["tools", "path", "chrome-headless-shell"], home);
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toMatch(/pnpm zks setup/);
+
+    const expected = missing.stderr.match(/not installed at (.+)\. Run/)?.[1] ?? "";
+    expect(expected.startsWith(path.join(home, "tools", "chrome-headless-shell"))).toBe(true);
+    mkdirSync(path.dirname(expected), { recursive: true });
+    writeFileSync(expected, "");
+    const found = runCli(["tools", "path", "chrome-headless-shell"], home);
+    expect(found.status, found.stderr).toBe(0);
+    expect(found.stdout.trim()).toBe(expected);
+  });
+
+  it("rejects an unknown tool name with usage and exit 2", () => {
+    const outcome = runCli(["tools", "path", "blender"]);
+    expect(outcome.status).toBe(2);
+    expect(outcome.stderr).toMatch(/zks tools path/);
   });
 
   it("rejects an unknown model name", () => {

@@ -52,8 +52,11 @@ jobs:
       - run: pnpm zks setup
       # tiny.en is not fetched on setup; the speech leg of §10.3 transcribes with it.
       - run: pnpm zks models fetch tiny.en
-      - name: Point the engine at the pinned ffmpeg
-        run: ffmpeg="$(node scripts/pinned-ffmpeg.mjs)" && echo "ZKS_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
+      - name: Point the engine at the pinned ffmpeg and Chrome
+        run: |
+          ffmpeg="$(pnpm -s zks tools path ffmpeg)"
+          chrome="$(pnpm -s zks tools path chrome-headless-shell)"
+          { echo "ZKS_FFMPEG=$ffmpeg"; echo "ZKS_CHROME=$chrome"; } >> "$GITHUB_ENV"
       - run: uv sync --project packages/engine --locked
       - name: CPU golden render
         run: uv run --project packages/engine python -m unittest discover -v -s packages/engine/tests/parity -t packages/engine/tests

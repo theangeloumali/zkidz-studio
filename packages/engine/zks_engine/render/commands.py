@@ -62,8 +62,7 @@ def make_covers_payload(args):
 
 
 def qc_status_payload(args):
-    qc.assert_exportable(args.video)
-    return {"ok": True}
+    return {"ok": True, **qc.assert_exportable(args.video)}
 
 
 def register(commands):

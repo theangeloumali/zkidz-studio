@@ -10,6 +10,7 @@ import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { registerRenderJobHandlers } from "../../src/tools/render-tools.ts";
 import type { EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { writeJobResult } from "../../src/tools/job-results.ts";
+import { passingQcVerdict } from "../jobs/job-test-kit.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
 
@@ -53,7 +54,7 @@ function engineReport(request: EngineRequest): unknown {
       return MOTION_REPORT;
     case "qc-status":
       if (failNextQcStatus) throw new Error("zks-engine qc-status failed: v1 failed QC (motion); fix it and re-render before export");
-      return { ok: true };
+      return passingQcVerdict(request.workDir, argumentAfter(request, "--video"));
     case "make-covers": {
       const video = argumentAfter(request, "--video");
       const covers = request.args

@@ -65,11 +65,15 @@ def qc_master(video, master, source, transcript_words, transcribe):
 
 
 def assert_exportable(video):
-    """Delivery is blocked until the latest master passed every gate, the moving-footage gate above all."""
+    """Delivery is blocked until the latest master passed every gate, the moving-footage gate above all; returns that master."""
     report = inputs.read_json(inputs.work() / "qc" / f"{video}.json")
     if report is None:
         raise GateFailed(f"{video} has no QC report; run qc_master before export")
     if failed := [check["name"] for check in report["checks"] if not check["ok"]]:
         raise GateFailed(f"{video} failed QC ({', '.join(failed)}); fix it and re-render before export")
-    if report.get("fingerprint") != master_fingerprint(latest_master(video)):
+    master = latest_master(video)
+    fingerprint = master_fingerprint(master)
+    if report.get("fingerprint") != fingerprint:
         raise GateFailed(f"{video}'s QC report is stale; rerun qc_master on the latest master")
+    # The exact file export may ship; mtimeNs as a string, which a JS number cannot hold exactly.
+    return {"master": f"out/{master.name}", "bytes": fingerprint["bytes"], "mtimeNs": str(fingerprint["mtimeNs"])}

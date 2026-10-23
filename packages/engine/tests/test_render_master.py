@@ -114,6 +114,12 @@ class CliTests(unittest.TestCase):
         write.assert_called_once_with("v1r", Path("post.txt"))
         self.assertEqual(json.loads(printed.call_args.args[0]), {"covers": made, "postCaption": "covers/v1-caption.txt"})
 
+    def test_export_status_reports_the_master_qc_passed(self):
+        verdict = {"master": "out/v1-4k.mp4", "bytes": 12, "mtimeNs": "1700000000123456789"}
+        with mock.patch("zks_engine.qc.assert_exportable", return_value=verdict), mock.patch("builtins.print") as printed:
+            self.assertEqual(cli.main(["qc-status", "--video", "v1", "--json"]), 0)
+        self.assertEqual(json.loads(printed.call_args.args[0]), {"ok": True, **verdict})
+
     def test_export_status_without_a_report_is_a_gate_failure(self):
         with mock.patch("zks_engine.qc.inputs.WORK", Path(tempfile.mkdtemp())), mock.patch("builtins.print") as printed:
             self.assertEqual(cli.main(["qc-status", "--video", "v1", "--json"]), cli.EXIT_GATE_FAILED)

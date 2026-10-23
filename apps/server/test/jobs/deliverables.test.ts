@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { deliverables } from "@zks/db/schema";
+import { deliverables, jobs } from "@zks/db/schema";
 import { DeliverableSchema } from "@zks/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { createProjectDirs, projectDir } from "../../src/config.ts";
 import { exportDeliverables, registerExportHandler, toDeliverableDto } from "../../src/jobs/deliverables.ts";
 import type { EngineProcessRequest } from "../../src/jobs/engine-process.ts";
 import { createTestServer, insertProject, type TestServer } from "../support/test-server.ts";
-import { newRunner, readJob } from "./job-test-kit.ts";
+import { newRunner, passingQcVerdict, readJob } from "./job-test-kit.ts";
 
 let server: TestServer;
 beforeAll(async () => {
@@ -22,22 +22,25 @@ afterAll(async () => {
 
 const sha256Of = (content: string) => createHash("sha256").update(content).digest("hex");
 
-/** Stands in for `zks-engine qc-status`: passes unless the video is listed as failing, and records every call. */
-function fakeQcEngine(failingVideos: readonly string[] = []) {
+/** Stands in for `zks-engine qc-status`: passes the newest master unless the video is listed as failing, names it as the
+ * engine does, and records every call. `afterVerdict` runs once QC has answered, as a render landing then would. */
+function fakeQcEngine(failingVideos: readonly string[] = [], afterVerdict: () => Promise<void> = () => Promise.resolve()) {
   const requests: EngineProcessRequest[] = [];
   const engine = {
-    run: (request: EngineProcessRequest) => {
+    run: async (request: EngineProcessRequest) => {
       requests.push(request);
       const video = request.args[request.args.indexOf("--video") + 1] ?? "";
-      if (failingVideos.includes(video)) return Promise.reject(new Error(`zks-engine qc-status failed: ${video} failed QC (motion)`));
-      return Promise.resolve({ ok: true });
+      if (failingVideos.includes(video)) throw new Error(`zks-engine qc-status failed: ${video} failed QC (motion)`);
+      const verdict = await passingQcVerdict(request.workDir, video);
+      await afterVerdict();
+      return verdict;
     },
   };
   return { engine, requests };
 }
 
 /** The paths the engine writes: render-master's work/out/<v>[-4k|-draft].mp4 and make-covers' work/covers/<v>-cover-<x>.png. */
-async function projectWithMasters(failingVideos: readonly string[] = []) {
+async function projectWithMasters(failingVideos: readonly string[] = [], afterVerdict?: (writeSource: SourceWriter) => Promise<void>) {
   const project = await insertProject(server);
   await createProjectDirs(server.studioHome, project.slug);
   const projectRoot = projectDir(server.studioHome, project.slug);
@@ -48,9 +51,18 @@ async function projectWithMasters(failingVideos: readonly string[] = []) {
   await writeSource("work/out/v1-4k.mp4", "full master bytes");
   await writeSource("work/out/v1r-4k.mp4", "reels master bytes");
   await writeSource("work/covers/v1-cover-a.png", "cover a bytes");
-  const qc = fakeQcEngine(failingVideos);
+  const qc = fakeQcEngine(failingVideos, afterVerdict === undefined ? undefined : () => afterVerdict(writeSource));
   const deps = { database: server.database.db, studioHome: server.studioHome, engine: qc.engine };
   return { project, projectRoot, deps, writeSource, qcRequests: qc.requests };
+}
+
+type SourceWriter = (relPath: string, content: string) => Promise<void>;
+
+/** A newer mtime than any file written so far in the test, so the swap is the newest master on disk. */
+async function writeNewer(writeSource: SourceWriter, projectRoot: string, relPath: string, content: string): Promise<void> {
+  await writeSource(relPath, content);
+  const later = new Date(Date.now() + 60_000);
+  await utimes(join(projectRoot, relPath), later, later);
 }
 
 describe("export deliverables", () => {
@@ -97,6 +109,40 @@ describe("export deliverables", () => {
     const exported = await exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full"], jobId: null });
 
     expect(exported).toEqual([{ kind: "full", path: `deliverables/${project.slug}-draft.mp4`, sha256: sha256Of("newer draft") }]);
+  });
+
+  it("refuses the export when the master QC passed is re-rendered between QC and the copy", async () => {
+    const { project, projectRoot, deps } = await projectWithMasters([], (writeSource) =>
+      writeNewer(writeSource, projectRoot, "work/out/v1-4k.mp4", "re-rendered after QC"),
+    );
+
+    await expect(exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full"], jobId: null })).rejects.toThrow(
+      /v1: work\/out\/v1-4k\.mp4 changed after QC passed it/,
+    );
+    expect(await readdir(join(projectRoot, "deliverables"))).toEqual([]);
+    expect(await server.database.db.select().from(deliverables).where(eq(deliverables.projectId, project.id))).toEqual([]);
+  });
+
+  it("refuses the export when a newer master of another quality lands between QC and the copy", async () => {
+    const { project, projectRoot, deps } = await projectWithMasters([], (writeSource) =>
+      writeNewer(writeSource, projectRoot, "work/out/v1-draft.mp4", "draft rendered after QC"),
+    );
+
+    await expect(exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full"], jobId: null })).rejects.toThrow(
+      /v1: work\/out\/v1-draft\.mp4 is newer than the master QC passed/,
+    );
+    expect(await readdir(join(projectRoot, "deliverables"))).toEqual([]);
+  });
+
+  it.each(["queued", "running"] as const)("refuses the export while a render of the video is %s", async (status) => {
+    const { project, projectRoot, deps, qcRequests } = await projectWithMasters();
+    await server.database.db.insert(jobs).values({ projectId: project.id, kind: "render_master", videoId: "v1", lane: "gpu", status });
+
+    await expect(exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full"], jobId: null })).rejects.toThrow(
+      /v1 is still rendering; export once render_master finishes/,
+    );
+    expect(qcRequests).toEqual([]);
+    expect(await readdir(join(projectRoot, "deliverables"))).toEqual([]);
   });
 
   it("asks the engine's QC gate about every master it exports before copying", async () => {

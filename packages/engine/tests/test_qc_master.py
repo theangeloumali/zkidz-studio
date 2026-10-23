@@ -170,6 +170,11 @@ class QcMasterTests(unittest.TestCase):
         self.deliver()
         qc.assert_exportable("v1")
 
+    def test_the_export_verdict_names_the_exact_master_it_judged(self):
+        # The server copies this file and re-checks it; mtimeNs is a string, as a JS number cannot hold it exactly.
+        stats = self.deliver().stat()
+        self.assertEqual(qc.assert_exportable("v1"), {"master": "out/v1.mp4", "bytes": stats.st_size, "mtimeNs": str(stats.st_mtime_ns)})
+
     def test_a_master_rendered_after_its_passing_qc_is_blocked(self):
         delivered = self.deliver()
         shutil.copyfile(self.masters["frozen"], delivered)

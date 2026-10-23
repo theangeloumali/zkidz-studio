@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 // Per-session --settings, --mcp-config and rules files for mode T (plan §6.3). They hold no secret: tokens stay in the child env.
+import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,7 +74,8 @@ export async function removeSessionFiles(files: Pick<SessionFiles, "dir">): Prom
 
 async function createSessionDir(request: PrintSessionFilesRequest): Promise<PrintSessionFiles> {
   const sessionId = IdSchema.parse(request.sessionId);
-  const dir = join(request.runDir, sessionId);
+  // One folder per launch: a reopen resumes the same session id while the killed launch's cleanup may still be running.
+  const dir = join(request.runDir, `${sessionId}.${randomUUID()}`);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   return {
     dir,

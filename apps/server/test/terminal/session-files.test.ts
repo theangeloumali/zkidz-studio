@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearSessionFiles, removeSessionFiles, writeSessionFiles, type SessionFilesRequest } from "../../src/terminal/session-files.ts";
 
@@ -35,7 +35,8 @@ async function readJson(path: string): Promise<unknown> {
 describe("writeSessionFiles", () => {
   it("keeps the session's files in the run dir, not the persistent studio home", async () => {
     const files = await writeSessionFiles(request);
-    expect(files.dir).toBe(join(runDir, SESSION_ID));
+    expect(dirname(files.dir)).toBe(runDir);
+    expect(basename(files.dir).startsWith(`${SESSION_ID}.`)).toBe(true);
   });
 
   it("routes every hook to the session's bridge, with SessionStart through the command relay", async () => {
@@ -80,6 +81,17 @@ describe("writeSessionFiles", () => {
     }
   });
 
+  // A reopen resumes the same session id while the killed launch's cleanup may still be running.
+  it("gives a resumed launch its own files, which the previous launch's late cleanup cannot touch", async () => {
+    const first = await writeSessionFiles(request);
+    const resumed = await writeSessionFiles(request);
+    expect(resumed.dir).not.toBe(first.dir);
+
+    await removeSessionFiles(first);
+    await expect(readFile(resumed.settingsPath, "utf8")).resolves.toContain("hooks");
+    await expect(readFile(resumed.mcpConfigPath, "utf8")).resolves.toContain("mcpServers");
+  });
+
   it("refuses a session id that is not a uuid, so it cannot steer the folder path", async () => {
     await expect(writeSessionFiles({ ...request, sessionId: "../escape" })).rejects.toThrow();
   });
@@ -98,6 +110,7 @@ describe("writeSessionFiles", () => {
     const files = await writeSessionFiles(request);
     await clearSessionFiles(runDir);
     await expect(stat(files.dir)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(writeSessionFiles(request)).resolves.toMatchObject({ dir: files.dir });
+    const rewritten = await writeSessionFiles(request);
+    await expect(readFile(rewritten.settingsPath, "utf8")).resolves.toContain("hooks");
   });
 });

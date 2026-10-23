@@ -16,7 +16,8 @@
     "entry": [
       "build.js",
       "render.js",
-      "test/*.test.js"
+      "test/*.test.js",
+      "preview/test/*.test.js"
     ],
     "ignoreDependencies": [
       "hyperframes",

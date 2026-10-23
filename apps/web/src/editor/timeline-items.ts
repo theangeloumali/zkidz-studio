@@ -4,7 +4,7 @@ import type { TimeSpan } from "./edl.ts";
 
 export const TRACK_IDS = ["video", "captions", "cues", "audio"] as const;
 export type TrackId = (typeof TRACK_IDS)[number];
-export type BlockVariant = "seg" | "cut" | "punch" | "blur" | "cap" | "cue" | "sfx";
+type BlockVariant = "seg" | "cut" | "punch" | "blur" | "cap" | "cue" | "sfx";
 
 /** One block on a lane, in source seconds: cuts stay visible as hatched gaps. */
 export interface TimelineBlock extends TimeSpan {

@@ -15,7 +15,7 @@ export interface SpecAddress {
 export const specRelPath = (address: SpecAddress) => `work/${address.kind}/${address.videoId}.json`;
 
 /** work/versions/<kind>/<videoId>.v<N>.json: the file as version N left it, kept even if the row is lost. */
-export const snapshotRelPath = (address: SpecAddress, version: number) => `work/versions/${address.kind}/${address.videoId}.v${version}.json`;
+const snapshotRelPath = (address: SpecAddress, version: number) => `work/versions/${address.kind}/${address.videoId}.v${version}.json`;
 
 const runSpecQueued = createKeyedQueue();
 

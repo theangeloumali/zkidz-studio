@@ -2,7 +2,7 @@
 
 type ClockListener = (editedS: number) => void;
 /** The followed media's position in edited seconds, or null while it cannot say (seeking, not loaded). */
-export type MediaTimeReader = () => number | null;
+type MediaTimeReader = () => number | null;
 
 interface ClockOptions {
   readonly durationS: number;

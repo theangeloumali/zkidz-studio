@@ -46,9 +46,9 @@ jobs:
           cache: pnpm
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - run: pnpm install --frozen-lockfile
-      # The macOS ffmpeg pin is the Homebrew formula; `zks setup` downloads the Linux and Windows builds itself.
+      # tools.lock.json pins ffmpeg and whisper-cpp as Homebrew formulas on macOS; `zks setup` downloads the other builds itself.
       - if: runner.os == 'macOS'
-        run: brew install ffmpeg
+        run: brew install ffmpeg whisper-cpp
       - run: pnpm zks setup
       # tiny.en is not fetched on setup; the speech leg of §10.3 transcribes with it.
       - run: pnpm zks models fetch tiny.en

@@ -67,3 +67,17 @@ jobs:
         working-directory: packages/engine/tests
         env:
           ZKS_PARITY_BACKEND: videotoolbox
+      # TEMPORARY diagnosis of the videotoolbox parity gap (removed before merge): decode and encode SSIM measured apart.
+      - name: videotoolbox diagnosis
+        if: always() && runner.os == 'macOS'
+        run: |
+          clip=fixtures/parity/clip-2997.mp4
+          up="scale=1080:1920:flags=lanczos,format=yuv420p"
+          ssim() { "$ZKS_FFMPEG" -hide_banner -nostats "$@" 2>&1 | grep -o 'All:[0-9.]*' | tail -1; }
+          echo "vt decode vs cpu decode: $(ssim -hwaccel videotoolbox -i "$clip" -i "$clip" -lavfi "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[a][b]ssim" -f null -)"
+          "$ZKS_FFMPEG" -v error -hwaccel videotoolbox -i "$clip" -vf showinfo -frames:v 1 -f null - 2>&1 | grep -o 'color_range:[a-z]*\|colorspace:[a-z0-9]*' | sort -u
+          for args in "-c:v libx264 -crf 18" "-c:v h264_videotoolbox -b:v 12M" "-c:v h264_videotoolbox -b:v 40M" "-c:v h264_videotoolbox -q:v 65" "-c:v h264_videotoolbox -q:v 85"; do
+            # shellcheck disable=SC2086
+            "$ZKS_FFMPEG" -v error -y -i "$clip" -vf "$up" $args "$RUNNER_TEMP/enc.mp4" || { echo "encode failed: $args"; continue; }
+            echo "encode [$args] vs source: $(ssim -i "$RUNNER_TEMP/enc.mp4" -i "$clip" -lavfi "[0:v]format=yuv420p[a];[1:v]${up}[b];[a][b]ssim" -f null -)"
+          done

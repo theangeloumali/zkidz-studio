@@ -65,7 +65,7 @@ export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
 
 function throwUnlessAccepted(result: KeyCheckResult): void {
   if (result.ok) return;
-  if (result.reason === "rejected") throw new HttpError(400, "Anthropic rejected this API key");
+  if (result.reason === "rejected") throw new HttpError(400, "Anthropic rejected this API key", "key_rejected");
   throw new HttpError(502, "Could not verify the key with Anthropic; try again");
 }
 

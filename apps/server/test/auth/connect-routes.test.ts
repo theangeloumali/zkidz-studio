@@ -3,12 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, type StudioDatabaseHandle } from "@zks/db";
+import { ApiErrorBodySchema } from "@zks/shared";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readConnection } from "../../src/auth/connection-store.ts";
 import { registerConnectRoutes, type ConnectRouteDeps } from "../../src/auth/routes.ts";
 import { createSecretStore } from "../../src/auth/secret-store.ts";
-import { toHttpError } from "../../src/http/http-error.ts";
+import { errorBody, toHttpError } from "../../src/http/http-error.ts";
 import { createLogger } from "../../src/logging/logger.ts";
 import { memoryKeyring } from "./memory-keyring.ts";
 
@@ -43,7 +44,7 @@ describe("connect routes", () => {
     registerConnectRoutes(app, deps);
     app.onError((error, c) => {
       const httpError = toHttpError(error);
-      return c.json({ error: httpError.message }, httpError.status);
+      return c.json(errorBody(httpError), httpError.status);
     });
   });
 
@@ -76,6 +77,7 @@ describe("connect routes", () => {
     const response = await send("POST", "/api/connect/api-key", { apiKey: "bad-key" });
 
     expect(response.status).toBe(400);
+    expect(ApiErrorBodySchema.parse(await response.json())).toEqual({ error: "Anthropic rejected this API key", code: "key_rejected" });
     expect(keyring.stored).toBeNull();
     expect(await readConnection(database.db)).toBeNull();
     expect(changes).toBe(0);

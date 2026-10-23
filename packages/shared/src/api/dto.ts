@@ -111,8 +111,15 @@ export const DoctorCheckSchema = z.strictObject({
   fix: z.string().optional(),
 });
 
+/** Codes a client branches on instead of the status; append-only, because old clients match on these strings. */
+export const ApiErrorCodeSchema = z.enum(["key_rejected"]);
+/** Every API failure body. */
+export const ApiErrorBodySchema = z.strictObject({ error: z.string(), code: ApiErrorCodeSchema.optional() });
+
 export type Project = z.infer<typeof ProjectSchema>;
 export type MediaAsset = z.infer<typeof MediaAssetSchema>;
 export type Job = z.infer<typeof JobSchema>;
 export type Rule = z.infer<typeof RuleSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
+export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
+export type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;

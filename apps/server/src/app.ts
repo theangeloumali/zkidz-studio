@@ -7,7 +7,7 @@ import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
 import type { EventBus } from "./events/event-bus.ts";
-import { notFound, toHttpError } from "./http/http-error.ts";
+import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import type { Logger } from "./logging/logger.ts";
 import type { UploadLimits } from "./media-io/store.ts";
 import { registerEventRoutes } from "./routes/events.ts";
@@ -56,7 +56,7 @@ export function createApp(deps: AppDependencies): Hono {
   app.onError((error, c) => {
     const httpError = toHttpError(error);
     if (httpError.status >= 500) deps.logger.error("request failed", { method: c.req.method, path: c.req.path, error });
-    return c.json({ error: httpError.message }, httpError.status);
+    return c.json(errorBody(httpError), httpError.status);
   });
   return app;
 }

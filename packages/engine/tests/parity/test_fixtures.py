@@ -1,15 +1,26 @@
 # Created by The Angelo Umali.
 # The parity fixtures are self-generated (lavfi testsrc2 + sine), small, and carry the properties the frame-count ACs need.
 import hashlib
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from zks_engine import ffio
+from zks_engine.pipeline import decode_args, has_cuda
 
 from parity import harness
 
 MAX_FIXTURE_BYTES = 2_000_000
+# NVDEC on an RTX 5090 (driver 617.42) rejects 10+ refs and ffmpeg silently decodes on the CPU instead; 4 stays well clear.
+MAX_DECODER_REFS = 4
+NVDEC_FAILURES = ("cuvidCreateDecoder", "hwaccel initialisation returned error")
+
+
+def sps_ref_frames(video):
+    """max_num_ref_frames from the H.264 SPS: ffprobe 8.1 no longer reports a stream's refs."""
+    trace = harness.ffmpeg(*ffio.user_input_args(video), "-map", "0:v", "-c", "copy", "-bsf:v", "trace_headers", "-f", "null", "-").stderr
+    return int(re.search(r"max_num_ref_frames\s+\d+\s*=\s*(\d+)", trace).group(1))
 
 
 class FixtureTests(unittest.TestCase):
@@ -39,6 +50,18 @@ class FixtureTests(unittest.TestCase):
         for clip in harness.CLIPS.values():
             with self.subTest(clip.name):
                 self.assertIsNotNone(ffio.probe(harness.source_of(clip))["audio"])
+
+    def test_each_clip_stays_within_the_reference_frames_hardware_decoders_accept(self):
+        for clip in harness.CLIPS.values():
+            with self.subTest(clip.name):
+                self.assertLessEqual(sps_ref_frames(harness.source_of(clip)), MAX_DECODER_REFS)
+
+    @unittest.skipUnless(has_cuda(), "needs an NVIDIA driver and an ffmpeg built with CUDA")
+    def test_each_clip_decodes_on_nvdec_without_a_cpu_fallback(self):
+        for clip in harness.CLIPS.values():
+            with self.subTest(clip.name):
+                stderr = harness.ffmpeg(*decode_args(True), *ffio.user_input_args(harness.source_of(clip)), "-f", "null", "-").stderr
+                self.assertEqual([line for line in stderr.splitlines() if any(failure in line for failure in NVDEC_FAILURES)], [])
 
     def test_two_builds_of_a_project_draw_byte_identical_overlay_frames(self):
         # A run-to-run change in the overlay moved frame-0 SSIM by 0.002 and flaked the 0.995 parity AC.

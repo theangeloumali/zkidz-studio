@@ -99,7 +99,9 @@ def make_fixtures():
     """The committed clips: lavfi testsrc2 + a sine, so no third-party media enters the repo."""
     FIXTURES.mkdir(parents=True, exist_ok=True)
     width, height = SOURCE_SIZE
-    encode = ["-c:v", "libx264", "-preset", "veryslow", "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-ac", "1"]
+    # veryslow alone picks 16 refs, which NVDEC refuses: ffmpeg then decodes on the CPU and parity never touches NVDEC.
+    video = ["-c:v", "libx264", "-preset", "veryslow", "-refs", "4", "-crf", "26", "-pix_fmt", "yuv420p"]
+    encode = [*video, "-c:a", "aac", "-b:a", "64k", "-ac", "1"]
     for clip in (CLIPS["ntsc"], CLIPS["film"]):
         rate = f"{clip.fps[0]}/{clip.fps[1]}"
         ffmpeg("-y", "-f", "lavfi", "-i", f"testsrc2=size={width}x{height}:rate={rate}:duration={CLIP_SECONDS}", "-f", "lavfi", "-i",
@@ -107,7 +109,7 @@ def make_fixtures():
     # A phone held sideways: the NTSC picture stored a quarter-turn counter-clockwise, tagged -90 so players stand it upright.
     with tempfile.TemporaryDirectory() as folder:
         landscape = Path(folder) / "landscape.mp4"
-        ffmpeg("-y", *ffio.user_input_args(source_of(CLIPS["ntsc"])), "-vf", "transpose=cclock", *encode[:8], "-c:a", "copy", str(landscape))
+        ffmpeg("-y", *ffio.user_input_args(source_of(CLIPS["ntsc"])), "-vf", "transpose=cclock", *video, "-c:a", "copy", str(landscape))
         ffmpeg("-y", "-display_rotation:v:0", "-90", *ffio.user_input_args(landscape), "-c", "copy", str(source_of(CLIPS["rotated"])))
 
 

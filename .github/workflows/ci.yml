@@ -40,7 +40,7 @@ jobs:
   engine:
     name: engine unittest
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       # The overlay renderer tests fail instead of skipping when node, its packages, ffmpeg or Chrome is missing.
       ZKS_REQUIRE_HF: "1"
@@ -54,7 +54,9 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The pinned ffmpeg, not the runner's apt build: golden frames differ between ffmpeg releases.
+      - run: pnpm zks setup
+      - run: ffmpeg="$(node scripts/pinned-ffmpeg.mjs)" && echo "ZKS_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - run: uv sync --project packages/engine --locked
       - run: uv run --project packages/engine python -m unittest discover -s packages/engine/tests

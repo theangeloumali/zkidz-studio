@@ -161,6 +161,12 @@ fi
 
 log_dir="${TMPDIR:-/tmp}/zks-ci-local-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$log_dir"
+# Every step's temp files go under one folder that is removed even when a run is killed: killed test workers never
+# reach their cleanup, and their leftovers once filled /tmp.
+run_tmp="$log_dir/tmp"
+mkdir -p "$run_tmp"
+export TMPDIR="$run_tmp"
+trap 'rm -rf "$run_tmp"' EXIT
 failed=()
 reported=()
 report() {

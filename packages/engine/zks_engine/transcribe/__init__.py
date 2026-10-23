@@ -1,19 +1,17 @@
 # Created by The Angelo Umali.
-# Word-level whisper transcription, split at quiet points and run in parallel.
-# ffmpeg's whisper filter uses only a few threads, so one long file runs ~0.1x realtime on CPU.
-# Usage (from the work dir): python -m zks_engine.transcribe audio/v3.wav transcripts/v3_words.json [chunks] [language]
+# Word-level transcription through whisper.cpp, split at quiet points and run in parallel.
+# Usage (from the work dir): python -m zks_engine.transcribe audio/v3.wav transcripts/v3_words.json [chunks] [language] [model]
 import json
+import os
 import re
-import subprocess
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 
-from . import ffio, progress
-from .pipeline import ENERGY_WINDOW, MAX_JOBS, WORK, load_energy, whisper_filter
-from .slots import slot
+from ..pipeline import ENERGY_WINDOW, MAX_JOBS, WORK, load_energy
+from ..slots import slot
+from . import whispercpp
 
 SEARCH = 5.0  # seconds either side of an even split searched for the quietest point
 MIN_CHUNK = 20.0  # shorter chunks cost more in model start-up than they save
@@ -36,8 +34,9 @@ def split_points(energy_db, chunks):
 WORD_LINE = re.compile(r'^\{"start":\s*(\d+),\s*"end":\s*(\d+),\s*"text":\s*"(.*)"\s*\}$')
 
 
+# dead-code-allowed: only tests/test_pipeline.py (another slice's file) still calls it; the whisper filter it parsed is gone 2026-11-30
 def parse_word(line):
-    """The whisper filter writes quotes inside "text" unescaped, which json.loads rejects."""
+    """The old ffmpeg whisper filter wrote quotes inside "text" unescaped, which json.loads rejects."""
     try:
         return json.loads(line)
     except json.JSONDecodeError:
@@ -45,29 +44,26 @@ def parse_word(line):
         return {"start": int(start), "end": int(end), "text": text}
 
 
-def transcribe_chunk(wav, start, end, index, language):
-    out = WORK / "transcripts" / f"_{Path(wav).stem}_chunk{index}.json"
+def transcribe_chunk(wav, start, end, index, language, model, threads):
+    chunk = WORK / "transcripts" / f"_{Path(wav).stem}_chunk{index}.wav"
     try:
-        subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", *ffio.user_input_args(WORK / wav),
-                        "-af", whisper_filter(out, "json", language=language), "-f", "null", "-"], cwd=WORK, check=True)
-        words = [parse_word(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
+        whispercpp.write_window(WORK / wav, start, end, chunk)
+        words = whispercpp.transcribe_file(chunk, language, model, threads)
     finally:
-        out.unlink(missing_ok=True)
+        chunk.unlink(missing_ok=True)
     offset = round(start * 1000)
     return [{**word, "start": word["start"] + offset, "end": word["end"] + offset} for word in words]
 
 
-def main(wav, destination, chunks=6, language="tl"):
+def main(wav, destination, chunks=6, language="tl", model=None):
     (WORK / "transcripts").mkdir(exist_ok=True)
+    model_file = whispercpp.model_path(model)
     points = split_points(load_energy(WORK / wav), chunks)
     count = len(points) - 1
-    with slot("whisper", f"transcribe {wav} ({WORK})"), ThreadPoolExecutor(min(count, MAX_JOBS)) as pool:
-        parts = pool.map(transcribe_chunk, [wav] * count, points[:-1], points[1:], range(count), [language] * count)
+    jobs = min(count, MAX_JOBS)
+    threads = max(1, (os.cpu_count() or 4) // jobs)  # parallel chunks share the cores instead of oversubscribing them
+    with slot("whisper", f"transcribe {wav} ({WORK})"), ThreadPoolExecutor(jobs) as pool:
+        parts = pool.map(lambda index: transcribe_chunk(wav, points[index], points[index + 1], index, language, model_file, threads), range(count))
     words = [word for part in parts for word in part]
     (WORK / destination).write_text("".join(json.dumps(word) + "\n" for word in words), encoding="utf-8")
     print(f"{len(words)} words from {count} chunks split at {[round(p, 1) for p in points]}")
-
-
-if __name__ == "__main__":
-    with progress.job(Path(sys.argv[1]).stem, "transcribe"):
-        main(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 6, sys.argv[4] if len(sys.argv) > 4 else "tl")

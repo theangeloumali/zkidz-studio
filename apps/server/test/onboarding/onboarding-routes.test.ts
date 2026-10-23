@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, copyFile, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jobs } from "@zks/db/schema";
@@ -7,24 +7,32 @@ import { API_ROUTES, HomeTemplateSchema, StylePresetSchema } from "@zks/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { projectDir } from "../../src/config.ts";
+import { DEFAULT_UPLOAD_LIMITS } from "../../src/media-io/store.ts";
 import { createOnboardingServices, type DemoRunner } from "../../src/onboarding/onboarding-services.ts";
 import { readProjectTemplate } from "../../src/onboarding/project-template.ts";
 import { readJobResult } from "../../src/tools/job-results.ts";
 import { createToolFixture, insertCameraAsset } from "../tools/tool-fixtures.ts";
+import { hasFfmpeg, makeMediaFixtures, type MediaFixtures } from "../support/media-fixtures.ts";
 import { connectionFrom, createTestServer, getRequest, postJson, TEST_HOST, type TestServer } from "../support/test-server.ts";
 
 const PRESETS_DIR = fileURLToPath(new URL("../../../../themes/zkidz/presets", import.meta.url));
 
+const ffmpegAvailable = await hasFfmpeg();
 let server: TestServer;
-const demoRuns: string[] = [];
+let fixtures: MediaFixtures | undefined;
+const demoRuns: { projectRoot: string; mediaBefore: string[] }[] = [];
+/** Stands in for make_demo.py: it writes the clip where the script does and reports one stage. */
 const fakeDemoRunner: DemoRunner = {
-  run: (projectRoot) => {
-    demoRuns.push(projectRoot);
-    return Promise.resolve({ masterRelPath: "work/out/v1.mp4" });
+  run: async (projectRoot, reportProgress) => {
+    demoRuns.push({ projectRoot, mediaBefore: await readdir(join(projectRoot, "media")) });
+    if (fixtures !== undefined) await copyFile(fixtures.clipMp4, join(projectRoot, "media", "demo.mp4"));
+    await reportProgress({ stage: "rendering", pct: 75 });
+    return { masterRelPath: "work/out/v1.mp4", clipRelPath: "media/demo.mp4" };
   },
 };
 
 beforeAll(async () => {
+  if (ffmpegAvailable) fixtures = await makeMediaFixtures();
   server = await createTestServer((base) => ({
     onboarding: createOnboardingServices({
       database: base.database.db,
@@ -32,11 +40,14 @@ beforeAll(async () => {
       eventBus: base.eventBus,
       jobRunner: base.jobRunner,
       demoRunner: fakeDemoRunner,
+      ffprobePath: "ffprobe",
+      uploadLimits: DEFAULT_UPLOAD_LIMITS,
     }),
   }));
 });
 afterAll(async () => {
   await server.close();
+  if (fixtures !== undefined) await rm(fixtures.dir, { recursive: true, force: true });
 });
 
 function putJson(path: string, body: unknown) {
@@ -154,20 +165,23 @@ describe("start from a template", () => {
   });
 });
 
-describe("demo project", () => {
-  it("creates a project with no footage and renders the demo into it", async () => {
+describe.skipIf(!ffmpegAvailable)("demo project", () => {
+  it("creates a project with no footage, renders the demo and lists its clip as media", async () => {
     const response = await postJson(server, API_ROUTES.openDemoProject.path, null);
 
     expect(response.status).toBe(200);
     const project = API_ROUTES.openDemoProject.response.parse(await response.json());
     const projectRoot = projectDir(server.studioHome, project.slug);
-    expect(await readdir(join(projectRoot, "media"))).toEqual([]);
     await access(join(projectRoot, ".zks-demo"));
 
     await server.jobRunner.idle();
     const [job] = await server.database.db.select().from(jobs).where(eq(jobs.projectId, project.id));
-    expect(job).toMatchObject({ kind: "demo", status: "succeeded" });
-    expect(demoRuns).toEqual([projectRoot]);
+    expect(job).toMatchObject({ kind: "demo", status: "succeeded", stage: "rendered", pct: 100 });
+    expect(demoRuns).toEqual([{ projectRoot, mediaBefore: [] }]);
     expect(await readJobResult(projectRoot, job?.id ?? "")).toEqual({ masterRelPath: "work/out/v1.mp4" });
+
+    const media = await getRequest(server, API_ROUTES.listMedia.path.replace(":projectId", project.id));
+    const { assets } = API_ROUTES.listMedia.response.parse(await media.json());
+    expect(assets).toEqual([expect.objectContaining({ name: "demo.mp4", kind: "camera", isInPlace: false })]);
   });
 });

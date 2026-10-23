@@ -2,6 +2,7 @@
 // The style the user picks through PUT /api/style is the one the next session's prompt carries, in both agent modes.
 import { API_ROUTES } from "@zks/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_UPLOAD_LIMITS } from "../../src/media-io/store.ts";
 import { createOnboardingServices } from "../../src/onboarding/onboarding-services.ts";
 import { DEFAULT_PRESETS_DIR, loadPresets } from "../../src/onboarding/presets.ts";
 import { loadRulesPromptBlock, loadSessionSetup } from "../../src/rules/session-setup.ts";
@@ -17,6 +18,8 @@ beforeEach(async () => {
       eventBus: base.eventBus,
       jobRunner: base.jobRunner,
       demoRunner: { run: () => Promise.reject(new Error("no demo in this test")) },
+      ffprobePath: "ffprobe",
+      uploadLimits: DEFAULT_UPLOAD_LIMITS,
     }),
   }));
 });

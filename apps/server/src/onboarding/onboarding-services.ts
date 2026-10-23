@@ -1,18 +1,22 @@
 // Created by The Angelo Umali.
 // Phase 6 routes: the house style, the shipped presets, starting from a template, and the no-footage demo project.
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createReadStream } from "node:fs";
+import { stat, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { Readable } from "node:stream";
 import type { StudioDatabase } from "@zks/db";
 import { projects } from "@zks/db/schema";
 import { API_ROUTES } from "@zks/shared";
 import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { projectDir } from "../config.ts";
-import { toProjectDto, type JobRow } from "../dto.ts";
+import { toProjectDto, type JobRow, type ProjectRow } from "../dto.ts";
 import type { EventBus } from "../events/event-bus.ts";
 import { HttpError, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
-import type { JobRunner } from "../jobs/job-runner.ts";
+import type { JobRunner, ReportProgress } from "../jobs/job-runner.ts";
+import type { UploadLimits } from "../media-io/store.ts";
 import { createProject, findProjectOrThrow } from "../projects/project-store.ts";
+import { commitStagedUpload, storedProjectBytes, withStagedUpload } from "../routes/media-ingest.ts";
 import type { ToolContext } from "../tools/context.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { DemoRunner } from "./demo-runner.ts";
@@ -33,6 +37,9 @@ export interface OnboardingDeps {
   readonly eventBus: EventBus;
   readonly jobRunner: JobRunner;
   readonly demoRunner: DemoRunner;
+  /** The demo clip is registered through the upload path, so it is probed and capped like any upload. */
+  readonly ffprobePath: string;
+  readonly uploadLimits: UploadLimits;
   readonly presetsDir?: string;
 }
 
@@ -43,7 +50,7 @@ export interface OnboardingServices {
 export function createOnboardingServices(deps: OnboardingDeps): OnboardingServices {
   let presets: Promise<Presets> | undefined;
   const readPresets = () => (presets ??= loadPresets(deps.presetsDir ?? DEFAULT_PRESETS_DIR));
-  deps.jobRunner.registerHandler(DEMO_JOB_KIND, (job) => renderDemo(deps, job));
+  deps.jobRunner.registerHandler(DEMO_JOB_KIND, (job, reportProgress) => renderDemo(deps, job, reportProgress));
 
   return {
     registerRoutes: (app) => {
@@ -90,9 +97,26 @@ function toolContextFor(deps: OnboardingDeps, projectId: string): ToolContext {
   };
 }
 
-async function renderDemo(deps: OnboardingDeps, job: JobRow): Promise<void> {
+async function renderDemo(deps: OnboardingDeps, job: JobRow, reportProgress: ReportProgress): Promise<void> {
   const [project] = await deps.database.select().from(projects).where(eq(projects.id, job.projectId));
   if (project === undefined) throw new Error("the demo project no longer exists");
   const projectRoot = projectDir(deps.studioHome, project.slug);
-  await writeJobResult(projectRoot, job.id, await deps.demoRunner.run(projectRoot));
+  const { masterRelPath, clipRelPath } = await deps.demoRunner.run(projectRoot, reportProgress);
+  await registerDemoClip(deps, project, join(projectRoot, clipRelPath));
+  await writeJobResult(projectRoot, job.id, { masterRelPath });
+  await reportProgress({ stage: "rendered", pct: 100 });
+}
+
+/** A copy into media/raw, like an upload: in-place registration refuses files inside the studio folder. */
+async function registerDemoClip(deps: OnboardingDeps, project: ProjectRow, clipPath: string): Promise<void> {
+  const { size } = await stat(clipPath);
+  const remainingProjectBytes = deps.uploadLimits.maxProjectBytes - (await storedProjectBytes(deps.database, project.id));
+  const upload = {
+    displayName: basename(clipPath),
+    declaredBytes: size,
+    body: Readable.toWeb(createReadStream(clipPath)),
+    maxBytes: Math.min(deps.uploadLimits.maxFileBytes, remainingProjectBytes),
+  };
+  const rawDir = join(projectDir(deps.studioHome, project.slug), "media", "raw");
+  await withStagedUpload(deps, rawDir, upload, (staged) => commitStagedUpload(deps, project, staged));
 }

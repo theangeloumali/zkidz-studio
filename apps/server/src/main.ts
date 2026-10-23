@@ -74,7 +74,15 @@ async function main(): Promise<void> {
   });
 
   const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome });
-  const onboarding = createOnboardingServices({ database: database.db, studioHome: config.studioHome, eventBus, jobRunner, demoRunner });
+  const onboarding = createOnboardingServices({
+    database: database.db,
+    studioHome: config.studioHome,
+    eventBus,
+    jobRunner,
+    demoRunner,
+    ffprobePath: config.ffprobePath,
+    uploadLimits: DEFAULT_UPLOAD_LIMITS,
+  });
 
   const app = createApp({
     database: database.db,

@@ -129,7 +129,6 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       tickets: createTicketStore(),
       checkWebSocketUpgrade,
       allowedHosts: allowedHostsFor(deps.appPort),
-      allowedOrigin: `http://127.0.0.1:${deps.appPort}`,
       logger: deps.logger,
     });
     registerStudioToolRoutes(app, {

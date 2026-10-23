@@ -23,7 +23,7 @@ function upgradeRequest(ticket: string | undefined, headerOverrides: HeaderOverr
 }
 
 function checkUpgrade(request: Request, tickets: TicketStore, sessionId = SESSION_ID) {
-  return checkWebSocketUpgrade(request, { allowedHosts: allowedHostsFor(TEST_APP_PORT), allowedOrigin: TEST_APP_ORIGIN, tickets, sessionId });
+  return checkWebSocketUpgrade(request, { allowedHosts: allowedHostsFor(TEST_APP_PORT), tickets, sessionId });
 }
 
 describe("createTicketStore", () => {
@@ -106,6 +106,22 @@ describe("checkWebSocketUpgrade", () => {
       const { ticket } = tickets.issue(SESSION_ID);
       expect(checkUpgrade(upgradeRequest(ticket, { "sec-fetch-site": undefined, origin }), tickets)).toMatchObject({ ok: false, status: 403 });
     }
+  });
+
+  // The HTTP write check accepts the app on localhost and [::1] too; the socket must follow the same host-bound rule.
+  it("accepts the app opened on localhost, whose Origin matches its Host", () => {
+    const tickets = createTicketStore();
+    const { ticket } = tickets.issue(SESSION_ID);
+    const host = `localhost:${TEST_APP_PORT}`;
+    expect(checkUpgrade(upgradeRequest(ticket, { host, origin: `http://${host}`, "sec-fetch-site": undefined }), tickets)).toEqual({ ok: true });
+  });
+
+  it("refuses an Origin that names a different allowed host than the request's Host", () => {
+    const tickets = createTicketStore();
+    const { ticket } = tickets.issue(SESSION_ID);
+    const result = checkUpgrade(upgradeRequest(ticket, { host: `localhost:${TEST_APP_PORT}`, origin: TEST_APP_ORIGIN }), tickets);
+    expect(result).toMatchObject({ ok: false, status: 403, reason: "origin" });
+    expect(tickets.redeem(ticket, SESSION_ID)).toBe(true);
   });
 
   it("refuses a missing ticket", () => {

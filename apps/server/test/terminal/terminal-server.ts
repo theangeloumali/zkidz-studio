@@ -47,7 +47,6 @@ export async function startTerminalServer(
     tickets: createTicketStore(),
     checkWebSocketUpgrade,
     allowedHosts: allowedHostsFor(port),
-    allowedOrigin: baseUrl,
     logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
   });
   mountRoutes(app, fixture);

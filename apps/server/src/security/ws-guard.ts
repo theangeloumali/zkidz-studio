@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
-// Mode T WebSocket upgrade guard (plan §6.3, §11): Host, exact Origin, same-origin fetch metadata, single-use ticket.
+// Mode T WebSocket upgrade guard (plan §6.3, §11): allowed Host, an Origin naming that same host, fetch metadata that is
+// same-origin when present, and a single-use ticket.
 import { TERMINAL_TICKET_TTL_S } from "@zks/shared";
 import { isAllowedHost } from "./request-guards.ts";
 import { createSessionToken } from "./token.ts";
@@ -23,7 +24,6 @@ export interface TicketStore {
 
 export interface WebSocketUpgradeOptions {
   readonly allowedHosts: readonly string[];
-  readonly allowedOrigin: string;
   readonly tickets: TicketStore;
   readonly sessionId: string;
 }
@@ -64,8 +64,10 @@ export function checkWebSocketUpgrade(request: Request, options: WebSocketUpgrad
 
 // Header checks run before redeem so a refused upgrade cannot spend the app's own ticket.
 function findUpgradeRejection(request: Request, options: WebSocketUpgradeOptions): string | null {
-  if (!isAllowedHost(request.headers.get("host") ?? undefined, options.allowedHosts)) return "host";
-  if (request.headers.get("origin") !== options.allowedOrigin) return "origin";
+  const host = request.headers.get("host") ?? undefined;
+  if (!isAllowedHost(host, options.allowedHosts)) return "host";
+  // The same host-bound rule as HTTP writes, so the app works on 127.0.0.1, localhost and [::1] alike.
+  if (request.headers.get("origin") !== `http://${host}`) return "origin";
   // Browsers send no Sec-Fetch-* on a WebSocket handshake, so the exact Origin and the ticket carry the check; a header
   // that is present must still say same-origin.
   const fetchSite = request.headers.get("sec-fetch-site");

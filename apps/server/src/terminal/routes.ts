@@ -19,7 +19,6 @@ export interface TerminalRouteDeps {
   readonly tickets: TicketStore;
   readonly checkWebSocketUpgrade: (request: Request, options: WebSocketUpgradeOptions) => WebSocketUpgradeResult;
   readonly allowedHosts: readonly string[];
-  readonly allowedOrigin: string;
   readonly logger: Logger;
 }
 
@@ -47,7 +46,6 @@ export function registerTerminalRoutes(app: Hono, deps: TerminalRouteDeps): void
       const { sessionId } = findSession(c.req.param("sessionId"));
       const verdict = deps.checkWebSocketUpgrade(c.req.raw, {
         allowedHosts: deps.allowedHosts,
-        allowedOrigin: deps.allowedOrigin,
         tickets: deps.tickets,
         sessionId,
       });

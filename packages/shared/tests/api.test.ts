@@ -4,6 +4,7 @@ import {
   API_ROUTES,
   APP_PORT,
   CSRF_HEADER,
+  CutReviewDecisionSchema,
   DecisionRequestSchema,
   EventsQuerySchema,
   HookResponseSchema,
@@ -126,11 +127,21 @@ describe("settings (plan §6.5, §6.6)", () => {
 });
 
 describe("decisions", () => {
-  it("discriminates approval, question and cut-review answers", () => {
+  it("discriminates approval and question answers", () => {
     expect(DecisionRequestSchema.safeParse({ kind: "approval", requestId: "a-1", decision: "allow" }).success).toBe(true);
     expect(DecisionRequestSchema.safeParse({ kind: "question", requestId: "q-1", answers: { "Keep the intro?": "Keep" } }).success).toBe(true);
-    expect(DecisionRequestSchema.safeParse({ kind: "cuts", requestId: "c-1", approved: ["cand-1"], rejected: [] }).success).toBe(true);
     expect(DecisionRequestSchema.safeParse({ kind: "approval", requestId: "a-1", decision: "later" }).success).toBe(false);
+  });
+
+  it("refuses a cut review on the decide route, which has no cut card to settle", () => {
+    expect(DecisionRequestSchema.safeParse({ kind: "cuts", requestId: "c-1", approved: ["cand-1"], rejected: [] }).success).toBe(false);
+  });
+
+  it("takes a strict approved/rejected body on the cut-candidates route", () => {
+    expect(CutReviewDecisionSchema.safeParse({ approved: ["cand-1"], rejected: [] }).success).toBe(true);
+    expect(CutReviewDecisionSchema.safeParse({ approved: [] }).success).toBe(false);
+    expect(CutReviewDecisionSchema.safeParse({ approved: [], rejected: [], extra: 1 }).success).toBe(false);
+    expect(CutReviewDecisionSchema.safeParse({ kind: "cuts", requestId: "c-1", approved: [], rejected: [] }).success).toBe(false);
   });
 });
 

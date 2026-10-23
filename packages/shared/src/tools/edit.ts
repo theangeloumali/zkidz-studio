@@ -35,11 +35,29 @@ export const setReel = defineTool({
   isReadOnly: false,
 });
 
+/** A theme component's tier in its manifest (plan §7.8). */
+export const CUE_TIERS = ["core", "accent", "special"] as const;
+const SlotWidthsSchema = z.record(z.string(), z.int().positive());
+
 export const listCueKinds = defineTool({
-  input: z.strictObject({ theme: z.string().min(1).optional() }),
+  input: z.strictObject({
+    theme: z.string().min(1).optional(),
+    tier: z.enum(CUE_TIERS).optional(),
+    /** Words every listed kind's purpose must mention. */
+    purpose: z.string().min(1).optional(),
+  }),
   output: z.strictObject({
     kinds: z.array(
-      z.strictObject({ kind: z.string(), jsonSchema: z.record(z.string(), z.unknown()), maxChars: z.record(z.string(), z.int().positive()).optional() }),
+      z.strictObject({
+        kind: z.string(),
+        jsonSchema: z.record(z.string(), z.unknown()),
+        maxChars: SlotWidthsSchema.optional(),
+        /** Optional: appended after the recorded transcripts, which omit them. */
+        tier: z.enum(CUE_TIERS).optional(),
+        purpose: z.string().optional(),
+        /** Per-tone widths, e.g. keyword's chip tone fits fewer characters. */
+        tones: z.record(z.string(), SlotWidthsSchema).optional(),
+      }),
     ),
   }),
   approval: "auto",

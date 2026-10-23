@@ -6,6 +6,7 @@ import type { z } from "zod";
 import type { ApprovalCard } from "../agent/decisions.ts";
 import type { EventBus } from "../events/event-bus.ts";
 import type { JobRunner } from "../jobs/job-runner.ts";
+import type { EngineRunner } from "./engine-jobs.ts";
 
 export type { ApprovalCard };
 
@@ -20,6 +21,8 @@ export interface ToolContext {
   readonly db: StudioDatabase;
   readonly events: EventBus;
   readonly jobs: JobRunner;
+  /** Short engine checks a tool waits on (validate-cue, cue-kinds); long work goes through `jobs`. */
+  readonly engine: EngineRunner;
   /** DecisionBroker.requestApproval for this project: it assigns the requestId and cancels the card on abort. */
   readonly requestApproval: (card: ApprovalCard, signal?: AbortSignal) => Promise<ApprovalDecision>;
   /** A question.asked card through the DecisionBroker; null when dismissed or cancelled. Only the -p `approve` tool asks. */

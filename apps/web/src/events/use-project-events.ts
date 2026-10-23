@@ -18,6 +18,7 @@ export function useProjectEvents(projectId: string): void {
       receive(event);
       if (event.type === "resync") refetchProject();
       else if (event.type === "job.finished") void queryClient.invalidateQueries({ queryKey: queryKeys.media(projectId) });
+      else if (event.type === "spec.version") void queryClient.invalidateQueries({ queryKey: queryKeys.specs(projectId) });
     }
 
     return connectEvents({ projectIds: [projectId], onEvent: handleEvent, onResync: refetchProject, onStatus: setStatus });

@@ -6,6 +6,7 @@ import { ProjectAgent } from "../agent/project-agent.tsx";
 import { mediaQuery, projectQuery } from "../api/queries.ts";
 import { useProjectEvents } from "../events/use-project-events.ts";
 import { useEventsStore } from "../events/store.ts";
+import { EditorPanel } from "../editor/editor-panel.tsx";
 import { formatBytes, formatMediaMeta } from "../lib/format.ts";
 
 const STATUS_TEXT = { connecting: "Connecting…", live: "Live", reconnecting: "Reconnecting…" } as const;
@@ -30,6 +31,12 @@ export function EditorRoute() {
           {project.error.message}
         </p>
       )}
+      <section aria-labelledby="edit-title" className="flex flex-col gap-4">
+        <h2 id="edit-title" className="text-ui-lg font-semibold">
+          Edit
+        </h2>
+        <EditorPanel projectId={projectId} />
+      </section>
       <section aria-labelledby="media-title" className="flex flex-col gap-4">
         <h2 id="media-title" className="text-ui-lg font-semibold">
           Media

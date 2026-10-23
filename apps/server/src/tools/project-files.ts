@@ -8,6 +8,9 @@ import type { MediaAssetRow, ProjectRow } from "../dto.ts";
 import type { ToolContext } from "./context.ts";
 import { ToolError } from "./result.ts";
 
+/** Projects have no theme column yet, so every one uses the default pack (plan §7.8). */
+export const PROJECT_THEME_ID = "zkidz";
+
 export async function loadProject(context: ToolContext): Promise<ProjectRow> {
   const [project] = await context.db.select().from(projects).where(eq(projects.id, context.projectId));
   if (project === undefined) throw new ToolError("This project no longer exists");

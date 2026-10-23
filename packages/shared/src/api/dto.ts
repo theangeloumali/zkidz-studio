@@ -139,3 +139,18 @@ export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
 export const StyleIdSchema = z.enum(["zkidz", "plain", "loud"]);
 export const StyleChoiceSchema = z.strictObject({ styleId: StyleIdSchema });
 export type StyleId = z.infer<typeof StyleIdSchema>;
+
+export const SpecVersionSummarySchema = SpecVersionSchema.omit({ content: true });
+
+/** The player's map from edited time to source time, from the current cuts spec (plan §9.3). */
+export const PlayerEdlSchema = z.strictObject({
+  videoId: VideoIdSchema,
+  cutsVersion: z.int().positive(),
+  durationS: z.number().positive(),
+  keptS: z.number().nonnegative(),
+  segments: z.array(z.strictObject({ sourceAtS: z.number().nonnegative(), sourceEndS: z.number().positive(), editedAtS: z.number().nonnegative() })),
+});
+export type SpecSummary = z.infer<typeof SpecSummarySchema>;
+export type SpecVersion = z.infer<typeof SpecVersionSchema>;
+export type SpecVersionSummary = z.infer<typeof SpecVersionSummarySchema>;
+export type PlayerEdl = z.infer<typeof PlayerEdlSchema>;

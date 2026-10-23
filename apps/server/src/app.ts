@@ -14,6 +14,7 @@ import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
 import type { Logger } from "./logging/logger.ts";
 import type { OnboardingServices } from "./onboarding/onboarding-services.ts";
 import type { UploadLimits } from "./media-io/store.ts";
+import type { PreviewService } from "./preview/preview-service.ts";
 import { registerEventRoutes } from "./routes/events.ts";
 import { registerFsRoutes } from "./routes/fs.ts";
 import { registerJobRoutes } from "./routes/jobs.ts";
@@ -22,6 +23,7 @@ import { registerMediaRoutes } from "./routes/media.ts";
 import { registerProjectRoutes } from "./routes/projects.ts";
 import { registerRuleRoutes } from "./rules/routes.ts";
 import type { Security } from "./security/index.ts";
+import { registerSpecRoutes } from "./specs/spec-routes.ts";
 
 export interface AppDependencies {
   readonly database: StudioDatabase;
@@ -38,6 +40,8 @@ export interface AppDependencies {
   readonly runDoctor?: DoctorRunner;
   /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
   readonly onboarding?: OnboardingServices;
+  /** The player EDL and the composition rebuild loop; main.ts always passes it. */
+  readonly previewService?: PreviewService;
 }
 
 export function createApp(deps: AppDependencies): Hono {
@@ -55,6 +59,8 @@ export function createApp(deps: AppDependencies): Hono {
   deps.agent?.registerRoutes(app);
   if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);
+  registerSpecRoutes(app, deps);
+  deps.previewService?.registerRoutes(app);
   app.all("/api/*", () => {
     throw notFound();
   });

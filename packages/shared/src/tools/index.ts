@@ -7,7 +7,7 @@ import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projec
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
 
 export * from "./define.ts";
-export { CUE_SHEETS } from "./edit.ts";
+export { CUE_SHEETS, CUE_TIERS } from "./edit.ts";
 export { JobSnapshotSchema, MAX_JOB_WAIT_S } from "./jobs.ts";
 export { IngestResultSchema, RENDER_PROFILES, TranscribeResultSchema, WHISPER_MODELS } from "./media.ts";
 export { MasterRenderResultSchema, RENDER_QUALITIES, RENDER_TARGETS } from "./render.ts";

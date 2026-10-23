@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { API_ROUTES, ApiErrorCodeSchema, CSRF_HEADER, isStateChangingMethod, type ApiErrorCode } from "@zks/shared";
+import { API_ROUTES, ApiErrorCodeSchema, CSRF_HEADER, isStateChangingMethod, type ApiErrorCode, type SpecKind } from "@zks/shared";
 import { z } from "zod";
 
 // The server sends its per-launch token on every response; same-origin script is the only reader (ADR 0006).
@@ -100,4 +100,41 @@ export function createProjectInPlace(path: string, title: string) {
 export function listFolder(path: string | undefined) {
   const query = path === undefined ? "" : `?${new URLSearchParams({ path }).toString()}`;
   return requestJson(API_ROUTES.listFolder.response, `${API_ROUTES.listFolder.path}${query}`);
+}
+
+export async function fetchSpecs(projectId: string) {
+  const { specs } = await requestJson(API_ROUTES.listSpecs.response, routeUrl(API_ROUTES.listSpecs.path, { projectId }));
+  return specs;
+}
+
+export interface SpecAddress {
+  readonly projectId: string;
+  readonly videoId: string;
+  readonly kind: SpecKind;
+}
+
+/** One saved version of a spec; the current one when `version` is left out. */
+export function fetchSpecVersion(address: SpecAddress, version?: number) {
+  const path = routeUrl(API_ROUTES.getSpecVersion.path, { ...address });
+  return requestJson(API_ROUTES.getSpecVersion.response, version === undefined ? path : `${path}?version=${version}`);
+}
+
+/** Restoring saves the old content as a new version, so history only grows. */
+export function restoreSpecVersion(address: SpecAddress, version: number) {
+  return requestJson(API_ROUTES.restoreSpecVersion.response, routeUrl(API_ROUTES.restoreSpecVersion.path, { ...address }), {
+    method: "POST",
+    body: { version },
+  });
+}
+
+export function decideCutCandidates(projectId: string, requestId: string, decision: { readonly approved: string[]; readonly rejected: string[] }) {
+  return requestJson(API_ROUTES.decideCutCandidates.response, routeUrl(API_ROUTES.decideCutCandidates.path, { projectId, requestId }), {
+    method: "POST",
+    body: decision,
+  });
+}
+
+/** Opening a video's EDL is also what starts its live preview build on the server. */
+export function fetchPlayerEdl(projectId: string, videoId: string) {
+  return requestJson(API_ROUTES.getPlayerEdl.response, routeUrl(API_ROUTES.getPlayerEdl.path, { projectId, videoId }));
 }

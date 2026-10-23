@@ -11,7 +11,9 @@ import wave
 from pathlib import Path
 
 from . import ffio
+from .specs.cuts import cut_spec_to_engine
 from .specs.paths import inside_project, video_id
+from .specs.schema import SpecError
 
 FPS_NUM, FPS_DEN = 30000, 1001
 FPS = FPS_NUM / FPS_DEN
@@ -45,10 +47,21 @@ MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
 
 
 def load_cuts(video):
+    """cuts/vN.json in the engine's dict shape; a studio CutSpec (schemaVersion) is validated and converted first."""
     spec = json.loads((WORK / "cuts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    if "schemaVersion" in spec:
+        spec = studio_cuts_to_engine(spec)
     if "base" in spec:
         video_id(spec["base"])  # a reel reads its base's EDL, audio and mask by this name
     return spec
+
+
+def studio_cuts_to_engine(spec):
+    # Every frame computation here is on the fixed 29.97 grid, so another rate would put each cut on the wrong frame.
+    fps = spec.get("fps", {})
+    if (fps.get("num"), fps.get("den")) != (FPS_NUM, FPS_DEN):
+        raise SpecError(f"fps {fps.get('num')}/{fps.get('den')} is not supported: the engine renders at {FPS_NUM}/{FPS_DEN}")
+    return cut_spec_to_engine(spec)
 
 
 def load_edl(video):

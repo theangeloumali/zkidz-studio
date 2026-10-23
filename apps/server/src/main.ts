@@ -19,6 +19,9 @@ import { createLogger } from "./logging/logger.ts";
 import { DEFAULT_UPLOAD_LIMITS, removeStaleParts } from "./media-io/store.ts";
 import { createDemoRunner } from "./onboarding/demo-runner.ts";
 import { createOnboardingServices } from "./onboarding/onboarding-services.ts";
+import { createCompositionBuilder } from "./preview/composition-builder.ts";
+import { createPreviewOrigin } from "./preview/preview-origin.ts";
+import { createPreviewService } from "./preview/preview-service.ts";
 import { createSecurity } from "./security/index.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
@@ -29,6 +32,7 @@ const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
 const ENGINE_DIR = fileURLToPath(new URL("../../../packages/engine", import.meta.url));
 const CLI_ENTRY = fileURLToPath(new URL("../../../packages/cli/src/main.ts", import.meta.url));
 const DEMO_SCRIPT = fileURLToPath(new URL("../../../examples/demo/make_demo.py", import.meta.url));
+const PREVIEW_WORKER_SCRIPT = join(ENGINE_DIR, "hf", "preview", "worker.js");
 const PACKAGE_JSON_URL = new URL("../package.json", import.meta.url);
 /** Plan §6.3: a terminal frame is keystrokes or a resize, never bulk data. */
 const WS_MAX_PAYLOAD_BYTES = 256 * 1024;
@@ -56,6 +60,7 @@ async function main(): Promise<void> {
   const runDir = join(config.studioHome, "run");
   await clearSessionFiles(runDir);
   const claudePath = await resolveClaudePath(process.env);
+  const engine = createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: config.studioHome });
   const agent = createAgentServices({
     database: database.db,
     studioHome: config.studioHome,
@@ -71,7 +76,7 @@ async function main(): Promise<void> {
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
     query,
     ffprobePath: config.ffprobePath,
-    engine: createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: config.studioHome }),
+    engine,
   });
 
   const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome });
@@ -80,11 +85,13 @@ async function main(): Promise<void> {
     studioHome: config.studioHome,
     eventBus,
     jobRunner,
+    engine,
     demoRunner,
     ffprobePath: config.ffprobePath,
     uploadLimits: DEFAULT_UPLOAD_LIMITS,
   });
 
+  const previewBuilder = createCompositionBuilder({ workerScriptPath: PREVIEW_WORKER_SCRIPT, studioHome: config.studioHome });
   const app = createApp({
     database: database.db,
     studioHome: config.studioHome,
@@ -97,15 +104,29 @@ async function main(): Promise<void> {
     agent,
     runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
     onboarding,
+    previewService: createPreviewService({
+      database: database.db,
+      studioHome: config.studioHome,
+      eventBus,
+      logger,
+      previewPort: PREVIEW_PORT,
+      buildComposition: previewBuilder,
+    }),
   });
   const websocket = { server: new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES }) };
   const server = serve({ fetch: app.fetch, hostname: bindHost, port: config.port, websocket }, (address) => {
     logger.info("studio server listening", { host: bindHost, port: address.port, backend: database.backend, agentRunner: agent.agentRunner });
   });
+  const previewOrigin = createPreviewOrigin({ database: database.db, studioHome: config.studioHome, appPort: config.port, previewPort: PREVIEW_PORT });
+  const previewServer = serve({ fetch: previewOrigin.fetch, hostname: bindHost, port: PREVIEW_PORT }, (address) => {
+    logger.info("preview origin listening", { host: bindHost, port: address.port });
+  });
 
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
     agent.shutdown();
+    previewServer.close();
+    previewBuilder.close();
     server.close(() => {
       void jobRunner
         .idle()

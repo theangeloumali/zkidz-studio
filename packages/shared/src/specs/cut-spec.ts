@@ -62,3 +62,21 @@ export const CutSpecSchema = z.strictObject({
 
 export type CutSpec = z.infer<typeof CutSpecSchema>;
 export type Removal = z.infer<typeof RemovalSchema>;
+
+export interface KeptSpan {
+  readonly at: number;
+  readonly end: number;
+}
+
+/** The source minus the merged removals; the engine's EDL adds pause trimming and frame snapping on top. */
+export function keptSpansOf(cuts: Pick<CutSpec, "removals" | "durationS">): KeptSpan[] {
+  const removals = [...cuts.removals].sort((first, second) => first.at - second.at);
+  const keptSpans: KeptSpan[] = [];
+  let cursorS = 0;
+  for (const removal of removals) {
+    if (removal.at > cursorS) keptSpans.push({ at: cursorS, end: removal.at });
+    cursorS = Math.max(cursorS, removal.end);
+  }
+  if (cuts.durationS > cursorS) keptSpans.push({ at: cursorS, end: cuts.durationS });
+  return keptSpans;
+}

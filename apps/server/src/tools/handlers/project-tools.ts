@@ -9,13 +9,11 @@ import { hasErrorCode } from "@zks/db";
 import { readEnabledRuleTexts } from "../../rules/rule-reader.ts";
 import { implementTool } from "../define-tool.ts";
 import type { MediaAssetRow } from "../../dto.ts";
-import { loadProject } from "../project-files.ts";
+import { loadProject, PROJECT_THEME_ID } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 import { readLatestWords, type TranscriptWord } from "../transcript-store.ts";
 
 const CLIP_KINDS = ["camera", "screen_recording", "film"] as const;
-/** The only theme pack until Phase 3 makes themes selectable. */
-const DEFAULT_THEME = "zkidz";
 const QUARTER_TURNS = [0, 90, 180, 270] as const;
 const WORDS_PER_PAGE = 400;
 const WORDS_PER_READABLE_LINE = 12;
@@ -31,7 +29,7 @@ const projectInfo = implementTool("project_info", {
       .where(and(eq(mediaAssets.projectId, context.projectId), inArray(mediaAssets.kind, [...CLIP_KINDS])))
       .orderBy(asc(mediaAssets.createdAt));
     const ruleTexts = await readEnabledRuleTexts(context.db);
-    return { output: { videoId: project.videoId, clips: clipRows.flatMap(toClipInfo), theme: DEFAULT_THEME, rules: ruleTexts } };
+    return { output: { videoId: project.videoId, clips: clipRows.flatMap(toClipInfo), theme: PROJECT_THEME_ID, rules: ruleTexts } };
   },
 });
 

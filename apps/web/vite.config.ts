@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { APP_PORT, LOOPBACK_HOST } from "@zks/shared";
 
 export default defineConfig({
@@ -18,5 +18,6 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     css: false,
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });

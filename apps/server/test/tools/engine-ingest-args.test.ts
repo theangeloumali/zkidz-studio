@@ -8,7 +8,7 @@ import { writeProjectTemplate } from "../../src/onboarding/project-template.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { registerEngineJobHandlers, type EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
-import { createToolFixture, insertCameraAsset, type ToolFixture } from "./tool-fixtures.ts";
+import { createToolFixture, insertCameraAsset, JOINED_SOURCE_PROBE, type ToolFixture } from "./tool-fixtures.ts";
 
 let server: TestServer;
 const engineRequests: EngineRequest[] = [];
@@ -24,6 +24,7 @@ beforeAll(async () => {
         return { sourcePath: "sources/v1.mkv", frames: 900, joins: [{ clip: 0, at: 0 }] };
       },
     },
+    probeSource: () => Promise.resolve(JOINED_SOURCE_PROBE),
   });
 });
 afterAll(async () => {

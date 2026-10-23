@@ -1,6 +1,8 @@
 // Created by The Angelo Umali.
 // Job handlers for the engine steps the Phase 2 tools start: ingest (join + prepare) and transcribe.
 import { mkdir, stat, writeFile } from "node:fs/promises";
+import { probeColumns } from "../routes/media-ingest.ts";
+import type { ProbeResult } from "../media-io/probe.ts";
 import { join } from "node:path";
 import type { StudioDatabase } from "@zks/db";
 import { mediaAssets, projects, transcripts } from "@zks/db/schema";
@@ -37,6 +39,8 @@ export interface EngineJobDeps {
   readonly db: StudioDatabase;
   readonly studioHome: string;
   readonly engine: EngineRunner;
+  /** ffprobe on the joined source, so the Media list shows it like an upload. */
+  readonly probeSource: (filePath: string) => Promise<ProbeResult>;
 }
 
 const WorkPathSchema = z.string().min(1);
@@ -99,18 +103,23 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths }));
 
   const relPath = workRelativePath(workDir, report.sourcePath);
-  const sourceStat = await stat(join(projectRoot, relPath));
+  const sourcePath = join(projectRoot, relPath);
+  const [sourceStat, probe] = await Promise.all([stat(sourcePath), deps.probeSource(sourcePath)]);
+  const probed = { ...probeColumns(probe), kind: "source" as const };
   const [source] = await deps.db
     .insert(mediaAssets)
     .values({
       projectId: job.projectId,
-      kind: "source",
       name: `${job.videoId} source`,
       relPath,
       bytes: sourceStat.size,
       mtimeMs: Math.round(sourceStat.mtimeMs),
+      ...probed,
     })
-    .onConflictDoUpdate({ target: [mediaAssets.projectId, mediaAssets.relPath], set: { bytes: sourceStat.size, mtimeMs: Math.round(sourceStat.mtimeMs) } })
+    .onConflictDoUpdate({
+      target: [mediaAssets.projectId, mediaAssets.relPath],
+      set: { bytes: sourceStat.size, mtimeMs: Math.round(sourceStat.mtimeMs), ...probed },
+    })
     .returning();
   if (source === undefined) throw new Error("source asset upsert returned no row");
   const joins = report.joins.map((join) => ({ assetId: params.clips[join.clip]?.assetId, at: join.at }));

@@ -1,13 +1,13 @@
 // Created by The Angelo Umali.
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { jobs, transcripts } from "@zks/db/schema";
+import { jobs, mediaAssets, transcripts } from "@zks/db/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { registerEngineJobHandlers, type EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
-import { createToolFixture, insertCameraAsset, type ToolFixture } from "./tool-fixtures.ts";
+import { createToolFixture, insertCameraAsset, JOINED_SOURCE_PROBE, type ToolFixture } from "./tool-fixtures.ts";
 
 let server: TestServer;
 const engineRequests: EngineRequest[] = [];
@@ -28,6 +28,7 @@ beforeAll(async () => {
         return { sourcePath: "sources/v1.mkv", frames: 900, joins: [{ clip: 0, at: 0 }] };
       },
     },
+    probeSource: () => Promise.resolve(JOINED_SOURCE_PROBE),
   });
 });
 afterAll(async () => {
@@ -76,6 +77,16 @@ describe("ingest", () => {
     const clipArgument = engineRequests.at(-1)?.args.at(-1) ?? "";
     expect(clipArgument.startsWith(fixture.projectRoot)).toBe(true);
     expect(clipArgument.endsWith("@1.2")).toBe(true);
+  });
+
+  // An unprobed row left the Media list on "Reading metadata…" for good.
+  it("stores the joined source's probed metadata, as an upload does", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const jobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    await callTool(fixture, "job_wait", { jobId, timeoutS: 10 });
+    const [source] = await server.database.db.select().from(mediaAssets).where(eq(mediaAssets.relPath, "work/sources/v1.mkv"));
+    expect(source).toMatchObject({ kind: "source", durationS: 30, width: 2160, height: 3840, fpsNum: 30, fpsDen: 1 });
   });
 
   it("rejects an asset the project does not own", async () => {

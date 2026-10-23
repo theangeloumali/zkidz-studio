@@ -84,6 +84,7 @@ async function startHarness(hasSdkBinary: boolean): Promise<Harness> {
       query: sdkQuery,
       hasSdkBinary: () => hasSdkBinary,
       engine: { run: () => Promise.reject(new Error("engine not installed in tests")) },
+      ffprobePath: "ffprobe",
     });
     return { security, agent: services };
   });

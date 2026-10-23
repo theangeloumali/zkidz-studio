@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // The Phase 2 graph (plan §6): one broker, the SDK manager, mode T sessions and the studio tools, mounted by createApp.
 import { join } from "node:path";
+import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
 import type { Hono } from "hono";
 import { DecisionBroker } from "./agent/decisions.ts";
@@ -54,6 +55,7 @@ export interface AgentServicesDeps {
   /** Without the SDK's bundled binary, sessions run through `claude -p` (plan §6.7). */
   readonly hasSdkBinary?: () => boolean;
   readonly engine: EngineRunner;
+  readonly ffprobePath: string;
   readonly fetch?: FetchFunction;
 }
 
@@ -108,7 +110,12 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     cancelProjectJobs,
     logger: deps.logger,
   });
-  registerEngineJobHandlers(deps.jobRunner, { db: deps.database, studioHome: deps.studioHome, engine: deps.engine });
+  registerEngineJobHandlers(deps.jobRunner, {
+    db: deps.database,
+    studioHome: deps.studioHome,
+    engine: deps.engine,
+    probeSource: (filePath) => probeMedia(deps.ffprobePath, filePath),
+  });
 
   const registerRoutes = (app: Hono) => {
     registerConnectRoutes(app, {

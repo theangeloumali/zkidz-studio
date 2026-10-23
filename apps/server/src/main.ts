@@ -70,6 +70,7 @@ async function main(): Promise<void> {
     claudeVersion: await readClaudeVersion(claudePath),
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
     query,
+    ffprobePath: config.ffprobePath,
     engine: createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: config.studioHome }),
   });
 

@@ -55,7 +55,7 @@ export class EngineReportedError extends Error {
   }
 }
 
-/** Method syntax keeps the tools layer's EngineRunner assignable both ways; its requests simply carry no signal. */
+/** Method syntax keeps the tools layer's EngineRunner, whose command is a closed union, assignable both ways. */
 export interface EngineProcessRunner {
   run(request: EngineProcessRequest): Promise<unknown>;
 }

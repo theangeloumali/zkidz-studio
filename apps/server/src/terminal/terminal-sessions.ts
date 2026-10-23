@@ -32,7 +32,7 @@ type PreToolUsePayload = Extract<HookPayload, { hook_event_name: "PreToolUse" }>
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
   const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId);
-  // A resume reuses the session id and so its files folder; the old run's removal must finish before the new write.
+  // Each launch writes its own files folder; a reopen still waits for the last run's cleanup, so its exit events go out first.
   const pendingCleanups = new Map<string, Promise<void>>();
 
   const publishAll = async (newEvents: readonly NewStudioEvent[]) => {

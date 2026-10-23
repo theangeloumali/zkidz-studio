@@ -78,7 +78,11 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
           Restart Claude Code
         </button>
       ) : null}
-      <div ref={hostRef} role="application" aria-label="Claude Code terminal" className="min-h-80 flex-1 overflow-hidden rounded-inset bg-bg p-2" />
+      {/* The fit addon sizes the grid from the host, so the host has no padding and a fixed height: a box that grows with
+          its content made every fit add a row. */}
+      <div className="rounded-inset bg-bg p-2">
+        <div ref={hostRef} role="application" aria-label="Claude Code terminal" className="h-96 w-full overflow-hidden" />
+      </div>
     </div>
   );
 }

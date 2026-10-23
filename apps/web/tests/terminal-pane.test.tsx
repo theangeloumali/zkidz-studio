@@ -124,6 +124,15 @@ describe("TerminalPane", () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
+  // The fit addon sizes the grid from this element; padding or a content-driven height made every fit add a row, forever.
+  it("measures the terminal on a fixed-height box with no padding", () => {
+    renderPane();
+    const host = screen.getByRole("application", { name: "Claude Code terminal" });
+    expect(host.className).not.toMatch(/(^|\s)(p|px|py|pt|pb)-/);
+    expect(host.className).toMatch(/(^|\s)h-\d+/);
+    expect(host.className).not.toMatch(/(^|\s)(flex-1|min-h-)/);
+  });
+
   it("shows the folder-trust hint", async () => {
     await renderOpenPane();
     expect(screen.getByText(/trust/i)).toBeInTheDocument();

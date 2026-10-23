@@ -1,11 +1,11 @@
 // Created by The Angelo Umali.
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ChecksumMismatchError, downloadVerified, sha256File } from "../src/download.ts";
 
 const PAYLOAD = randomBytes(256 * 1024);
@@ -30,6 +30,7 @@ beforeEach(() => {
   requestHeaders.length = 0;
   workDir = mkdtempSync(path.join(tmpdir(), "zks-dl-"));
 });
+afterEach(() => rmSync(workDir, { recursive: true, force: true }));
 
 describe("downloadVerified", () => {
   it("downloads, verifies and renames into place", async () => {

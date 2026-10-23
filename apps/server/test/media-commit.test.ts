@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
 // On a filesystem without hard links an upload is copied into place: the copy must never hold the database, and a
 // failed copy must leave no row, folder or partial file behind.
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mediaAssets, projects } from "@zks/db/schema";
 import { API_ROUTES, MediaAssetSchema, PROJECT_TITLE_HEADER, ProjectSchema, UPLOAD_FILENAME_HEADER } from "@zks/shared";
@@ -9,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { projectDir } from "../src/config.ts";
+import { commitWithoutReplacing } from "../src/media-io/store.ts";
 import { hasFfmpeg, makeMediaFixtures, type MediaFixtures } from "./support/media-fixtures.ts";
 import { connectionFrom, createTestServer, getRequest, insertProject, TEST_HOST, type TestServer } from "./support/test-server.ts";
 
@@ -113,5 +115,23 @@ describe.skipIf(!ffmpegAvailable)("committing an upload where hard links fail", 
     const rawFiles = await readdir(join(projectDir(server.studioHome, project.slug), "media", "raw")).catch(() => []);
     expect(rawFiles).toEqual([]);
     expect((await studioFootprint()).assetCount).toBe(before.assetCount);
+  });
+});
+
+describe("copying a part into place", () => {
+  it("keeps the part's millisecond, which the asset row recorded, when the mtime has a fraction of .5 or more", async () => {
+    filesystem.hasNoHardLinks = true;
+    const dir = await mkdtemp(join(tmpdir(), "zks-copy-mtime-"));
+    const partPath = join(dir, "clip.part");
+    await writeFile(partPath, "clip bytes");
+    // Stat's Date rounds to the nearest millisecond, so .7 is the case that used to land 1 ms late.
+    const partMtimeSeconds = 1_792_755_431.8327;
+    await utimes(partPath, partMtimeSeconds, partMtimeSeconds);
+    const recordedMtimeMs = Math.trunc((await stat(partPath)).mtimeMs);
+
+    await commitWithoutReplacing(partPath, join(dir, "clip.mp4"));
+
+    expect(Math.trunc((await stat(join(dir, "clip.mp4"))).mtimeMs)).toBe(recordedMtimeMs);
+    await rm(dir, { recursive: true, force: true });
   });
 });

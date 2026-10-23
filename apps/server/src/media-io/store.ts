@@ -64,8 +64,9 @@ export async function commitWithoutReplacing(partPath: string, finalPath: string
 async function copyWithoutReplacing(partPath: string, finalPath: string): Promise<void> {
   try {
     await copyFile(partPath, finalPath, constants.COPYFILE_EXCL);
-    const { atime, mtime } = await stat(partPath);
-    await utimes(finalPath, atime, mtime);
+    // Seconds, not stat's Dates: those round to the millisecond, and the row truncates.
+    const { atimeMs, mtimeMs } = await stat(partPath);
+    await utimes(finalPath, atimeMs / 1000, mtimeMs / 1000);
   } catch (error) {
     if (!hasErrorCode(error, "EEXIST")) await rm(finalPath, { force: true });
     throw error;

@@ -7,6 +7,9 @@ import type { DecisionBroker } from "./decisions.ts";
 import { BASE_TOOLS, DISALLOWED_TOOLS } from "./init-assertion.ts";
 import { createToolDecider } from "./policy.ts";
 
+// Tried in order when the primary model is overloaded or unavailable (plan §6.6); the SDK retries the primary each turn.
+const FALLBACK_MODELS = "sonnet,haiku";
+
 export interface SessionLimits {
   readonly maxTurns: number;
   /** Mode A only: cloud billing has no SDK budget cap. */
@@ -43,5 +46,6 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     maxTurns: limits.maxTurns,
     ...(input.credential.kind === "apiKey" ? { maxBudgetUsd: limits.maxBudgetUsd } : {}),
     ...(limits.model === undefined ? {} : { model: limits.model }),
+    fallbackModel: FALLBACK_MODELS,
   };
 }

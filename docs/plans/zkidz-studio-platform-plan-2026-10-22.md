@@ -18,8 +18,8 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
 
 ## Phase ledger
 
-- [x] Phase 0: Bootstrap, shared contracts, spikes, mock-up reconciliation and approval (done 2026-10-23; mock-up approval gate `design/mockup/APPROVED.md` waits on Angelo)
-- [ ] Phase 1: Foundations (server, DB, event bus, web shell, engine import, setup CLI)
+- [x] Phase 0: Bootstrap, shared contracts, spikes, mock-up reconciliation and approval (done 2026-10-23; mock-up approved by Angelo 2026-10-23, `design/mockup/APPROVED.md`)
+- [x] Phase 1: Foundations (server, DB, event bus, web shell, engine import, setup CLI) (done 2026-10-23; setup.ps1/setup.cmd and macOS runs unverified on real hardware until Phase 7 cross-OS CI)
 - [ ] Phase 2: Claude connection and agent host (auth modes A and B, terminal mode T as opt-in, SDK session, PTY host, hooks
       bridge, MCP tools v1, activity feed)
 - [ ] Phase 3: Engine portability (hardware backends, whisper.cpp, JSON specs, theme packs)
@@ -28,6 +28,15 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
 - [ ] Phase 6: Bundled skills, rules panel, style onboarding, demo project
 - [ ] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker
 - [ ] Phase 8: Docs and the v1.0 release (policy re-check; terminal mode removed before release if Anthropic replies "no")
+
+Run decisions (Angelo, 2026-10-23, build-to-Phase-8 grill):
+
+- Release: full v1.0. A develop → main PR merged with `--merge`, tag `v1.0.0`, GitHub release; terminal mode ships opt-in, labelled
+  "pending Anthropic approval".
+- Live Claude tests run on the maintainer's own Claude Code login (mode T and `claude -p`); mode A is covered by a recorded stub.
+- GPU backends: nvidia and cpu proven on hardware; videotoolbox on the macOS CI runner; qsv, amf and vaapi ship behind their probe
+  with the CPU fallback, marked "untested on hardware" in the README.
+- Demo videos carry voice and captions.
 
 ---
 
@@ -1193,7 +1202,7 @@ SFX. New items wipe in from their start edge when the agent adds them; reduced-m
 
 ### 9.4 Drag-drop to local disk
 
-- `POST /api/projects/:id/media` streams the request body to `media/raw/<assetId>.<ext>.part`, then renames with no-replace semantics.
+- `POST /api/projects/:id/media` streams the request body to `media/raw/<assetId>.part`, probes it, then renames it to `<assetId>.<ext>` (the extension comes from the probed container) with no-replace semantics.
   The extension comes from a probe-verified allowlist; the original filename lives only in the DB as display text. No full-body
   buffering; per-file and total size caps; disk-space check before accepting; per-file progress from upload events.
 - "Use files in place": a server-side picker registers **single files**, never directories. `GET /api/fs/list?path=` hides

@@ -15,11 +15,12 @@ from pathlib import Path
 from unittest import mock
 
 import numpy as np
-from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
+from support import make_edl, media_file, playlist_file, seconds  # first: it sets a scratch ZKS_HOME
 from test_gpu_render import write_png_header
 
 from zks_engine import pipeline
 from zks_engine import blur
+from zks_engine import ffio
 from zks_engine import render_final
 
 UPRIGHT_4K = (2160, 3840)
@@ -455,3 +456,49 @@ class MatteGraphTests(unittest.TestCase):
         inputs = render_final.matte_inputs(self.matted(), 0, Path("frames/v1.behind"), Path("mask/v1.mkv"), 1.5)
         self.assertIn(str(Path("frames/v1.behind") / "%05d.png"), inputs)
         self.assertEqual(inputs[inputs.index(str(Path("mask/v1.mkv"))) - 1 - 0], "-i")
+
+
+class UserMediaInputTests(unittest.TestCase):
+    """The source a cut spec names is user media: sniffed and whitelisted before ffmpeg opens it (ffio policy)."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.clip = media_file("clip.mp4")
+        self.playlist = playlist_file()
+
+    def chunk(self, source):
+        piece = make_edl([(0, 30)])
+        return render_final.chunk_command(piece, 0, {}, source, "", UPRIGHT_4K, "", [], self.root / "frames", self.root / "c.mp4")
+
+    def test_the_chunk_command_reads_the_source_under_the_whitelists(self):
+        with mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
+            command = self.chunk(self.clip)
+        source_at = command.index(str(self.clip.resolve()))
+        self.assertEqual(command[source_at - 1], "-i")
+        self.assertEqual(command[source_at - 1 - len(ffio.WHITELISTS):source_at - 1], ffio.WHITELISTS)
+
+    def test_a_playlist_named_mp4_never_reaches_ffmpeg(self):
+        with mock.patch.object(render_final.subprocess, "run") as run, self.assertRaises(ffio.MediaRejected):
+            self.chunk(self.playlist)
+        run.assert_not_called()
+
+    def test_frame_times_rejects_a_playlist_before_ffprobe_runs(self):
+        with mock.patch.object(render_final.subprocess, "run") as run, self.assertRaises(ffio.MediaRejected):
+            render_final.frame_times(self.playlist)
+        run.assert_not_called()
+
+    def test_the_cpu_path_rejects_a_playlist_before_ffmpeg_runs(self):
+        edl = make_edl([(0, 30)])
+        with (mock.patch.object(render_final.subprocess, "run") as run, mock.patch("zks_engine.pipeline.subprocess.run") as probe,
+              self.assertRaises(ffio.MediaRejected)):
+            render_final.encode_master("v1", False, False, False, self.playlist, edl, {}, "", UPRIGHT_4K, "", [], self.root / "frames",
+                                       self.root / "a.wav", self.root / "out.mp4")
+        run.assert_not_called()
+        probe.assert_not_called()
+
+    def test_the_composite_runs_the_pinned_ffmpeg(self):
+        with mock.patch.dict(os.environ, {"ZKS_FFMPEG": "/pinned/bin/ffmpeg"}), \
+             mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
+            self.assertEqual(self.chunk(self.clip)[0], "/pinned/bin/ffmpeg")

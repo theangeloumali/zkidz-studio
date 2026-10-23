@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Server settings from the environment (plan §3.3). ZKS_HOME holds the database, keys and projects, so it is owner-only.
 import { constants } from "node:fs";
-import { access, mkdir } from "node:fs/promises";
+import { access, chmod, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { APP_PORT, ENV } from "@zks/shared";
@@ -44,8 +44,10 @@ export async function assertFfprobeInstalled(ffprobePath: string): Promise<void>
 }
 
 export async function ensureStudioHome(studioHome: string): Promise<void> {
-  await mkdir(studioHome, { recursive: true, mode: OWNER_ONLY_MODE });
-  await Promise.all(ZKS_HOME_DIRS.map((dir) => mkdir(join(studioHome, dir), { recursive: true, mode: OWNER_ONLY_MODE })));
+  const dirs = [studioHome, ...ZKS_HOME_DIRS.map((dir) => join(studioHome, dir))];
+  for (const dir of dirs) await mkdir(dir, { recursive: true, mode: OWNER_ONLY_MODE });
+  // mkdir's mode only applies to new folders; a home left at 0755 by an older run is tightened here.
+  await Promise.all(dirs.map((dir) => chmod(dir, OWNER_ONLY_MODE)));
 }
 
 export function projectDir(studioHome: string, slug: string): string {

@@ -39,7 +39,8 @@ class Clip(NamedTuple):
 def probe(argument):
     path, _, zoom = argument.partition("@")
     stream = json.loads(subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
-                                        "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt", "-of", "json", path],
+                                        "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt", "-of", "json",
+                                        *ffio.user_input_args(path)],
                                        capture_output=True, text=True, check=True).stdout)["streams"][0]
     if stream["r_frame_rate"] != f"{FPS_NUM}/{FPS_DEN}":
         sys.exit(f"{path}: {stream['r_frame_rate']} fps; the engine assumes {FPS_NUM}/{FPS_DEN}")
@@ -73,8 +74,8 @@ def piece_command(clip, first, frames, out):
     """Frames picked by decode index on the GPU, never by a time seek: clip 1's timestamps shift ~half a frame mid-file,
     so a seek half a frame before frame k landed on k+1. Output is re-stamped by index (drift vs audio stays under
     ~25 ms inside a clip; audio_command resets it at every join)."""
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-init_hw_device", "vulkan", "-hwaccel", "cuda",
-            "-hwaccel_output_format", "cuda", "-i", str(clip.path),
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-init_hw_device", "vulkan", "-hwaccel", "cuda",
+            "-hwaccel_output_format", "cuda", *ffio.user_input_args(clip.path),
             "-vf", piece_filter(clip, first, frames),
             "-r", f"{FPS_NUM}/{FPS_DEN}", "-fps_mode", "cfr", "-frames:v", str(frames), *ENCODER, "-an", str(out)]
 
@@ -88,11 +89,11 @@ def run_all(commands):
 
 def audio_command(clips, out):
     """Each clip's audio padded or trimmed to exactly its video length, so lip sync cannot drift across a join."""
-    inputs = [arg for clip in clips for arg in ("-i", str(clip.path))]
+    inputs = [arg for clip in clips for arg in ffio.user_input_args(clip.path)]
     chains = "".join(f"[{i}:a]aresample={AUDIO_RATE},apad,atrim=end_sample={round(clip.frames * AUDIO_RATE * FPS_DEN / FPS_NUM)}[a{i}];"
                      for i, clip in enumerate(clips))
     joined = "".join(f"[a{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[a]"
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", chains + joined, "-map", "[a]",
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *inputs, "-filter_complex", chains + joined, "-map", "[a]",
             "-c:a", "flac", str(out)]
 
 
@@ -116,7 +117,7 @@ def main(target, arguments):
             sys.exit(f"{out.name}: {count_frames(out)} frames, expected {frames}")
     listing = work / "pieces.txt"
     listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
                     "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", "-colorspace", "bt709",
                     "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", str(target)], check=True)
     if count_frames(target) != expected:

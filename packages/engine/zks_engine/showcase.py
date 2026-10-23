@@ -50,7 +50,7 @@ def base_command(raw, first, count, out):
     times = frame_times(raw)
     seek = (times[first - 1] + times[first]) / 2 if first else 0.0
     graph = chain(orientation_filter(raw, True), CUDA_TV_RANGE, BT709_TV, RESTAMP)
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *decode_args(True), "-ss", f"{seek:.6f}", "-i", str(raw),
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *decode_args(True), "-ss", f"{seek:.6f}", *ffio.user_input_args(raw),
             "-vf", graph, "-frames:v", str(count), "-r", f"{FPS_NUM}/{FPS_DEN}", "-fps_mode", "cfr", *ENCODER, "-an", str(out)]
 
 
@@ -81,15 +81,15 @@ def insert_command(insert, first, count, out):
     stream = probe_video(src)
     rounded, compose = panel_passes(PANELS[insert.get("panel") or panel_for(upright_dims(stream))])
     if src.lower().endswith(".png"):
-        source, decode = ["-loop", "1", "-framerate", f"{FPS_NUM}/{FPS_DEN}", "-i", src], ""
+        source, decode = ["-loop", "1", "-framerate", f"{FPS_NUM}/{FPS_DEN}", *ffio.user_input_args(src)], ""
     else:
         seek = insert["src_at"] + first / FPS - insert["at"]
-        source = [*decode_args(True), "-ss", f"{seek:.4f}", "-i", src]
+        source = [*decode_args(True), "-ss", f"{seek:.4f}", *ffio.user_input_args(src)]
         on_gpu, on_cpu = split_orientation(CUDA_UPRIGHT[rotation_of(stream) % 360])
         depth = "p010le" if "10" in stream.get("pix_fmt", "") else "nv12"  # hwdownload cannot convert bit depth
         decode = chain(on_gpu, f"hwdownload,format={depth}", on_cpu) + ","
     graph = f"[0:v]{decode}{RESTAMP},split[a][b];[a]{FILL}[fill];[b]{rounded}[panel];[fill][panel]{compose}[v]"
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-init_hw_device", "vulkan", *source, "-filter_complex", graph,
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-init_hw_device", "vulkan", *source, "-filter_complex", graph,
             "-map", "[v]", "-frames:v", str(count), "-r", f"{FPS_NUM}/{FPS_DEN}", "-fps_mode", "cfr", *ENCODER, "-an", str(out)]
 
 
@@ -114,7 +114,7 @@ def main(video, raw):
             sys.exit(f"{out.name}: {count_frames(out)} frames, expected {count}")
     listing = work / "pieces.txt"
     listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
                     "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", *BT709_TAGS, str(target)], check=True)
     if count_frames(target) != clip.frames:
         sys.exit(f"{target.name}: {count_frames(target)} frames, expected {clip.frames}")

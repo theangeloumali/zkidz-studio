@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import progress
+from . import ffio, progress
 from .pipeline import ENERGY_WINDOW, MAX_JOBS, WORK, load_energy, whisper_filter
 from .slots import slot
 
@@ -48,7 +48,7 @@ def parse_word(line):
 def transcribe_chunk(wav, start, end, index, language):
     out = WORK / "transcripts" / f"_{Path(wav).stem}_chunk{index}.json"
     try:
-        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", "-i", wav,
+        subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{start:.3f}", "-to", f"{end:.3f}", *ffio.user_input_args(WORK / wav),
                         "-af", whisper_filter(out, "json", language=language), "-f", "null", "-"], cwd=WORK, check=True)
         words = [parse_word(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
     finally:

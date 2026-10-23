@@ -64,7 +64,7 @@ def model():
 
 def proxy_frames(proxy, first, count):
     width, height = OUTPUT
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{first / FPS:.6f}", "-i", str(proxy), "-frames:v", str(count),
+    raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-ss", f"{first / FPS:.6f}", "-i", str(proxy), "-frames:v", str(count),
                           "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.uint8).reshape(-1, height, width, 3)
 
@@ -85,7 +85,7 @@ def alphas(net, frames):
 def encode(pipe_frames, count, out):
     """Gray masks as TV-range luma (16..235), lossless HEVC on NVENC; render_final expands them back after the crop."""
     width, height = OUTPUT
-    encoder = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{width}x{height}",
+    encoder = subprocess.Popen([ffio.ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{width}x{height}",
                                 "-framerate", f"{FPS_NUM}/{FPS_DEN}", "-i", "-", *ENCODER, "-frames:v", str(count), str(out)],
                                stdin=subprocess.PIPE)
     for mask in pipe_frames:
@@ -97,7 +97,7 @@ def encode(pipe_frames, count, out):
 
 def black(count, out):
     width, height = OUTPUT
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={FPS_NUM}/{FPS_DEN}",
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s={width}x{height}:r={FPS_NUM}/{FPS_DEN}",
                     *ENCODER, "-frames:v", str(count), str(out)], check=True)
 
 
@@ -128,7 +128,7 @@ def build_mask(video):
     listing = folder / "pieces.txt"
     listing.write_text(ffio.concat_listing(pieces), encoding="utf-8")
     out = WORK / "mask" / f"{base}.mkv"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(out)], check=True)
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(out)], check=True)
     print(f"wrote {out}")
 
 

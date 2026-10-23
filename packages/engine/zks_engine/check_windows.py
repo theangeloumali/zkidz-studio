@@ -5,12 +5,13 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
+from . import ffio
 from .pipeline import MAX_JOBS, WORK, whisper_filter
 
 
 def transcribe(wav, start, end, language):
     out = WORK / "transcripts" / f"_w{start}_{end}_{language}.txt"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start}", "-to", f"{end}", "-i", wav, "-af",
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", "-ss", f"{start}", "-to", f"{end}", *ffio.user_input_args(WORK / wav), "-af",
                     # No VAD + silence padding: the window is judged on its own sound, not context.
                     "adelay=500:all=1,apad=pad_dur=1," + whisper_filter(out, "text", language=language, word_level=False, vad=False, queue=5),
                     "-f", "null", "-"], cwd=WORK, check=True)

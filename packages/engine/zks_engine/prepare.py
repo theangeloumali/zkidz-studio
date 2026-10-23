@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import ffio
 from .audio import GAP_FILL
 from .pipeline import (CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, has_cuda, orientation_filter,
                       split_orientation)
@@ -14,7 +15,7 @@ from .pipeline import (CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK,
 def build_audio(source, video):
     (WORK / "audio").mkdir(exist_ok=True)
     target = WORK / "audio" / f"{video}.wav"
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000", "-af", GAP_FILL,
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.user_input_args(source), "-vn", "-ac", "1", "-ar", "16000", "-af", GAP_FILL,
                     "-c:a", "pcm_s16le", str(target)], check=True)
     return target
 
@@ -34,7 +35,7 @@ def build_proxy(source, video, cuda):
     video_filter = proxy_filter(*split_orientation(orientation_filter(source, cuda)), cuda)
     encoder = ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "16", "-b:v", "0"] if cuda else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "16"]
     # 1-second GOP so review stills can seek to any time quickly.
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *decode_args(cuda), "-i", str(source), "-vf", video_filter,
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *decode_args(cuda), *ffio.user_input_args(source), "-vf", video_filter,
                     *encoder, "-g", "30", "-c:a", "copy", str(partial)], check=True)
     assert_upright(partial)
     partial.replace(target)

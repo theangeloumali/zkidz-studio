@@ -1,7 +1,6 @@
 # Created by The Angelo Umali.
-# The live view behind /zk:render-status: every render's stage, bar, % and ETA, the queue, failures, and the spec each
-# agent is writing, redrawn in place with Claude Code's spinner. `--once` prints one plain frame (the command's chat
-# snapshot). Usage: python -m zks_engine.progress_watch [--once]
+# zks-engine progress watch: every render's stage, bar, % and ETA, the queue, failures and the specs being written,
+# redrawn in place. `--once` prints one plain frame. Usage: python -m zks_engine.progress_watch [--once]
 import os
 import subprocess
 import sys
@@ -11,16 +10,9 @@ import time
 from . import progress
 from .progress_eta import clock, percent, simulate
 
-def spinner(platform=sys.platform):
-    """Claude Code's glyphs, out and back. Off macOS ✳ (U+2733) is an emoji, a green box in Windows Terminal, so `*`
-    takes its place, as in Claude Code's own spinner."""
-    glyphs = "·✢✳✶✻✽" if platform == "darwin" else "·✢*✶✻✽"
-    return glyphs + glyphs[-2:0:-1]
-
-
-SPINNER = spinner()
-GERUNDS = ("Cooking", "Simmering", "Brewing", "Stirring", "Plating", "Rendering")
-GERUND_SECONDS = 3
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille: no terminal swaps these for emoji
+HEADER_WORDS = ("Rendering", "Encoding", "Compositing", "Mixing", "Drawing")
+HEADER_SECONDS = 3
 STAGE_WORDS = {
     "transcribe": "transcribing the voice",
     "join": "joining the clips",
@@ -67,11 +59,11 @@ def frame(snap, now, tick, gpu=None, color=False):
     active, edited = snap["active"], snap["edited"]
     finish, batch = simulate(active, snap["history"], now)
     if active:
-        title = f"{GERUNDS[int(now // GERUND_SECONDS) % len(GERUNDS)]} {counted(len(active), 'edit')}…"
+        title = f"{HEADER_WORDS[int(now // HEADER_SECONDS) % len(HEADER_WORDS)]} {counted(len(active), 'edit')}…"
     elif edited:
         title = f"Writing {counted(len(edited), 'edit')}…"
     else:
-        title = "Nothing cooking"
+        title = "No renders running"
     status = time.strftime("%H:%M:%S", time.localtime(now)) + (f" · GPU {gpu[0]}% · NVENC {gpu[1]}%" if gpu else "")
     rows = []
     for index, edit in enumerate(active):
@@ -159,7 +151,7 @@ def main(args):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # the glyphs crash a cp1252 console's print
     if "--once" in args:
         snap = progress.snapshot()
-        print("\n".join(frame(snap, snap["now"], SPINNER.index("✻"), read_gpu())))  # a still frame shows a full glyph
+        print("\n".join(frame(snap, snap["now"], 0, read_gpu())))
     else:
         live()
 

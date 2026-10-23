@@ -14,6 +14,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from . import ffio
 from .pipeline import HF_DIR, VAD_MODEL, WHISPER_MODEL, has_cuda, models_dir
 
 MODEL_URLS = {
@@ -40,11 +41,12 @@ def kit_files():
 
 
 def check_ffmpeg():
-    return (True, "ffmpeg on PATH") if shutil.which("ffmpeg") else (False, "ffmpeg not on PATH")
+    found = shutil.which(ffio.ffmpeg_bin())
+    return (True, f"ffmpeg at {found}") if found else (False, f"ffmpeg not found ({ffio.ffmpeg_bin()})")
 
 
 def check_whisper():
-    whisper = run(["ffmpeg", "-hide_banner", "-h", "filter=whisper"]) if shutil.which("ffmpeg") else None
+    whisper = run([ffio.ffmpeg_bin(), "-hide_banner", "-h", "filter=whisper"]) if shutil.which(ffio.ffmpeg_bin()) else None
     if not whisper or "Filter whisper" not in whisper.stdout:
         return False, "ffmpeg lacks the whisper filter (needs ffmpeg 8+ built with --enable-whisper, e.g. the gyan.dev full build)"
     return True, "ffmpeg whisper filter"

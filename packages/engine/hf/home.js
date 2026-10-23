@@ -14,4 +14,7 @@ function zksHome(platform = process.platform, env = process.env) {
 
 const dataDir = (name) => process.env[`ZKS_${name.toUpperCase()}`] || path.join(zksHome(), name);
 
-module.exports = { zksHome, dataDir };
+// Twin of ffio.ffmpeg_bin: the pinned ZKS_FFMPEG, PATH only in a dev checkout.
+const ffmpegBin = () => process.env.ZKS_FFMPEG || "ffmpeg";
+
+module.exports = { zksHome, dataDir, ffmpegBin };

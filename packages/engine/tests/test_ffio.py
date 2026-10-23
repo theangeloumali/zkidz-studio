@@ -173,3 +173,22 @@ class PinnedFfprobeTests(unittest.TestCase):
         bare_call = re.compile(r"""\[\s*["']ffprobe["']""")
         offenders = [path.name for path in Path(ffio.__file__).parent.glob("*.py") if bare_call.search(path.read_text(encoding="utf-8"))]
         self.assertEqual(offenders, [])
+
+    def test_zks_ffmpeg_is_the_ffmpeg_every_module_runs(self):
+        os.environ["ZKS_FFMPEG"] = "/pinned/bin/ffmpeg"
+        self.assertEqual(ffio.ffmpeg_bin(), "/pinned/bin/ffmpeg")
+
+    def test_a_dev_checkout_runs_ffmpeg_from_path(self):
+        self.assertEqual(ffio.ffmpeg_bin(), "ffmpeg")
+
+    def test_no_engine_module_calls_a_bare_ffmpeg(self):
+        # "ffmpeg" followed by its first flag, or looked up on PATH; doctor's row label is neither.
+        bare_call = re.compile(r"""["']ffmpeg["']\s*,\s*["']-|which\(\s*["']ffmpeg""")
+        offenders = [path.name for path in Path(ffio.__file__).parent.glob("*.py")
+                     if path.name != "ffio.py" and bare_call.search(path.read_text(encoding="utf-8"))]
+        self.assertEqual(offenders, [])
+
+    def test_the_overlay_renderer_runs_the_pinned_ffmpeg_too(self):
+        bare_call = re.compile(r"""execFile(Sync)?\(\s*["']ffmpeg["']""")
+        offenders = [path.name for path in (support.HF).glob("*.js") if bare_call.search(path.read_text(encoding="utf-8"))]
+        self.assertEqual(offenders, [])

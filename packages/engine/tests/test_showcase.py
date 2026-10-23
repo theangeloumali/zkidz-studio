@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 from pathlib import Path
 
-from support import ENGINE  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import media_file  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import join_sources
 from zks_engine import showcase
@@ -14,7 +14,7 @@ PORTRAIT = {"codec_name": "h264", "width": 1080, "height": 1920, "pix_fmt": "yuv
 
 
 def insert_command(first=0, stream=PORTRAIT, **fields):
-    insert = {"at": 0.0, "end": 1.0, "src": "films/a.mp4", "src_at": 2.0, **fields}
+    insert = {"at": 0.0, "end": 1.0, "src": str(media_file("a.mp4")), "src_at": 2.0, **fields}
     with mock.patch.object(showcase, "probe_video", return_value=stream):
         return showcase.insert_command(insert, first, 30, Path("out.mp4"))
 
@@ -66,7 +66,7 @@ class PanelForTests(unittest.TestCase):
 
 class BasePieceTests(unittest.TestCase):
     def test_an_hlg_raw_is_tone_mapped_like_a_joined_clip(self):
-        clip = join_sources.Clip(Path("raw.mp4"), 900, hdr=True, zoom=1.0, ten_bit=True)
+        clip = join_sources.Clip(media_file("raw.mp4"), 900, hdr=True, zoom=1.0, ten_bit=True)
         command = showcase.base_piece(clip, 30, 60, Path("out.mp4"))
         self.assertEqual(command, join_sources.piece_command(clip, 30, 60, Path("out.mp4")))
         self.assertIn(join_sources.TONEMAP, command[command.index("-vf") + 1])

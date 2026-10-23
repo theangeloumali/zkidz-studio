@@ -117,7 +117,7 @@ def read_wav(path):
     """Any file's audio as float64 stereo at AUDIO_RATE."""
     import numpy as np
 
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "2", "-ar", str(AUDIO_RATE), "-"],
+    raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(path), "-f", "f32le", "-ac", "2", "-ar", str(AUDIO_RATE), "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(np.float64)
 
@@ -126,7 +126,7 @@ def has_cuda():
     """CUDA decode needs both an ffmpeg built with it and a working NVIDIA driver (never on a Mac)."""
     if not shutil.which("nvidia-smi"):
         return False
-    hwaccels = subprocess.run(["ffmpeg", "-hide_banner", "-hwaccels"], capture_output=True, text=True).stdout
+    hwaccels = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-hwaccels"], capture_output=True, text=True).stdout
     return "cuda" in hwaccels.split()
 
 
@@ -139,8 +139,9 @@ def chain(*filters):
 
 
 def probe_video(path):
-    result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", *ffio.WHITELISTS, "-select_streams", "v:0", "-show_entries",
-                             "stream=codec_name,width,height,pix_fmt,sample_aspect_ratio:stream_side_data", "-of", "json", str(path)],
+    result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries",
+                             "stream=codec_name,width,height,pix_fmt,sample_aspect_ratio:stream_side_data", "-of", "json",
+                             *ffio.user_input_args(path)],
                             capture_output=True, text=True, check=True)
     return json.loads(result.stdout)["streams"][0]
 

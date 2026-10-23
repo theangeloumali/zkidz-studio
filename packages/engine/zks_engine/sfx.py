@@ -14,7 +14,7 @@ from collections import namedtuple
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
-from . import progress
+from . import ffio, progress
 from .pipeline import AUDIO_RATE, ENERGY_WINDOW, WORK, energy_db, frame_to_sample, intro_track, load_edl, map_interval, read_wav
 
 from . import synth
@@ -179,13 +179,13 @@ def mix_bus(events, voice):
 
 
 def write_wav(path, samples):
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "f32le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-", "-c:a", "pcm_s24le", str(path)],
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", "-f", "f32le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-", "-c:a", "pcm_s24le", str(path)],
                    input=samples.astype(np.float32).tobytes(), check=True)
 
 
 def loudness(path):
     """(integrated LUFS, true peak dBTP) from ffmpeg's ebur128 summary."""
-    log = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
+    log = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"],
                          capture_output=True, text=True, check=True).stderr
     return float(re.findall(r"I:\s+(-?[\d.]+|-inf) LUFS", log)[-1]), float(re.findall(r"Peak:\s+(-?[\d.]+|-inf) dBFS", log)[-1])
 

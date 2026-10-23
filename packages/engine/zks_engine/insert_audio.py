@@ -1,10 +1,7 @@
 # Created by The Angelo Umali.
-# Where only an inset file plays, its own sound replaces the camera's room recording of it, on the offset showcase.py uses
-# for the picture, so picture and sound stay locked and a pause cut by exactly its length joins seamlessly. His talk-over
-# keeps the room track. Run after showcase.py and before prepare.py; a rerun starts from the room track saved the first time.
-# Usage (repo root, ZKS_WORK=work): python -m zks_engine.insert_audio vN
-#   inserts/vN.json: an insert's "clean": [[start, end], ...] in raw seconds; a span may run past the insert's edges into a
-#   removed range, so both sides of that cut are pure file.
+# Swaps an inset file's own sound in for the room recording of it, on showcase.py's picture offset; speech over it keeps
+# the room track. Runs after showcase.py, before prepare.py; a rerun starts from the saved room track.
+# Usage: python -m zks_engine.insert_audio vN   (inserts/vN.json "clean": [[start, end], ...] in raw seconds)
 import json
 import shutil
 import subprocess
@@ -13,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import ffio
 from .pipeline import AUDIO_RATE, WORK, read_wav
 from .render_final import BT709_TAGS
 
@@ -83,7 +81,7 @@ def main(video):
         sys.exit(f"inserts/{video}.json has no \"clean\" spans")
     room_track = source.with_name(f"{video}.room.flac")
     if not room_track.exists():
-        subprocess.run(["ffmpeg", "-v", "error", "-i", str(source), "-vn", "-c:a", "flac", str(room_track)], check=True)
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(source), "-vn", "-c:a", "flac", str(room_track)], check=True)
     room = read_wav(room_track)
     files = {src: read_wav(WORK.parent / src) for src in {span[2] for span in spans}}
     gains = {}
@@ -96,7 +94,7 @@ def main(video):
     if scaled_db:
         print(f"whole track scaled {scaled_db:+.1f} dB for headroom")
     partial = source.with_name(f"{video}.partial.mkv")
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(source), "-f", "s16le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-",
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", *ffio.user_input_args(source), "-f", "s16le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", "-",
                     "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "flac", *BT709_TAGS, str(partial)],
                    input=(mixed * 32767).astype(np.int16).tobytes(), check=True)
     shutil.move(partial, source)

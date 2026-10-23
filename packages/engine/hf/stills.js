@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { promisify } = require("util");
 const execFile = promisify(require("child_process").execFile);
+const { ffmpegBin } = require("./home");
 
 // ffmpeg composites are independent; 8 at a time measured 4.6x faster than one after another.
 const COMPOSITE_JOBS = 8;
@@ -31,7 +32,7 @@ function sourceAt(edl, editedSeconds) {
 async function compositeStill(work, video, edl, time, overlayPng, outPng) {
   const { seconds, zoom } = sourceAt(edl, time);
   const base = zoom > 1 ? `${edl.punch_crop},scale=1080:1920:flags=lanczos` : "null";
-  await execFile("ffmpeg", [
+  await execFile(ffmpegBin(), [
     "-y",
     "-v",
     "error",

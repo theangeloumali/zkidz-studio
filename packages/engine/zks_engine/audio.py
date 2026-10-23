@@ -8,7 +8,7 @@ import sys
 
 import numpy as np
 
-from . import progress
+from . import ffio, progress
 from .pipeline import AUDIO_RATE, WORK, frame_to_sample, load_cuts, load_edl, map_interval, source_path
 
 CROSSFADE = int(AUDIO_RATE * 0.010)
@@ -20,7 +20,7 @@ GAP_FILL = "aresample=async=1:min_hard_comp=0.01"
 
 def read_source(spec):
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(source_path(spec)), "-vn", "-ac", "2", "-ar", str(AUDIO_RATE), "-af", GAP_FILL, "-f", "f32le", "-"],
+        [ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(source_path(spec)), "-vn", "-ac", "2", "-ar", str(AUDIO_RATE), "-af", GAP_FILL, "-f", "f32le", "-"],
         capture_output=True, check=True).stdout
     # The camera's audio track ends ~13 ms before its video; pad so the last frame still has samples.
     return np.pad(np.frombuffer(raw, dtype=np.float32).reshape(-1, 2), ((0, AUDIO_RATE), (0, 0)))
@@ -64,13 +64,13 @@ def bleep(output, edl, spans):
 
 def loudnorm(raw_path, final_path):
     raw_input = ["-f", "f32le", "-ar", str(AUDIO_RATE), "-ac", "2", "-i", str(raw_path)]
-    probe = subprocess.run(["ffmpeg", "-hide_banner", *raw_input, "-af", f"loudnorm={LOUDNESS}:print_format=json", "-f", "null", "-"],
+    probe = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", *raw_input, "-af", f"loudnorm={LOUDNESS}:print_format=json", "-f", "null", "-"],
                            capture_output=True, text=True).stderr
     measured = json.loads(re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", probe).group(0))
     second_pass = (f"loudnorm={LOUDNESS}:measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
                    f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
                    f":offset={measured['target_offset']}:linear=true")
-    subprocess.run(["ffmpeg", "-y", "-v", "error", *raw_input, "-af", second_pass, "-ar", str(AUDIO_RATE), "-c:a", "pcm_s24le", str(final_path)],
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", *raw_input, "-af", second_pass, "-ar", str(AUDIO_RATE), "-c:a", "pcm_s24le", str(final_path)],
                    check=True)
     return measured
 

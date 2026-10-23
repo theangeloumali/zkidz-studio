@@ -1,6 +1,6 @@
 # Created by The Angelo Umali.
-# The live view behind /zk:render-status: one frame per snapshot, the spinner and header moving with the clock, and a
-# plain --once frame for the command's chat snapshot.
+# zks-engine progress watch: one frame per snapshot, the spinner and header moving with the clock, and a plain --once
+# frame for a one-shot snapshot.
 import os
 import subprocess
 import sys
@@ -62,14 +62,13 @@ class FrameTests(unittest.TestCase):
         self.assertGreater(len(glyphs), 3)
         headers = {progress_watch.frame(busy, NOW + seconds, 0)[0].split()[1] for seconds in range(0, 30, 3)}
         self.assertGreater(len(headers), 3)
-        self.assertTrue(headers <= set(progress_watch.GERUNDS))
+        self.assertTrue(headers <= set(progress_watch.HEADER_WORDS))
 
-    def test_off_macos_the_spinner_has_no_emoji_glyph(self):
-        self.assertNotIn("✳", progress_watch.spinner("win32"))  # Windows Terminal draws U+2733 as a green emoji box
-        self.assertEqual(progress_watch.spinner("darwin"), "·✢✳✶✻✽✻✶✳✢")
+    def test_the_spinner_is_braille_so_no_terminal_draws_an_emoji(self):
+        self.assertTrue(all("\u2800" <= glyph <= "\u28ff" for glyph in progress_watch.SPINNER))
 
     def test_idle_and_writing_only(self):
-        self.assertIn("Nothing cooking", progress_watch.frame(snap(), NOW, 0)[0])
+        self.assertIn("No renders running", progress_watch.frame(snap(), NOW, 0)[0])
         writing = snap(edited=[{"video": "v5", "state": "editing", "started": NOW, "updated": NOW, "file": "cuts/v5.json", "writes": 1}])
         self.assertIn("Writing 1 edit", progress_watch.frame(writing, NOW, 0)[0])
 

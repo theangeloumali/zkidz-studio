@@ -92,6 +92,11 @@ def rational(text):
     return int(num), int(den or 1)
 
 
+def ffmpeg_bin():
+    """The pinned ffmpeg the server checked at startup (ZKS_FFMPEG); PATH only in a dev checkout."""
+    return os.environ.get("ZKS_FFMPEG") or "ffmpeg"
+
+
 def ffprobe_bin():
     """The pinned ffprobe the server checked at startup: ZKS_FFPROBE, else beside ZKS_FFMPEG; PATH only in a dev checkout."""
     if os.environ.get("ZKS_FFPROBE"):

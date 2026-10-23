@@ -54,6 +54,22 @@ def needs_renderer(ready, reason=HF_SKIP):
     return decorate
 
 
+def media_file(name="clip.mp4"):
+    """A binary stand-in for user media under ZKS_HOME: ffio's sniff passes it; only a mocked ffmpeg/ffprobe reads it."""
+    path = Path(os.environ["ZKS_HOME"]) / "media" / name
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(b"\x00\x00\x00\x18ftypmp42" + bytes(64))
+    return path
+
+
+def playlist_file(name="playlist.mp4"):
+    """An HLS playlist renamed .mp4: the input policy must refuse it before ffmpeg runs."""
+    path = Path(os.environ["ZKS_HOME"]) / "media" / name
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:1.0,\nfile:///etc/hostname\n", encoding="utf-8")
+    return path
+
+
 def seconds(frames):
     return frames * NTSC["fps_den"] / NTSC["fps_num"]
 

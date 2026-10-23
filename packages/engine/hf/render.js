@@ -14,6 +14,7 @@ const { execFileSync, spawn } = require("child_process");
 const { build, brandIntroCompositions } = require("./build");
 const { EXIT_SECONDS } = require("./fx/motion");
 const progress = require("./progress");
+const { ffmpegBin } = require("./home");
 const { takeSlot } = require("./slots");
 const { resetDir, compositeStills } = require("./stills");
 
@@ -82,7 +83,7 @@ function withAlpha(framesDir) {
   for (const run of runs) {
     resetDir(staging);
     const pattern = (dir) => path.join(dir, "%05d.png");
-    execFileSync("ffmpeg", [
+    execFileSync(ffmpegBin(), [
       "-v",
       "error",
       "-start_number",

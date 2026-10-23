@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { APP_PORT } from "@zks/shared";
@@ -69,5 +69,14 @@ describe("ensureStudioHome", () => {
       expect(dirStat.isDirectory()).toBe(true);
       if (process.platform !== "win32") expect(dirStat.mode & 0o777).toBe(0o700);
     }
+  });
+
+  it.skipIf(process.platform === "win32")("tightens a home and layout that already exist with wider modes", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-home-"));
+    const studioHome = join(scratchDir, "studio");
+    await mkdir(join(studioHome, "projects"), { recursive: true, mode: 0o755 });
+    await chmod(studioHome, 0o755);
+    await ensureStudioHome(studioHome);
+    for (const dir of ["", ...ZKS_HOME_DIRS]) expect((await stat(join(studioHome, dir))).mode & 0o777).toBe(0o700);
   });
 });

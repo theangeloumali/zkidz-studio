@@ -1,12 +1,14 @@
 # Created by The Angelo Umali.
 # sync_inserts: where a screen recording or film plays inside the camera's footage, from sound or from on-screen motion.
+import subprocess
 import unittest
 from unittest import mock
 
 import numpy as np
 
-from support import ENGINE  # noqa: F401  first: it sets a scratch ZKS_HOME
+from support import media_file, playlist_file  # first: it sets a scratch ZKS_HOME
 
+from zks_engine import ffio
 from zks_engine import sync_inserts
 
 RATE = 1000  # samples per second for the synthetic signals
@@ -134,6 +136,34 @@ class DraftTests(unittest.TestCase):
         span = {"start": -0.5, "end": 30.0, "offset": 3.0, "score": 0.9}
         insert = sync_inserts.draft_insert(span, "screen.mkv", (1920, 1080), "visual")
         self.assertEqual((insert["at"], insert["src_at"]), (0.0, 3.0))
+
+
+class UserMediaInputTests(unittest.TestCase):
+    """Both the camera clip and the inset file are user media: a playlist renamed .mp4 is refused before ffmpeg runs."""
+
+    def setUp(self):
+        self.clip = media_file("take.mp4")
+        self.playlist = playlist_file()
+
+    def assert_refused(self, read):
+        with mock.patch.object(sync_inserts.subprocess, "run") as run, self.assertRaises(ffio.MediaRejected):
+            read(self.playlist)
+        run.assert_not_called()
+
+    def test_a_playlist_is_refused_by_every_reader(self):
+        self.assert_refused(sync_inserts.has_audio)
+        self.assert_refused(sync_inserts.band_passed_audio)
+        stream = {"codec_name": "h264", "width": 1080, "height": 1920}
+        with mock.patch.object(sync_inserts, "has_cuda", return_value=True), mock.patch.object(sync_inserts, "probe_video", return_value=stream):
+            self.assert_refused(sync_inserts.activity)
+
+    def test_the_audio_read_puts_the_whitelists_before_its_input(self):
+        done = subprocess.CompletedProcess([], 0, b"", b"")
+        with mock.patch.object(sync_inserts.subprocess, "run", return_value=done) as run:
+            sync_inserts.band_passed_audio(self.clip)
+        command = run.call_args.args[0]
+        source_at = command.index(str(self.clip.resolve()))
+        self.assertEqual(command[source_at - 1 - len(ffio.WHITELISTS):source_at], [*ffio.WHITELISTS, "-i"])
 
 
 if __name__ == "__main__":

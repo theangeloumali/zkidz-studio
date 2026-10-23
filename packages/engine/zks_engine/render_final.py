@@ -1,11 +1,8 @@
 # Created by The Angelo Umali.
-# Composites one finished TikTok edit: 4K source cut by the EDL, privacy blur, punch-ins, overlays, edited audio.
-# Usage (from the work dir): python -m zks_engine.render_final v1 [--draft | --4k]
-#   With CUDA the whole render runs on the GPU (decode, scale, punch-in, blur, overlays, NVENC); x264 only without one.
-#   --draft = faster encoder preset for review. --4k = sharpened 2160x3840 HEVC at quality, not size (CUDA only).
-#   A brand pre-roll declared in edl/<v>.sfx.json (hf/build.js) renders as its own chunk, spliced in at its insert (sfx.py).
-# Graph choices follow the pipeline review: select on frame index n, then RESTAMP onto the overlay PNGs' own 1001/30000
-# grid, punch-in as two fixed branches switched by overlay enable (scale eval=frame + crop is not pixel-safe).
+# Composites one edit: the source cut by the EDL, privacy blur, punch-ins, overlays and the edited audio, on the GPU.
+# Usage: python -m zks_engine.render_final v1 [--draft | --4k]   (--4k: sharpened 2160x3840 HEVC, CUDA only)
+# Frames are selected by index n and restamped onto the overlay PNGs' 1001/30000 grid; the punch-in is two fixed
+# branches switched by overlay enable, since scale eval=frame + crop is not pixel-safe.
 import functools
 import json
 import math
@@ -271,7 +268,7 @@ def intro_bounds(frames, at, jobs=RENDER_JOBS):
 def frame_times(source):
     """Presentation times (s) of every video frame, from the packet table: no decode."""
     result = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts,pts_time", "-of", "csv=p=0",
-                             str(source)], capture_output=True, text=True, check=True)
+                             *ffio.user_input_args(source)], capture_output=True, text=True, check=True)
     return sorted(float(line.split(",")[1]) for line in result.stdout.split() if "," in line and "N/A" not in line)
 
 
@@ -283,7 +280,7 @@ def chunk_command(piece, first, spec, source, gpu_turn, size, finish, encoder, f
     times = frame_times(source)
     seek = (times[first_source - 1] + times[first_source]) / 2 if first_source else 0.0
     graph = gpu_graph(piece, gpu_turn, blur_regions(spec, piece, size), size, finish, first_source)
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *device_args(piece), *decode_args(True), "-ss", f"{seek:.6f}", "-i", str(source),
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *device_args(piece), *decode_args(True), "-ss", f"{seek:.6f}", *ffio.user_input_args(source),
             "-thread_queue_size", "512", "-framerate", f"{piece['fps_num']}/{piece['fps_den']}", "-start_number", str(first),
             "-i", str(frames_dir / "%05d.png"),
             *(matte_inputs(piece, first, frames_dir.with_name(frames_dir.name + ".behind"), WORK / "mask" / f"{piece['base']}.mkv", seek)
@@ -310,7 +307,7 @@ def count_frames(path):
 def intro_command(intro, edl, size, encoder, out):
     """The brand pre-roll as a chunk of its own: its opaque PNGs scaled on the GPU, encoded exactly like the edit's chunks
     so the stream-copy join takes it."""
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0",
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0",
             "-i", str(intro["frames_dir"] / "%05d.png"), "-vf", gpu_scale_png(size, "yuv420p"), "-frames:v", str(intro["frames"]),
             "-fps_mode", "passthrough", *encoder, *BT709_TAGS, "-an", "-progress", str(out.with_suffix(".progress")), str(out)]
 
@@ -326,7 +323,7 @@ def join_command(listing, audio_path, encoder, part, intro_audio=None, at_sample
         sound = ["-i", str(intro_audio), "-i", str(audio_path), "-map", "0:v", "-filter_complex", graph, "-map", "[a]"]
     else:
         sound = ["-i", str(audio_path), "-map", "0:v", "-map", "1:a"]
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing), *sound,
+    return [ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing), *sound,
             "-c:v", "copy", *tag, *BT709_TAGS, "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", str(part)]
 
 
@@ -424,7 +421,7 @@ def intro_of(video, edl):
 @functools.cache
 def has_opencl():
     """The GPU composite needs the NVIDIA OpenCL platform; without it the render takes the CPU path."""
-    probe = ["ffmpeg", "-v", "error", *OPENCL_DEVICE, "-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04",
+    probe = [ffio.ffmpeg_bin(), "-v", "error", *OPENCL_DEVICE, "-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.04",
              "-vf", "format=yuv420p,hwupload,hwdownload,format=yuv420p", "-f", "null", "-"]
     return subprocess.run(probe, capture_output=True).returncode == 0
 
@@ -480,7 +477,7 @@ def encode_master(video, uhd, gpu, cuda, source, edl, spec, gpu_turn, size, fini
         frame_size = upright_size(source)
         graph = build_graph(edl, cuda, orientation_filter(source, cuda), blur_regions(spec, edl, frame_size), frame_size)
         subprocess.run([
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats", *decode_args(cuda), "-i", str(source),
+            ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", "-stats", *decode_args(cuda), *ffio.user_input_args(source),
             "-thread_queue_size", "512", "-framerate", f"{edl['fps_num']}/{edl['fps_den']}", "-start_number", "0", "-i", str(frames_dir / "%05d.png"),
             "-i", str(audio_path), "-filter_complex", graph, "-map", "[v]", "-map", "2:a", "-fps_mode", "passthrough", *encoder, *BT709_TAGS,
             "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", str(part),

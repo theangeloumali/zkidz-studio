@@ -1,11 +1,7 @@
 # Created by The Angelo Umali.
-# Finds where a screen recording or a film plays inside a camera clip and drafts work/inserts/vN.draft.json for showcase.py.
-# Sound first: the camera's mic hears the file through the room, so cross-correlation gives its offset to ~1 ms, and the
-# offset jumps by exactly a pause's length. A silent file (a Playwright take) is matched on on-screen change instead, which
-# needs the screen in the camera's view (--crop=x:y:w:h around the monitor, on the 1080-wide upright grid). That signal is
-# spiky, so windows vote for one offset: a screen share recorded alongside the camera has a single offset throughout.
-# Usage (repo root, ZKS_WORK=work):
-#   python -m zks_engine.sync_inserts vN <camera clip> <file> [<file> ...] [--visual] [--crop=x:y:w:h] [--write]
+# Finds where a screen recording or film plays inside a camera clip; drafts inserts/vN.draft.json for showcase.py.
+# Matched on sound (cross-correlation, ~1 ms), or for a silent file on on-screen change inside --crop, where windows vote.
+# Usage: python -m zks_engine.sync_inserts vN <camera clip> <file> [<file> ...] [--visual] [--crop=x:y:w:h] [--write]
 import json
 import subprocess
 import sys
@@ -127,14 +123,15 @@ def draft_insert(span, src, size, mode):
 
 
 def has_audio(path):
-    probe = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
+    probe = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
+                            *ffio.user_input_args(path)],
                            capture_output=True, text=True, check=True)
     return bool(probe.stdout.strip())
 
 
 def band_passed_audio(path):
     """8 kHz mono, 300-3000 Hz: speech and score survive the room; hum and hiss do not."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(AUDIO_RATE), "-af",
+    raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *ffio.user_input_args(path), "-vn", "-ac", "1", "-ar", str(AUDIO_RATE), "-af",
                           "highpass=f=300,highpass=f=300,lowpass=f=3000,lowpass=f=3000", "-f", "f32le", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.float32).astype(np.float64)
@@ -162,7 +159,7 @@ def activity(path, crop=None):
     decoder = ["-c:v", CUVID[stream["codec_name"]], "-resize", "64x36"]
     if crop:
         decoder += ["-crop", nvdec_crop(crop, (stream["width"], stream["height"]), rotation_of(stream))]
-    raw = subprocess.run(["ffmpeg", "-v", "error", *decoder, "-i", str(path), "-vf", f"fps={FPS_NUM}/{FPS_DEN},format=gray", "-f", "rawvideo", "-"],
+    raw = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *decoder, *ffio.user_input_args(path), "-vf", f"fps={FPS_NUM}/{FPS_DEN},format=gray", "-f", "rawvideo", "-"],
                          capture_output=True, check=True).stdout
     frames = np.frombuffer(raw, np.uint8).reshape(-1, 36, 64).astype(np.float64)
     return np.concatenate([[0.0], np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))])

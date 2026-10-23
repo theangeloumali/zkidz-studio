@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const LANES = fileURLToPath(new URL("../lib/ci-lanes.sh", import.meta.url));
 
 // Runs the scheduler with stand-in steps: each sleeps briefly, and "bad" fails.
+/** @param {number} lanes @param {string[]} steps */
 function schedule(lanes, steps) {
   const script = `
     set -uo pipefail

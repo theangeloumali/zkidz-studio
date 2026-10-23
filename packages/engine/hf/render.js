@@ -16,7 +16,7 @@ const { build, brandIntroCompositions } = require("./build");
 const { DEFAULT_THEME } = require("./theme");
 const { EXIT_SECONDS } = require("./fx/motion");
 const progress = require("./progress");
-const { ffmpegBin, hyperframesChromeEnv } = require("./home");
+const { ffmpegBin, hyperframesToolsEnv } = require("./home");
 const { takeSlot } = require("./slots");
 const { resetDir, compositeStills } = require("./stills");
 
@@ -41,7 +41,7 @@ const OUTPUT_TAIL = 64 * 1024; // of each stream, kept for the failure message
 function hyperframes(args, onOutput = () => {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [HF_BIN, ...args], {
-      env: { ...process.env, ...hyperframesChromeEnv(), ...LOCAL_ONLY },
+      env: { ...process.env, ...hyperframesToolsEnv(), ...LOCAL_ONLY },
       stdio: ["ignore", "pipe", "pipe"],
     });
     const tails = { stdout: "", stderr: "" };

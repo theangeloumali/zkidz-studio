@@ -69,10 +69,9 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     record.pty.kill();
   };
 
-  const eventContext = (record: SessionRecord, payload: HookPayload) => ({
+  const eventContext = (record: SessionRecord) => ({
     projectId: record.projectId,
     model: record.model,
-    isCatalogTool: "tool_name" in payload && typeof payload.tool_name === "string" && deps.studioToolNames.includes(payload.tool_name),
   });
 
   // Always an explicit answer: Claude Code blocks the tool only when the bridge is unreachable (spike 07), not on a 500.
@@ -83,7 +82,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
     });
     try {
-      await publishAll(hookToStudioEvents(payload, { ...eventContext(record, payload), decision }));
+      await publishAll(hookToStudioEvents(payload, { ...eventContext(record), decision }));
     } catch (error) {
       deps.logger.error("terminal tool event not published", { error });
     }
@@ -131,11 +130,16 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
         }
         record.hasStarted = true;
       }
-      await publishAll(hookToStudioEvents(payload, eventContext(record, payload)));
+      await publishAll(hookToStudioEvents(payload, eventContext(record)));
       return {};
     },
     submitPrompt: (projectId, text) => withProjectRecord(projectId, (record) => record.pty.write(encodePrompt(text))),
-    stop: (projectId) => withProjectRecord(projectId, (record) => record.pty.interrupt()),
+    // Claude Code fires no Stop hook on a user interrupt, so the turn's end is reported here.
+    stop: (projectId) =>
+      withProjectRecord(projectId, (record) => {
+        record.pty.interrupt();
+        publishInBackground([{ type: "terminal.state", projectId, state: "ready" }]);
+      }),
     kill: (projectId) => withProjectRecord(projectId, killRecord),
     killAll() {
       for (const record of records.values()) killRecord(record);

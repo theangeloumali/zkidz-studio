@@ -144,7 +144,7 @@ export function summarizeSession(events: readonly StudioEvent[]): SessionSummary
     if (event.type === "session.started") summary = { ...summary, sessionId: event.sessionId };
     else if (event.type === "limit") summary = { ...summary, limit: event };
     else if (event.type === "turn.completed") summary = { ...summary, turnCostUsd: event.costUsd ?? summary.turnCostUsd, isWorking: false };
-    else if (event.type === "terminal.state") summary = { ...summary, isWorking: event.state === "working" || event.state === "starting" };
+    else if (event.type === "terminal.state") summary = { ...summary, isWorking: event.state === "working" };
     else if (event.type === "prompt.submitted" || event.type === "tool.started") summary = { ...summary, isWorking: true };
     else if (event.type === "session.error") summary = { ...summary, isWorking: false };
   }

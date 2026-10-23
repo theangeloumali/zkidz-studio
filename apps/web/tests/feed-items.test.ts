@@ -74,5 +74,7 @@ describe("summarizeSession", () => {
   it("follows the terminal state in mode T", () => {
     expect(summarizeSession([sampleEvent("terminal.state", { state: "working" })]).isWorking).toBe(true);
     expect(summarizeSession([sampleEvent("terminal.state", { state: "ready" })]).isWorking).toBe(false);
+    // Nothing has been sent while Claude Code starts, so there is nothing to stop.
+    expect(summarizeSession([sampleEvent("terminal.state", { state: "starting" })]).isWorking).toBe(false);
   });
 });

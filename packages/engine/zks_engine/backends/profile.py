@@ -22,3 +22,4 @@ class Backend:
     jobs: Callable[[int], int]  # parallel encodes for this many CPU cores
     device: list = ()  # global args before the inputs
     upload: str = ""  # filter tail that hands the composite to the encoder
+    libplacebo: bool = False  # the probe ran a libplacebo graph: a Vulkan GPU exists (WSL has only llvmpipe)

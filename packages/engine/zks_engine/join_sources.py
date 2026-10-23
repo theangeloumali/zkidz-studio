@@ -1,7 +1,7 @@
 # Created by The Angelo Umali.
 # Joins several recordings into one uniform source the engine can cut: 2160x3840 8-bit BT.709 SDR at the clips' shared
-# rate, HEVC, with lossless FLAC audio. HDR clips (HLG / PQ) are tone-mapped; on NVIDIA every clip is upscaled with
-# libplacebo on the GPU, and the other backends scale and tone-map on the CPU between their decode and encoder.
+# rate, HEVC, with lossless FLAC audio. HDR clips (HLG / PQ) are tone-mapped; on NVIDIA every clip is upscaled on the GPU
+# (libplacebo when the probe found a Vulkan GPU, else scale_cuda), and the other backends scale and tone-map on the CPU.
 # Usage (from the work dir): python -m zks_engine.join_sources sources/v8.mkv ../media/clip1.mp4@1.25 ../media/clip2.mp4 ...
 #   clip@Z zooms that clip Z x, anchored at the top, so a face framed high drops below the card band (y 270-600).
 import json
@@ -15,8 +15,8 @@ from typing import NamedTuple
 from . import backends, ffio
 from . import progress
 from .backends.graph import restamp
-from .pipeline import AUDIO_RATE, CUDA_UPRIGHT, DROP_ROTATION, FPS_DEN, FPS_NUM, WORK, chain, command_input, probe_video, rotation_of, split_orientation
-from .render_final import LOW_PRIORITY, count_frames, has_filter
+from .pipeline import AUDIO_RATE, CUDA_DEVICE, CUDA_HWACCEL, CUDA_TV_RANGE, CUDA_UPRIGHT, DROP_ROTATION, FPS_DEN, FPS_NUM, WORK, chain, command_input, probe_video, rotation_of, split_orientation
+from .render_final import GPU_SCALE, LOW_PRIORITY, count_frames, has_filter
 from .slots import slot
 from .specs import gates
 from .specs.paths import inside_project
@@ -30,6 +30,8 @@ TONEMAP = "tonemapping=bt.2446a:gamut_mode=perceptual:saturation=0.9:contrast=1.
 # The CPU stand-ins: zscale linearises, hable compresses the highlights, then BT.709 TV range.
 CPU_TONEMAP = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 CPU_SCALE = f"scale={SIZE[0]}:{SIZE[1]}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p"
+# What NVDEC decodes; anything else (ProRes, FFV1) decodes to system frames, as -hwaccel cuda would silently do.
+NVDEC_CODECS = {"h264", "hevc", "av1", "vp8", "vp9", "mpeg1video", "mpeg2video", "mpeg4", "vc1", "mjpeg"}
 MIN_PIECE_FRAMES = 1800  # a piece shorter than 60 s spends much of its time starting up
 
 
@@ -41,18 +43,20 @@ class Clip(NamedTuple):
     ten_bit: bool  # NVDEC hands out nv12 for 8-bit, p010 for 10-bit; hwdownload cannot convert between them
     rotation: int = 0  # display matrix degrees; NVDEC frames skip autorotate, so the piece turns them itself
     fps: tuple = (FPS_NUM, FPS_DEN)
+    nvdec: bool = True
 
 
 def probe(argument):
     name, _, zoom = argument.partition("@")
     path = command_input(name)
     stream = json.loads(subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries",
-                                        "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt", "-of", "json",
+                                        "stream=nb_read_packets,color_transfer,r_frame_rate,pix_fmt,codec_name", "-of", "json",
                                         *ffio.user_input_args(path)],
                                        capture_output=True, text=True, check=True).stdout)["streams"][0]
     num, _, den = stream["r_frame_rate"].partition("/")
     return Clip(Path(path), int(stream["nb_read_packets"]), stream.get("color_transfer") in HDR_TRANSFERS, float(zoom or 1),
-                "10" in stream["pix_fmt"], rotation_of(probe_video(path)) % 360, (int(num), int(den or 1)))
+                "10" in stream["pix_fmt"], rotation_of(probe_video(path)) % 360, (int(num), int(den or 1)),
+                stream.get("codec_name") in NVDEC_CODECS)
 
 
 def common_rate(clips):
@@ -83,15 +87,43 @@ def cpu_picture(clip):
     return chain(crop, CPU_TONEMAP if clip.hdr else "", CPU_SCALE)
 
 
-def gpu_frames(backend, rotation):
-    """CUDA frames only on NVIDIA, and a quarter turn only with transpose_cuda (the pinned ffmpeg n8.1 has none)."""
-    return backend.name == "nvidia" and (rotation in (0, 180) or has_filter("transpose_cuda"))
+def cuda_picture(clip):
+    """picture() on CUDA. scale_cuda ignores a crop on CUDA frames, so a zoom scales up on CUDA and crops its top-centre
+    window after download: a CPU crop moves no pixels, and overlay_cuda would pad the width to 2176."""
+    if clip.zoom == 1:
+        return GPU_SCALE.format(*SIZE)
+    big_w, big_h = (round(side * clip.zoom / 2) * 2 for side in SIZE)
+    return chain(GPU_SCALE.format(big_w, big_h), "hwdownload,format=yuv420p", f"crop={SIZE[0]}:{SIZE[1]}:{(big_w - SIZE[0]) // 2}:0")
+
+
+def cuda_route(backend):
+    """NVIDIA without a Vulkan GPU for libplacebo (WSL offers only llvmpipe): every scale stays on CUDA."""
+    return backend.name == "nvidia" and not backend.libplacebo
+
+
+def cuda_piece_filter(clip, select, timing, on_cuda):
+    """A tone-map, a bit-depth drop and a half turn have no CUDA filter here, so only they run on the CPU, at the
+    source's size, between download and upload."""
+    on_gpu, on_cpu = split_orientation(CUDA_UPRIGHT[clip.rotation]) if on_cuda else ("", "")
+    to_cuda = ""
+    if not on_cuda or clip.hdr or clip.ten_bit or on_cpu:
+        download = f"hwdownload,format={'p010le' if clip.ten_bit else 'nv12'}" if on_cuda else ""
+        to_cuda = chain(download, on_cpu, CPU_TONEMAP if clip.hdr else "format=yuv420p", "hwupload")
+    return chain(select, on_gpu, to_cuda, CUDA_TV_RANGE, cuda_picture(clip), timing, DROP_ROTATION)
+
+
+def gpu_frames(backend, rotation, nvdec=True):
+    """CUDA frames only on NVIDIA from a codec NVDEC decodes, and a quarter turn only with transpose_cuda (the pinned
+    ffmpeg n8.1 has none)."""
+    return backend.name == "nvidia" and nvdec and (rotation in (0, 180) or has_filter("transpose_cuda"))
 
 
 def piece_filter(clip, first, frames, backend):
     timing = restamp({"fps_num": clip.fps[0], "fps_den": clip.fps[1]})
     select = f"select='between(n,{first},{first + frames - 1})'"
-    if not gpu_frames(backend, clip.rotation):
+    if cuda_route(backend):
+        return cuda_piece_filter(clip, select, timing, gpu_frames(backend, clip.rotation, clip.nvdec))
+    if not gpu_frames(backend, clip.rotation, clip.nvdec):
         picture_filter = picture(clip) if backend.name == "nvidia" else cpu_picture(clip)
         return chain(select, picture_filter, timing, DROP_ROTATION) + backend.upload
     on_gpu, on_cpu = split_orientation(CUDA_UPRIGHT[clip.rotation])
@@ -101,8 +133,10 @@ def piece_filter(clip, first, frames, backend):
 
 def decode_for(clip, backend):
     """NVIDIA pieces keep libplacebo (one Vulkan device each); system frames come back autorotated."""
+    if cuda_route(backend):
+        return [*CUDA_DEVICE, *CUDA_HWACCEL, *(["-hwaccel_output_format", "cuda"] if gpu_frames(backend, clip.rotation, clip.nvdec) else [])]
     vulkan = ["-init_hw_device", "vulkan"] if backend.name == "nvidia" else []
-    if gpu_frames(backend, clip.rotation):
+    if gpu_frames(backend, clip.rotation, clip.nvdec):
         return [*vulkan, "-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
     return [*vulkan, *backend.device, *backend.decode]
 

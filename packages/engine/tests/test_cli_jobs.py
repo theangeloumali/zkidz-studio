@@ -163,8 +163,8 @@ def installed_home():
 
 @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class RealCliTests(unittest.TestCase):
-    """The spawned CLI as the server runs it: ZKS_WORK set, report on stdout, artifacts under work/. The cpu backend, as in
-    test_join_sources: NVIDIA pieces need a Vulkan device for libplacebo, which a WSL host does not have."""
+    """The spawned CLI as the server runs it: ZKS_WORK set, report on stdout, artifacts under work/, on the backend the
+    probe picks (NVIDIA on a WSL host runs CUDA, as it has no Vulkan GPU for libplacebo)."""
 
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -173,7 +173,7 @@ class RealCliTests(unittest.TestCase):
         self.work = self.root / "work"
         (self.root / "media").mkdir()
         self.work.mkdir()
-        self.env = {**os.environ, "ZKS_WORK": str(self.work), "ZKS_BACKEND": "cpu"}
+        self.env = {key: value for key, value in os.environ.items() if key != "ZKS_BACKEND"} | {"ZKS_WORK": str(self.work)}
 
     def clip(self, name, seconds):
         path = self.root / "media" / name

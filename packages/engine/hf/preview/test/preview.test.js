@@ -51,6 +51,21 @@ test("the page runs under a script-src 'self' policy: no inline script or style 
   for (const file of ["preview.css", "preview.js", "vendor/gsap.min.js", "vendor/CustomEase.min.js"]) assert.ok(fs.existsSync(path.join(dir, file)), file);
 });
 
+test("inline styles ship as data-style, so the CSP blocks none of them while the page parses", () => {
+  const text = 'say style="color:red" here';
+  const { dir } = buildPreview({ work: workWith({ cues: [{ kind: "keyword", at: 1, end: 3, text }] }), video: "v1" });
+  const html = htmlOf(dir);
+  assert.equal(/<[a-zA-Z][^>]*\sstyle="/.test(html), false);
+  assert.match(html, /\sdata-style="/);
+  assert.ok(html.includes("style=&quot;color:red&quot;"), "cue text keeps its literal words");
+});
+
+test("clips off the seeked time skip layout and paint until player.js marks them live", () => {
+  const { dir } = buildPreview({ work: workWith({ cues: [{ kind: "keyword", at: 1, end: 3, text: "word" }] }), video: "v1" });
+  const css = fs.readFileSync(path.join(dir, "preview.css"), "utf8");
+  assert.match(css, /\.clip:not\(\.live\) \{ visibility: hidden; content-visibility: hidden; \}/);
+});
+
 test("no frames are rendered: the folder holds the page and its assets only", () => {
   const { dir } = buildPreview({ work: workWith({ cues: [{ kind: "keyword", at: 1, end: 3, text: "word" }] }), video: "v1" });
   const files = fs.readdirSync(dir, { recursive: true }).map(String);

@@ -21,11 +21,14 @@ const ASSETS = {
   "vendor/gsap.min.js": vendor("gsap.min.js"),
   "vendor/CustomEase.min.js": vendor("CustomEase.min.js"),
 };
-// Clips stay hidden until player.js shows the ones live at the seeked time.
-const PREVIEW_CSS = `.clip { visibility: hidden; }`;
+// Clips stay hidden until player.js marks the ones live at the seeked time; content-visibility keeps the other 2,000 out of
+// layout, so a tween's first read of computed style relays out one clip, not the whole page.
+const PREVIEW_CSS = `.clip:not(.live) { visibility: hidden; content-visibility: hidden; }`;
 const EMPTY_STYLE = /<style>\s*<\/style>/;
 // compose.js's inline runtime; player.js builds the same timeline from the page's JSON scripts.
 const INLINE_RUNTIME = /<script>\s*const COMPOSITION_ID =[\s\S]*?<\/script>/;
+// A style attribute inside a tag (text content escapes "<", so it can never match here).
+const STYLE_ATTRIBUTE = /(<[a-zA-Z][^>]*?\s)style="/g;
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const readJsonIfPresent = (file) => (fs.existsSync(file) ? readJson(file) : null);
@@ -53,7 +56,11 @@ function withoutImages(cues, warnings) {
 
 function externalized(html) {
   if (!EMPTY_STYLE.test(html) || !INLINE_RUNTIME.test(html)) throw new Error("compose.js output changed shape; update preview/index.js");
-  return html.replace(EMPTY_STYLE, '<link rel="stylesheet" href="preview.css" />').replace(INLINE_RUNTIME, '<script src="preview.js"></script>');
+  // The CSP blocks parsed style attributes, one console error each (14,000 for 2,000 cues), so player.js applies data-style.
+  return html
+    .replace(EMPTY_STYLE, '<link rel="stylesheet" href="preview.css" />')
+    .replace(INLINE_RUNTIME, '<script src="preview.js"></script>')
+    .replace(STYLE_ATTRIBUTE, '$1data-style="');
 }
 
 // Assets first and the page last, by rename, so a reload mid-rebuild sees the old page or the new one.

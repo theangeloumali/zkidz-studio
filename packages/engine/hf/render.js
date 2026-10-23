@@ -4,6 +4,7 @@
 //   node <engine>/hf/render.js v4r:v4+v4r+v4-cc            → frames/v4r/ (+ frames/v4r.intro/ for an intro hook)
 //   … --stills auto | 3.2 41.5 [--guides]                  → stills/<cues>.hf/t3.2.png, composited on the proxy
 //   … --events                                             → edl/<video>.sfx.json only (for sfx.py)
+//   … --theme minimal                                       → draws in themes/minimal's look (default themes/zkidz)
 //   … --layer behind [--stills …]                          → frames/<video>.behind/ (stills/<cues>.hf.behind/): only the
 //                                                            depth "behind" cues, which render_final.py lays under the matte
 //   node <engine>/hf/render.js --brand-intro landscape --fps 30000/1001 --out DIR   → DIR/preroll/, DIR/split/ (brand_intro.py)
@@ -12,6 +13,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 const { build, brandIntroCompositions } = require("./build");
+const { DEFAULT_THEME } = require("./theme");
 const { EXIT_SECONDS } = require("./fx/motion");
 const progress = require("./progress");
 const { ffmpegBin } = require("./home");
@@ -127,16 +129,16 @@ async function renderSequence(dir, fps, count, framesDir, onFrames = () => {}) {
   withAlpha(framesDir);
 }
 
-async function renderFrames(target, layer) {
+async function renderFrames(target, layer, theme) {
   const draw = layer === "behind" ? drawBehind : drawFrames;
-  await progress.track(target.split(":")[0], layer === "behind" ? "behind" : "frames", (stage) => draw(target, stage));
+  await progress.track(target.split(":")[0], layer === "behind" ? "behind" : "frames", (stage) => draw(target, stage, theme));
 }
 
 // The behind layer: frames/<video>.behind/, on the same frame grid as frames/<video>/. A sheet with no behind cue leaves no
 // folder, so a stale one from an earlier sheet never reaches the composite.
-async function drawBehind(target, stage) {
+async function drawBehind(target, stage, theme) {
   await takeSlot("overlay", `hf/render.js ${target} --layer behind (${WORK})`, stage.wait);
-  const { video, edl, dir, placed } = build(target, { layer: "behind" });
+  const { video, edl, dir, placed } = build(target, { layer: "behind", theme });
   const framesDir = path.join(WORK, "frames", `${video}.behind`);
   if (!placed.length) {
     fs.rmSync(framesDir, { recursive: true, force: true });
@@ -148,9 +150,9 @@ async function drawBehind(target, stage) {
   console.log(`${video}: ${edl.frames} behind-layer frames (${placed.length} cues) drawn in ${((Date.now() - started) / 1000).toFixed(0)} s`);
 }
 
-async function drawFrames(target, stage) {
+async function drawFrames(target, stage, theme) {
   await takeSlot("overlay", `hf/render.js ${target} (${WORK})`, stage.wait);
-  const { video, edl, dir, intro, placed } = build(target);
+  const { video, edl, dir, intro, placed } = build(target, { theme });
   stage.begin(edl.frames + (intro?.frames ?? 0), edl.frames);
   const started = Date.now();
   await renderSequence(dir, edl, edl.frames, path.join(WORK, "frames", video), stage.update);
@@ -174,9 +176,9 @@ const SETTLED_BEFORE_EXIT = EXIT_SECONDS + 0.1;
 const autoTimes = (placed) =>
   placed.filter((cue) => cue.kind !== "caption").map((cue) => +Math.max(cue.start + (cue.stop - cue.start) / 2, cue.stop - SETTLED_BEFORE_EXIT).toFixed(2));
 
-async function renderStills(target, times, guides, layer) {
+async function renderStills(target, times, guides, layer, theme) {
   // Its own folder: a frame render of the same target may be reading <target>/ (guides must never reach a master).
-  const { video, cueNames, edl, dir, placed } = build(target, { guides, variant: "stills", layer });
+  const { video, cueNames, edl, dir, placed } = build(target, { guides, variant: "stills", layer, theme });
   const stillTimes = [...new Set(times[0] === "auto" ? autoTimes(placed) : times.map(Number))];
   // An empty --at means "5 evenly spaced frames" to HyperFrames, so a sheet with only captions takes no stills.
   if (!stillTimes.length) return console.log(`stills: none (${target} has no cue but captions)`);
@@ -226,13 +228,14 @@ async function main() {
     if (value === undefined || value.startsWith("--")) throw new Error(`${name} is required`);
     return value;
   };
-  if (target === "--brand-intro") await renderBrandIntro(args[0], option("--fps"), path.resolve(option("--out")));
-  else if (args.includes("--events")) await progress.track(target.split(":")[0], "events", () => build(target, { events: true }));
+  if (target === "--brand-intro") return renderBrandIntro(args[0], option("--fps"), path.resolve(option("--out")));
+  const theme = args.includes("--theme") ? option("--theme") : DEFAULT_THEME;
+  if (args.includes("--events")) await progress.track(target.split(":")[0], "events", () => build(target, { events: true, theme }));
   else {
     const layer = args.includes("--layer") ? option("--layer") : "front";
-    const times = args.filter((arg, index) => !arg.startsWith("--") && args[index - 1] !== "--layer");
-    if (args.includes("--stills")) await renderStills(target, times, args.includes("--guides"), layer);
-    else await renderFrames(target, layer);
+    const times = args.filter((arg, index) => !arg.startsWith("--") && !["--layer", "--theme"].includes(args[index - 1]));
+    if (args.includes("--stills")) await renderStills(target, times, args.includes("--guides"), layer, theme);
+    else await renderFrames(target, layer, theme);
   }
 }
 

@@ -21,13 +21,17 @@ const BRAND = {
 
 // Kit and agents read these at draw time, so one remap rebrands every implicit default (strokes, text, shadows).
 // accent, sky, olive, teal and gold keep their identities (props, the logo master).
-Object.assign(C, {
-  ink: BRAND.ink,
-  paper: BRAND.paper,
-  white: BRAND.white,
-  gray: BRAND.muted,
-  lightGray: BRAND.mutedOnInk,
-});
+// A theme re-runs it after changing BRAND (hf/brand/canvas.js applyTheme).
+function remapKitPalette() {
+  Object.assign(C, {
+    ink: BRAND.ink,
+    paper: BRAND.paper,
+    white: BRAND.white,
+    gray: BRAND.muted,
+    lightGray: BRAND.mutedOnInk,
+  });
+}
+remapKitPalette();
 
 // Font objects for drawText/applyFont. trackingEm is read by trackedText/kicker only (applyFont takes px).
 // Sizes are on-screen px at 1080 wide, which a phone shows at ~0.36x: kickers stay >= 32 px (~11.5 pt on a phone).

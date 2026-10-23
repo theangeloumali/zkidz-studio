@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "id": "zkidz",
+  "name": "ZKidz",
+  "components": [
+    {
+      "kind": "caption",
+      "tier": "core",
+      "purpose": "The spoken words as a subtitle plate in the bottom band.",
+      "slots": {
+        "text": 60
+      }
+    },
+    {
+      "kind": "censor",
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    },
+    {
+      "kind": "chapterCard",
+      "tier": "core",
+      "purpose": "Marks a new section of the story with an index and a title.",
+      "slots": {
+        "index": 4,
+        "kicker": 24,
+        "title": 22,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "cutaway",
+      "tier": "core",
+      "purpose": "A wipe or title card over removed footage; derived from the cut spec.",
+      "slots": {
+        "title": 24,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "endCard",
+      "tier": "core",
+      "purpose": "The closing call to action and sign-off.",
+      "slots": {
+        "cta": 28,
+        "sign": 24
+      }
+    },
+    {
+      "kind": "hookTitle",
+      "tier": "core",
+      "purpose": "The opening promise: a kicker tab over one to three short lines, one in the accent. Also the cover format.",
+      "slots": {
+        "kicker": 32,
+        "lines": 16
+      }
+    },
+    {
+      "kind": "keyword",
+      "tier": "core",
+      "purpose": "One spoken phrase pulled out as text, on footage, on paper or as a chip.",
+      "slots": {
+        "text": 32
+      },
+      "tones": {
+        "chip": {
+          "text": 27
+        }
+      }
+    },
+    {
+      "kind": "lowerThird",
+      "tier": "core",
+      "purpose": "Names a speaker or place the first time they appear.",
+      "slots": {
+        "name": 24,
+        "sub": 32
+      }
+    },
+    {
+      "kind": "checklist",
+      "tier": "accent",
+      "purpose": "Rows ticked or crossed as they are said.",
+      "slots": {
+        "text": 30
+      }
+    },
+    {
+      "kind": "chips",
+      "tier": "accent",
+      "purpose": "Named items (tools, things) as chips, one hot.",
+      "slots": {
+        "text": 30
+      }
+    },
+    {
+      "kind": "comment",
+      "tier": "accent",
+      "purpose": "A viewer comment quoted as a card, to answer it on camera.",
+      "slots": {
+        "text": 80
+      }
+    },
+    {
+      "kind": "criteriaCard",
+      "tier": "accent",
+      "purpose": "A titled card of rules or criteria, one row per beat.",
+      "slots": {
+        "kicker": 24,
+        "title": 30
+      }
+    },
+    {
+      "kind": "flowRow",
+      "tier": "accent",
+      "purpose": "Two or more short items joined by arrows, left to right.",
+      "slots": {
+        "text": 30,
+        "items": 12
+      }
+    },
+    {
+      "kind": "handNote",
+      "tier": "accent",
+      "purpose": "A handwritten aside, optionally striking a word and pointing with an arrow.",
+      "slots": {
+        "text": 40,
+        "strike": 24
+      }
+    },
+    {
+      "kind": "pills",
+      "tier": "accent",
+      "purpose": "A row of short tags that land one by one on their words.",
+      "slots": {
+        "text": 32
+      }
+    },
+    {
+      "kind": "slamStamp",
+      "tier": "accent",
+      "purpose": "A one-word verdict stamped onto the frame for emphasis.",
+      "slots": {
+        "text": 16,
+        "sub": 24
+      }
+    },
+    {
+      "kind": "statTile",
+      "tier": "accent",
+      "purpose": "One number that counts up, with its label and a late sub line.",
+      "slots": {
+        "prefix": 3,
+        "suffix": 6,
+        "label": 28,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "timeline",
+      "tier": "accent",
+      "purpose": "Steps over time along a line, the last one hot.",
+      "slots": {
+        "text": 32
+      }
+    },
+    {
+      "kind": "titleSwap",
+      "tier": "accent",
+      "purpose": "An old title struck and replaced by a new one on a word.",
+      "slots": {
+        "label": 24,
+        "old": 20,
+        "new": 20
+      }
+    },
+    {
+      "kind": "backdrop",
+      "tier": "special",
+      "purpose": "A full-frame image drawn behind the person matte.",
+      "slots": {}
+    },
+    {
+      "kind": "chatCard",
+      "tier": "special",
+      "purpose": "A chat exchange as bubbles, quoting only the cue's words.",
+      "slots": {
+        "title": 28
+      }
+    },
+    {
+      "kind": "frameEscape",
+      "tier": "special",
+      "purpose": "Paper over the frame except a window, so the person steps out of it.",
+      "slots": {}
+    },
+    {
+      "kind": "headlineStack",
+      "tier": "special",
+      "purpose": "Headlines stacking as paper slips, the last one in the accent.",
+      "slots": {
+        "kicker": 24,
+        "title": 30,
+        "note": 40
+      }
+    },
+    {
+      "kind": "lineChart",
+      "tier": "special",
+      "purpose": "A line drawing on with a counting value at its tip and one focus point.",
+      "slots": {
+        "kicker": 24,
+        "title": 30,
+        "note": 40,
+        "suffix": 6
+      }
+    },
+    {
+      "kind": "paperCutout",
+      "tier": "special",
+      "purpose": "A cut-out image on paper, behind or in front of the person.",
+      "slots": {}
+    },
+    {
+      "kind": "phoneFrame",
+      "tier": "special",
+      "purpose": "A phone bezel around a screen recording insert.",
+      "slots": {}
+    },
+    {
+      "kind": "pipeline",
+      "tier": "special",
+      "purpose": "Exactly three stations of a process, drawn in turn.",
+      "slots": {
+        "labels": 12
+      }
+    },
+    {
+      "kind": "splitFlow",
+      "tier": "special",
+      "purpose": "One idea splitting into two outcomes.",
+      "slots": {
+        "text": 30
+      }
+    },
+    {
+      "kind": "vsCard",
+      "tier": "special",
+      "purpose": "Two options side by side for a comparison.",
+      "slots": {}
+    }
+  ]
+}

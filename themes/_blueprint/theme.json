@@ -1,0 +1,115 @@
+{
+  "id": "my-theme",
+  "name": "My theme",
+  "version": 1,
+  "description": "Copy themes/_blueprint to themes/<your-id>, set id to the folder name, then edit tokens, type and components.",
+  "tokens": {
+    "ink": "#111418",
+    "muted": "#5b626b",
+    "lineStrong": "#2b3038",
+    "steel": "#2b3038",
+    "gold": "#2f6fed",
+    "goldInk": "#1d4fbf",
+    "paper": "#ffffff",
+    "white": "#ffffff",
+    "line": "rgba(17, 20, 24, 0.14)",
+    "goldBright": "#6f9cf5",
+    "steelOnInk": "#b8c0ca",
+    "copyOnInk": "#f2f4f7",
+    "mutedOnInk": "#9aa3ad",
+    "negative": "#c0392b",
+    "logoSteel": "#2b3038",
+    "logoGold": "#2f6fed"
+  },
+  "type": {
+    "display": {
+      "family": "Inter",
+      "size": 88,
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter",
+      "size": 36,
+      "weight": 500
+    },
+    "label": {
+      "family": "Inter",
+      "size": 32,
+      "weight": 600
+    },
+    "kicker": {
+      "family": "Inter",
+      "size": 30,
+      "weight": 600,
+      "trackingEm": 0.12
+    },
+    "hand": {
+      "family": "Inter",
+      "size": 52,
+      "weight": 600
+    },
+    "mono": {
+      "family": "Inter",
+      "size": 30,
+      "weight": 500
+    }
+  },
+  "boil": false,
+  "intro": false,
+  "components": {
+    "hookTitle": {
+      "tier": "core",
+      "purpose": "The opening promise: a kicker tab over one to three short lines, one in the accent. Also the cover format.",
+      "slots": {
+        "kicker": {
+          "maxChars": 32
+        },
+        "lines": {
+          "maxChars": 16
+        }
+      }
+    },
+    "keyword": {
+      "tier": "core",
+      "purpose": "One spoken phrase pulled out as text, on footage, on paper or as a chip.",
+      "slots": {
+        "text": {
+          "maxChars": 32
+        }
+      },
+      "tones": {
+        "chip": {
+          "text": {
+            "maxChars": 27
+          }
+        }
+      }
+    },
+    "caption": {
+      "tier": "core",
+      "purpose": "The spoken words as a subtitle plate in the bottom band.",
+      "slots": {
+        "text": {
+          "maxChars": 60
+        }
+      }
+    },
+    "censor": {
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    },
+    "cutaway": {
+      "tier": "core",
+      "purpose": "A wipe or title card over removed footage; derived from the cut spec.",
+      "slots": {
+        "title": {
+          "maxChars": 24
+        },
+        "sub": {
+          "maxChars": 36
+        }
+      }
+    }
+  }
+}

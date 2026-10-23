@@ -53,3 +53,4 @@ def main(wav, destination, chunks=6, language="tl", model=None):
     words = [word for part in parts for word in part]
     (WORK / destination).write_text("".join(json.dumps(word) + "\n" for word in words), encoding="utf-8")
     print(f"{len(words)} words from {count} chunks split at {[round(p, 1) for p in points]}")
+    return words, count

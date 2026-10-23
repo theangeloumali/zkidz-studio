@@ -4,23 +4,28 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { StudioDatabase } from "@zks/db";
 import { mediaAssets, projects, transcripts } from "@zks/db/schema";
-import { IdSchema, InsertSpecSchema, SourceSecondsSchema } from "@zks/shared";
+import { IdSchema, InsertSpecSchema, SourceSecondsSchema, type IngestMode } from "@zks/shared";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
 import type { JobRow } from "../dto.ts";
 import { isWithinDir } from "../fs/path-policy.ts";
 import type { JobRunner, ReportProgress } from "../jobs/job-runner.ts";
+import { readProjectTemplate } from "../onboarding/project-template.ts";
 import { writeJobResult } from "./job-results.ts";
 import { assetFilePath } from "./project-files.ts";
 
-type EngineCommand = "ingest" | "transcribe";
+/** Every zks-engine subcommand the server spawns; engine-cli-contract.test.ts runs each against the real CLI. */
+export const ENGINE_COMMANDS = ["ingest", "transcribe"] as const;
+type EngineCommand = (typeof ENGINE_COMMANDS)[number];
 
 export interface EngineRequest {
   readonly command: EngineCommand;
   readonly args: readonly string[];
   /** The project's work/ folder; the engine resolves every relative path it prints against it. */
   readonly workDir: string;
+  /** In-place files the command reads; the engine refuses any other input outside the project. */
+  readonly inPlacePaths?: readonly string[];
 }
 
 /** Runs one engine command and returns its parsed JSON report. */
@@ -76,15 +81,22 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   const params = IngestParamsSchema.parse(job.params);
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "sources");
-  const resolvePath = async (assetId: string) => assetFilePath(projectRoot, await projectAsset(deps.db, { projectId: job.projectId, assetId }));
+  const inPlacePaths: string[] = [];
+  const resolvePath = async (assetId: string) => {
+    const asset = await projectAsset(deps.db, { projectId: job.projectId, assetId });
+    if (asset.inPlacePath !== null) inPlacePaths.push(asset.inPlacePath);
+    return assetFilePath(projectRoot, asset);
+  };
   const clipArgs = await Promise.all(
     params.clips.map(async (clip) => ["--clip", clip.zoom === undefined ? await resolvePath(clip.assetId) : `${await resolvePath(clip.assetId)}@${clip.zoom}`]),
   );
   const insertArgs =
     params.inserts === undefined ? [] : ["--inserts", await writeResolvedInserts({ workDir, videoId: job.videoId, inserts: params.inserts }, resolvePath)];
+  const mode = ingestModeFor(params, (await readProjectTemplate(deps.db, job.projectId))?.ingestMode);
   await reportProgress({ stage: "joining", pct: 0 });
-  const args = ["--video", job.videoId, ...insertArgs, ...clipArgs.flat()];
-  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir }));
+  // --mode before the clips: the engine's argv ends with the clip list.
+  const args = ["--video", job.videoId, "--mode", mode, ...insertArgs, ...clipArgs.flat()];
+  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths }));
 
   const relPath = workRelativePath(workDir, report.sourcePath);
   const sourceStat = await stat(join(projectRoot, relPath));
@@ -104,6 +116,16 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   const joins = report.joins.map((join) => ({ assetId: params.clips[join.clip]?.assetId, at: join.at }));
   await writeJobResult(projectRoot, job.id, { sourceAssetId: source.id, frames: report.frames, joins });
   await reportProgress({ stage: "joined", pct: 100 });
+}
+
+/** The template's mode when this footage fits it (the engine rejects a misfit); otherwise the mode the footage implies. */
+function ingestModeFor(params: z.infer<typeof IngestParamsSchema>, stored: IngestMode | undefined): IngestMode {
+  const hasInserts = params.inserts !== undefined;
+  const oneClip = params.clips.length === 1;
+  const fits = { single: oneClip && !hasInserts, join: !hasInserts, showcase: oneClip && hasInserts };
+  if (stored !== undefined && fits[stored]) return stored;
+  if (hasInserts) return "showcase";
+  return oneClip ? "single" : "join";
 }
 
 /** The engine reads inserts by path, so the server writes them with each assetId resolved. */

@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createCliEngineRunner } from "../../src/tools/engine-runner.ts";
 
@@ -12,7 +12,8 @@ beforeAll(async () => {
   fakeEnginePath = join(scratchDir, "fake-engine.mjs");
   const fakeEngine = [
     "if (process.argv.includes('--fail')) { process.stderr.write('whisper model missing'); process.exit(3); }",
-    "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), work: process.env.ZKS_WORK, home: process.env.ZKS_HOME, envNames: Object.keys(process.env) }));",
+    "if (process.argv.includes('--report-error')) { process.stderr.write('joining 2 clips'); process.stdout.write(JSON.stringify({ error: { code: 'engine_failed', message: 'clips at different rates' } })); process.exit(1); }",
+    "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), work: process.env.ZKS_WORK, home: process.env.ZKS_HOME, inPlace: process.env.ZKS_INPLACE, envNames: Object.keys(process.env) }));",
   ].join("\n");
   await writeFile(fakeEnginePath, fakeEngine);
 });
@@ -32,11 +33,26 @@ describe("createCliEngineRunner", () => {
     await expect(engine.run({ command: "ingest", args: ["--fail"], workDir: scratchDir })).rejects.toThrow(/whisper model missing/);
   });
 
+  it("fails with the error the engine reported on stdout, not its progress lines", async () => {
+    const engine = createCliEngineRunner({ executable: process.execPath, prefixArgs: [fakeEnginePath], studioHome: "/studio-home" });
+    await expect(engine.run({ command: "ingest", args: ["--report-error"], workDir: scratchDir })).rejects.toThrow(
+      "zks-engine ingest failed: clips at different rates",
+    );
+  });
+
+  it("registers the request's in-place files with the engine", async () => {
+    const engine = createCliEngineRunner({ executable: process.execPath, prefixArgs: [fakeEnginePath], studioHome: "/studio-home" });
+    const inPlacePaths = [join(scratchDir, "a.mp4"), join(scratchDir, "b.mp4")];
+    const report = await engine.run({ command: "ingest", args: [], workDir: scratchDir, inPlacePaths });
+    expect(report).toMatchObject({ inPlace: inPlacePaths.join(delimiter) });
+  });
+
   it("hands the engine an allowlisted env, never the server's credentials", async () => {
     const hostileParent = {
       PATH: process.env.PATH,
       LC_ALL: "C.UTF-8",
       ZKS_FFMPEG: "/tools/ffmpeg",
+      ZKS_BACKEND: "cpu",
       HTTPS_PROXY: "http://proxy.invalid",
       ANTHROPIC_API_KEY: "sk-secret",
       ANTHROPIC_BASE_URL: "http://evil.invalid",
@@ -48,7 +64,7 @@ describe("createCliEngineRunner", () => {
     };
     const engine = createCliEngineRunner({ executable: process.execPath, prefixArgs: [fakeEnginePath], studioHome: "/studio-home", parentEnv: hostileParent });
     const report = (await engine.run({ command: "ingest", args: [], workDir: scratchDir })) as { envNames: string[] };
-    expect(report.envNames).toEqual(expect.arrayContaining(["PATH", "LC_ALL", "ZKS_FFMPEG", "ZKS_HOME", "ZKS_WORK"]));
+    expect(report.envNames).toEqual(expect.arrayContaining(["PATH", "LC_ALL", "ZKS_FFMPEG", "ZKS_BACKEND", "ZKS_HOME", "ZKS_WORK"]));
     const leaked = report.envNames.filter((name) => /^(ANTHROPIC_|CLAUDE_|AWS_|DATABASE_URL$|ZKS_MCP_|HTTPS_PROXY$)/.test(name));
     expect(leaked).toEqual([]);
   });

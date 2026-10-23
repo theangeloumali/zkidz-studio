@@ -170,6 +170,7 @@ def main(target, arguments):
         starts.append(f"{clip.path.name} @ {cursor * den / num:.3f}s" + (f" ({', '.join(notes)})" if notes else ""))
         cursor += clip.frames
     print(f"joined {target} ({expected} frames): " + "; ".join(starts))
+    return clips
 
 
 if __name__ == "__main__":

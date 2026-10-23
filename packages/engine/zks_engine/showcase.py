@@ -124,11 +124,13 @@ def insert_command(insert, first, count, out, backend, fps):
             "-map", "[v]", "-frames:v", str(count), "-r", f"{fps[0]}/{fps[1]}", "-fps_mode", "cfr", *backend.mezzanine, "-an", str(out)]
 
 
-def main(video, raw):
+def main(video, raw, inserts=None):
+    """`inserts` in place of reading inserts/<video>.json (the CLI hands them in, translated from the server's file)."""
     clip = probe(raw)
     backend = backends.active()
     jobs = backends.render_jobs(backend)
-    inserts = json.loads((WORK / "inserts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    if inserts is None:
+        inserts = json.loads((WORK / "inserts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
     target = WORK / "sources" / f"{video}.mkv"
     work = target.with_name(f"{video}-pieces")
     shutil.rmtree(work, ignore_errors=True)
@@ -154,6 +156,7 @@ def main(video, raw):
     assert_upright(target, SIZE)
     shutil.rmtree(work)
     print(f"wrote {target} ({clip.frames} frames)")
+    return clip
 
 
 if __name__ == "__main__":

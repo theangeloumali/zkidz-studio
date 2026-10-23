@@ -6,7 +6,7 @@
 # over ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
 set -uo pipefail
 
-USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
+USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
@@ -15,18 +15,37 @@ ENGINE_JOBS="${ZKS_CI_JOBS:-6}"
 
 release=0
 list=0
+list_lanes=0
 for arg in "$@"; do
   case "$arg" in
     --release) release=1 ;;
     --list) list=1 ;;
     --list-jobs) echo "$ENGINE_JOBS" && exit 0 ;;
+    --list-lanes) list_lanes=1 ;;
     *) echo "$USAGE" >&2 && exit 2 ;;
   esac
 done
 
 serial_steps=(actionlint gitleaks install)
-# The server suite keeps its own lane: each of its files boots a PGlite, and beside the other suites that ran out of memory.
-parallel_steps=(format lint typecheck test-server test-other engine)
+# Heaviest first, so with fewer lanes the long steps never wait behind the short ones. The server suite keeps its own
+# lane: each of its files boots a PGlite, and beside the other suites that ran out of memory.
+parallel_steps=(engine lint test-server typecheck test-other format)
+
+# Every lane at once on an idle machine; on one already busier than its cores, two, or vitest cannot start its workers.
+lane_count() {
+  local load="${ZKS_CI_LOAD:-$(cut -d' ' -f1 /proc/loadavg)}" cores="${ZKS_CI_CORES:-$(nproc)}"
+  if [[ -n "${ZKS_CI_LANES:-}" ]]; then
+    echo "$ZKS_CI_LANES"
+  elif awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
+    echo 2
+  else
+    echo "${#parallel_steps[@]}"
+  fi
+}
+if ((list_lanes)); then
+  lane_count
+  exit 0
+fi
 if ((list)); then
   printf '%s\n' "${serial_steps[@]}" "parallel: ${parallel_steps[*]}"
   ((release)) && echo "setup-doctor"
@@ -135,17 +154,22 @@ for step in "${serial_steps[@]}"; do
 done
 
 declare -A step_of_pid
+lanes=$(lane_count)
 lane_started=$SECONDS
-for step in "${parallel_steps[@]}"; do
-  "step_$step" >"$log_dir/$step.log" 2>&1 &
-  step_of_pid[$!]=$step
-done
-while ((${#step_of_pid[@]})); do
+reap_one() {
+  local finished_pid status
   wait -n -p finished_pid "${!step_of_pid[@]}"
   status=$?
   report "${step_of_pid[$finished_pid]}" "$status" "$((SECONDS - lane_started))"
   unset "step_of_pid[$finished_pid]"
+}
+echo "lanes: $lanes"
+for step in "${parallel_steps[@]}"; do
+  while ((${#step_of_pid[@]} >= lanes)); do reap_one; done
+  "step_$step" >"$log_dir/$step.log" 2>&1 &
+  step_of_pid[$!]=$step
 done
+while ((${#step_of_pid[@]})); do reap_one; done
 
 if ((release)); then
   started=$SECONDS

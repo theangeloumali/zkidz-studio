@@ -77,7 +77,7 @@ describe.skipIf(!ffmpegAvailable)("POST /api/projects/:projectId/media", () => {
     }
     expect(lastStatus).toBe(413);
     expect(storedBytes).toBeLessThanOrEqual(SMALL_PROJECT_CAP);
-  });
+  }, 30_000); // every accepted upload runs a real ffprobe, several seconds each on a loaded machine
 
   it("answers 404 for an unknown project and 400 without a filename", async () => {
     expect((await upload(crypto.randomUUID(), new Uint8Array(4))).status).toBe(404);

@@ -44,7 +44,7 @@ describe("createApp", () => {
     expect(await response.json()).toEqual({ error: "Internal server error" });
     expect(broken.logLines.some((line) => line.includes('"level":"error"'))).toBe(true);
     await broken.close().catch(() => undefined);
-  });
+  }, 60_000); // boots its own PGlite (it closes that database), as slow as a boot hook on a loaded machine
 
   it("serves the built web app, falling back to index.html for client routes", async () => {
     const index = await getRequest(plain, "/");

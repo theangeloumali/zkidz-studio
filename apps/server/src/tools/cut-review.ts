@@ -106,7 +106,12 @@ export function recordRejectedCandidates(context: ToolContext, rejected: readonl
     if (spans.length > MAX_REJECTED_SPANS) throw recordFullError();
     await writeFileAtomically(await rejectedSpansPath(context), `${JSON.stringify(spans)}\n`);
   });
-  const settled = write.finally(() => {
+  // The queue holds a promise that always settles cleanly: a refused write fails only its own caller.
+  const settled = write.then(
+    () => undefined,
+    () => undefined,
+  );
+  void settled.then(() => {
     if (rejectedSpanWrites.get(context.projectId) === settled) rejectedSpanWrites.delete(context.projectId);
   });
   rejectedSpanWrites.set(context.projectId, settled);

@@ -173,6 +173,18 @@ describe("propose_cuts", () => {
     expect(await findRejectedCandidates(fixture.context, [{ at: 0, end: 0.5 }])).toEqual(["r0"]);
   });
 
+  // Writes run one at a time per project; one refused write must not fail the writes queued behind it.
+  it("lets a write queued behind a refused one go through", async () => {
+    const fixture = await createToolFixture(server);
+    const spans = Array.from({ length: MAX_REJECTED_SPANS }, (_, index) => ({ id: `q${index}`, at: index, end: index + 0.5 }));
+    await recordRejectedCandidates(fixture.context, spans);
+
+    const refused = recordRejectedCandidates(fixture.context, [{ id: "over", at: -2, end: -1 }]);
+    const queued = recordRejectedCandidates(fixture.context, [{ id: "same-span", at: 0, end: 0.5 }]);
+    await expect(refused).rejects.toThrow(/record of rejected cuts is full/);
+    await expect(queued).resolves.toBeUndefined();
+  });
+
   // Refusing only when the rejections were written left the approvals remembered and the rejections lost.
   it("refuses a cut review before it starts when the record has no room for every candidate", async () => {
     const fixture = await createToolFixture(server);

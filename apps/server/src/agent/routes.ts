@@ -4,6 +4,7 @@ import type { StudioDatabase } from "@zks/db";
 import { API_ROUTES } from "@zks/shared";
 import type { Context, Hono } from "hono";
 import { readConnection } from "../auth/connection-store.ts";
+import type { ProjectRow } from "../dto.ts";
 import { HttpError, notFound, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
 import type { TerminalSessions } from "../terminal/terminal-sessions.ts";
@@ -15,7 +16,11 @@ export interface AgentRouteDeps {
   readonly database: StudioDatabase;
   readonly manager: Pick<AgentManager, "submit" | "decide" | "stop" | "kill">;
   /** Mode T: prompt, stop and kill go to the project's PTY instead of the SDK session. */
-  readonly terminal?: Pick<TerminalSessions, "submitPrompt" | "stop" | "kill">;
+  readonly terminal?: {
+    readonly sessions: Pick<TerminalSessions, "submitPrompt" | "stop" | "kill">;
+    /** A prompt opens the project's terminal when none is live; the sessions hold it until SessionStart. */
+    readonly open: (project: ProjectRow) => Promise<unknown>;
+  };
 }
 
 export function registerAgentRoutes(app: Hono, deps: AgentRouteDeps): void {
@@ -26,8 +31,14 @@ export function registerAgentRoutes(app: Hono, deps: AgentRouteDeps): void {
     const project = await projectOf(c);
     const { text } = parseOrBadRequest(API_ROUTES.submitPrompt.body, await readJsonBody(c));
     const terminal = await terminalInUse();
-    if (terminal === undefined) await deps.manager.submit(project, text);
-    else if (!terminal.submitPrompt(project.id, text)) throw new HttpError(409, "Open the terminal before sending a prompt");
+    if (terminal === undefined) {
+      await deps.manager.submit(project, text);
+      return c.json(OK);
+    }
+    await terminal.open(project);
+    // The PTY can exit between the open and the write; the user reopens the Terminal tab and resends.
+    if (!terminal.sessions.submitPrompt(project.id, text))
+      throw new HttpError(409, "The terminal closed before the prompt was sent. Open it again and resend.");
     return c.json(OK);
   });
 
@@ -42,7 +53,7 @@ export function registerAgentRoutes(app: Hono, deps: AgentRouteDeps): void {
     const { id } = await projectOf(c);
     const terminal = await terminalInUse();
     if (terminal === undefined) await deps.manager.stop(id);
-    else terminal.stop(id);
+    else terminal.sessions.stop(id);
     return c.json(OK);
   });
 
@@ -50,7 +61,7 @@ export function registerAgentRoutes(app: Hono, deps: AgentRouteDeps): void {
     const { id } = await projectOf(c);
     const terminal = await terminalInUse();
     if (terminal === undefined) await deps.manager.kill(id);
-    else terminal.kill(id);
+    else terminal.sessions.kill(id);
     return c.json(OK);
   });
 }

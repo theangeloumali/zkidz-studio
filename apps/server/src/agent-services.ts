@@ -22,7 +22,7 @@ import { loadSessionSetup } from "./rules/session-setup.ts";
 import { allowedHostsFor } from "./security/request-guards.ts";
 import { createSessionToken, tokensMatch } from "./security/token.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts";
-import { registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
+import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
 import { createPtyHost } from "./terminal/pty-host.ts";
 import { registerTerminalRoutes } from "./terminal/routes.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
@@ -119,8 +119,14 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       claudeVersion: deps.claudeVersion,
       onConnectionChanged: () => manager.closeAll(),
     });
-    registerAgentRoutes(app, { database: deps.database, manager, terminal: terminalSessions });
-    registerProjectTerminalRoutes(app, { database: deps.database, studioHome: deps.studioHome, model: SESSION_LIMITS.model, sessions: terminalSessions });
+    const openTerminal = createProjectTerminalOpener({
+      database: deps.database,
+      studioHome: deps.studioHome,
+      model: SESSION_LIMITS.model,
+      sessions: terminalSessions,
+    });
+    registerAgentRoutes(app, { database: deps.database, manager, terminal: { sessions: terminalSessions, open: openTerminal } });
+    registerProjectTerminalRoutes(app, { database: deps.database, openTerminal });
     registerTerminalRoutes(app, {
       sessions: {
         find: (sessionId) => terminalSessions.find(sessionId),

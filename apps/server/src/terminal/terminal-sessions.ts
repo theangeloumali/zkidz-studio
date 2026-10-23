@@ -136,11 +136,17 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
           return {};
         }
         record.hasStarted = true;
+        for (const text of record.queuedPrompts.splice(0)) record.pty.write(encodePrompt(text));
       }
       await publishAll(hookToStudioEvents(payload, eventContext(record)));
       return {};
     },
-    submitPrompt: (projectId, text) => withProjectRecord(projectId, (record) => record.pty.write(encodePrompt(text))),
+    // Before SessionStart the folder-trust dialog may own the pane, and the prompt's Enter would pick its "No, exit" default.
+    submitPrompt: (projectId, text) =>
+      withProjectRecord(projectId, (record) => {
+        if (record.hasStarted) record.pty.write(encodePrompt(text));
+        else record.queuedPrompts.push(text);
+      }),
     // Claude Code fires no Stop hook on a user interrupt, so the turn's end is reported here.
     stop: (projectId) =>
       withProjectRecord(projectId, (record) => {

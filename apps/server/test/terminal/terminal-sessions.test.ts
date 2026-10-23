@@ -23,6 +23,10 @@ function hook(sessionId: string, fields: Record<string, unknown>) {
   return { session_id: sessionId, ...fields } as Parameters<TerminalFixture["sessions"]["handleHook"]>[1];
 }
 
+async function startSession(session: TerminalSession): Promise<void> {
+  await fixture.sessions.handleHook(session.sessionId, hook(session.sessionId, { hook_event_name: "SessionStart", permission_mode: "default" }));
+}
+
 describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
   it("launches claude in the project folder with the §6.3 flags and announces it is starting", async () => {
     fixture = await createTerminalFixture();
@@ -169,10 +173,46 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.sessions.find(session.sessionId)).toBe(session);
   });
 
+  it("holds prompts sent before SessionStart, while the trust dialog may own the pane, and sends them in order after it", async () => {
+    fixture = await createTerminalFixture();
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "first cut")).toBe(true);
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "second cut")).toBe(true);
+    // PTY input is ordered, so a prompt written before this marker would echo before it.
+    session.pty.write("MARKER");
+    await waitFor(() => session.pty.snapshot().includes("MARKER"));
+    expect(session.pty.snapshot()).not.toContain("first cut");
+
+    await startSession(session);
+    await waitFor(() => session.pty.snapshot().includes("second cut"));
+    const output = session.pty.snapshot();
+    expect(output.indexOf("first cut")).toBeGreaterThan(output.indexOf("MARKER"));
+    expect(output.indexOf("second cut")).toBeGreaterThan(output.indexOf("first cut"));
+  });
+
+  it("drops a held prompt with its session, so a declined trust prompt never replays into the next terminal", async () => {
+    fixture = await createTerminalFixture();
+    const declined = await openSession();
+    await waitFor(() => declined.pty.snapshot().includes("READY"));
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "never sent")).toBe(true);
+    declined.pty.write("EXIT 0");
+    await waitFor(() => fixture.sessions.find(declined.sessionId) === undefined);
+
+    const next = await openSession();
+    await waitFor(() => next.pty.snapshot().includes("READY"));
+    await startSession(next);
+    next.pty.write("MARKER");
+    await waitFor(() => next.pty.snapshot().includes("MARKER"));
+    expect(declined.pty.snapshot() + next.pty.snapshot()).not.toContain("never sent");
+  });
+
   it("submits a prompt as a bracketed paste, stops with Esc, and cleans up on Kill", async () => {
     fixture = await createTerminalFixture();
     const session = await openSession();
     await waitFor(() => session.pty.snapshot().includes("READY"));
+    await startSession(session);
 
     expect(fixture.sessions.submitPrompt(PROJECT_ID, "trim\x1b[201~")).toBe(true);
     await waitFor(() => session.pty.snapshot().includes("GOT"));

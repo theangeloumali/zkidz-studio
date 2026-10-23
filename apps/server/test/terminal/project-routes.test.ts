@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerAgentRoutes } from "../../src/agent/routes.ts";
 import { writeConnection } from "../../src/auth/connection-store.ts";
 import { errorBody, toHttpError } from "../../src/http/http-error.ts";
-import { registerProjectTerminalRoutes } from "../../src/terminal/project-routes.ts";
+import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "../../src/terminal/project-routes.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, stubReport, waitFor } from "./stub-claude.ts";
 import { createTerminalFixture, type TerminalFixture } from "./terminal-fixture.ts";
 
@@ -31,6 +31,8 @@ const openTerminal = async (body: unknown = null) => {
   const parsed = API_ROUTES.openTerminal.response.safeParse(json);
   return { status: response.status, body: parsed.success ? parsed.data : (json as { sessionId?: string }) };
 };
+const startSession = (sessionId: string) =>
+  fixture.sessions.handleHook(sessionId, { session_id: sessionId, hook_event_name: "SessionStart", permission_mode: "default" });
 const liveSession = (sessionId: string | undefined) => {
   const session = fixture.sessions.find(sessionId ?? "");
   if (session === undefined) throw new Error(`no live terminal ${sessionId}`);
@@ -48,8 +50,14 @@ beforeEach(async () => {
   const sdkManager = { submit: recordSdkCall("submit"), stop: recordSdkCall("stop"), kill: recordSdkCall("kill"), decide: () => false };
 
   app = new Hono();
-  registerAgentRoutes(app, { database: database.db, manager: sdkManager, terminal: fixture.sessions });
-  registerProjectTerminalRoutes(app, { database: database.db, studioHome: fixture.studioHome, model: "haiku", sessions: fixture.sessions });
+  const openProjectTerminal = createProjectTerminalOpener({
+    database: database.db,
+    studioHome: fixture.studioHome,
+    model: "haiku",
+    sessions: fixture.sessions,
+  });
+  registerAgentRoutes(app, { database: database.db, manager: sdkManager, terminal: { sessions: fixture.sessions, open: openProjectTerminal } });
+  registerProjectTerminalRoutes(app, { database: database.db, openTerminal: openProjectTerminal });
   app.onError((error, c) => {
     const httpError = toHttpError(error);
     return c.json(errorBody(httpError), httpError.status);
@@ -115,6 +123,7 @@ describe("project terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () =>
     await writeConnection(database.db, { mode: "terminal" });
     const first = liveSession((await openTerminal()).body.sessionId);
     await waitFor(() => first.pty.snapshot().includes("READY"));
+    await startSession(first.sessionId);
 
     expect((await post("prompt", { text: "Make a cut" })).status).toBe(200);
     await waitFor(() => first.pty.snapshot().includes("Make a cut"));
@@ -129,9 +138,28 @@ describe("project terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () =>
     expect(sdkCalls).toEqual([]);
   });
 
-  it("refuses a prompt with 409 in mode T while no terminal is open", async () => {
+  it("opens the project's terminal for a prompt in mode T and sends the prompt once the session has started", async () => {
     await writeConnection(database.db, { mode: "terminal" });
-    expect((await post("prompt", { text: "Make a cut" })).status).toBe(409);
+    expect((await post("prompt", { text: "Make a cut" })).status).toBe(200);
+    const session = liveSession(fixture.sessions.findByProject(projectId)?.sessionId);
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+    expect(stubReport(session).cwd).toBe(join(fixture.studioHome, "projects", "demo"));
+    session.pty.write("MARKER");
+    await waitFor(() => session.pty.snapshot().includes("MARKER"));
+    expect(session.pty.snapshot()).not.toContain("Make a cut");
+
+    await startSession(session.sessionId);
+    await waitFor(() => session.pty.snapshot().includes("Make a cut"));
+    expect((await openTerminal()).body.sessionId).toBe(session.sessionId);
     expect(sdkCalls).toEqual([]);
+  });
+
+  it("opens one terminal when a prompt and the Terminal tab race", async () => {
+    await writeConnection(database.db, { mode: "terminal" });
+    const [prompted, opened] = await Promise.all([post("prompt", { text: "Make a cut" }), openTerminal()]);
+
+    expect(prompted.status).toBe(200);
+    expect(opened.body.sessionId).toBe(fixture.sessions.findByProject(projectId)?.sessionId);
+    expect(await database.db.select().from(agentSessions)).toHaveLength(1);
   });
 });

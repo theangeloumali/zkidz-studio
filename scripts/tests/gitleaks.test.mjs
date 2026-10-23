@@ -102,6 +102,24 @@ describe.skipIf(!gitleaksInstalled)("gitleaks-scan.sh on a pull request", () => 
     expect(scan(baseSha)).toBe(LEAKS_FOUND_EXIT);
   });
 
+  // ci-local runs this in a developer's checkout, so judging by the base's ignore list must not leave it rewritten.
+  it("puts the working tree's .gitleaksignore back after judging by the base's", () => {
+    const leakSha = commitFiles(repoDir, { "app.env": dbUrl(fakeDbCredential) });
+    const ownIgnore = `${leakSha}:app.env:database-url-credentials:1\n`;
+    commitFiles(repoDir, { ".gitleaksignore": ownIgnore });
+    scan(baseSha);
+    expect(readFileSync(join(repoDir, ".gitleaksignore"), "utf8")).toBe(ownIgnore);
+    expect(runGit(repoDir, "status", "--porcelain")).toBe("");
+  });
+
+  // Worktrees share one repository, and a leak still unpushed on another branch is that branch's to fix.
+  it("scans only the checked-out branch's history", () => {
+    runGit(repoDir, "checkout", "-q", "-b", "other");
+    commitFiles(repoDir, { "app.env": dbUrl(fakeDbCredential) });
+    runGit(repoDir, "checkout", "-q", "-");
+    expect(scan(baseSha)).toBe(0);
+  });
+
   it("falls back to the default rules when the base has no config", () => {
     runGit(repoDir, "rm", "-q", ".gitleaks.toml");
     const bareBaseSha = commitFiles(repoDir, {});

@@ -225,6 +225,11 @@
   font-family: var(--font-mono);
 }
 
+/* A density run (spec §6.1) keeps its lane's fill; the ring marks it as many items. */
+.blk-run {
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+
 .blk-cut {
   background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-danger) 45%, transparent) 0 3px, transparent 3px 7px);
   box-shadow: inset 0 0 0 1px var(--color-danger);

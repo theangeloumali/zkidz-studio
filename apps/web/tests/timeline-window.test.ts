@@ -31,14 +31,15 @@ describe("visibleItems", () => {
 
 describe("mountedWindow", () => {
   it("holds still while a scroll stays inside one step, so the lanes do not re-render every frame", () => {
-    expect(mountedWindow(31, 63, 10)).toEqual(mountedWindow(34.3, 66.3, 10));
+    expect(mountedWindow(52, 84)).toEqual(mountedWindow(55.3, 87.3));
   });
 
-  it("always reaches at least the overscan past both viewport edges", () => {
+  it("reaches one viewport width past both viewport edges (spec §6.1), and not a whole step more", () => {
     for (const viewStartS of [0, 7.5, 19.99, 20, 333.3]) {
-      const { startS, endS } = mountedWindow(viewStartS, viewStartS + 32, 10);
-      expect(startS).toBeLessThanOrEqual(viewStartS - 10);
-      expect(endS).toBeGreaterThanOrEqual(viewStartS + 32 + 10);
+      const { startS, endS } = mountedWindow(viewStartS, viewStartS + 32);
+      expect(startS).toBeLessThanOrEqual(viewStartS - 32);
+      expect(endS).toBeGreaterThanOrEqual(viewStartS + 64);
+      expect(endS - startS).toBeLessThan(96 + 20);
     }
   });
 });

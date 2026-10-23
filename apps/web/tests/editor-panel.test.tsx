@@ -77,6 +77,28 @@ describe("Timeline", () => {
     expect(renderedCues.length).toBeGreaterThan(5);
     expect(renderedCues.length).toBeLessThan(40);
   });
+
+  it("draws cues too thin to see at this scale as one run named for what it holds", () => {
+    // 1.2 px wide and 0.8 px apart at 40 px/s: under the 2 px floor for both.
+    const cueSheet = Array.from({ length: 50 }, (_, index): Cue => ({
+      kind: "keyword",
+      at: 2 + index * 0.05,
+      end: 2 + index * 0.05 + 0.03,
+      text: `Tick ${index}`,
+    }));
+    renderWithProviders(
+      <Timeline
+        tracks={buildTimelineTracks(null, cueSheet)}
+        sourceDurationS={30}
+        keptSpans={[{ at: 0, end: 30 }]}
+        clock={createPlaybackClock({ durationS: 30 })}
+      />,
+    );
+
+    const lane = within(screen.getByTestId("lane-cues"));
+    expect(lane.getAllByRole("listitem")).toHaveLength(1);
+    expect(lane.getByRole("listitem", { name: "50 cues, 0:02–0:04" })).toHaveAttribute("title", "50 cues, 0:02–0:04");
+  });
 });
 
 describe("EditorPanel", () => {

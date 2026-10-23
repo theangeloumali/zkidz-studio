@@ -4,21 +4,20 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatDuration } from "../lib/format.ts";
 import { editedToSource, type TimeSpan } from "./edl.ts";
 import type { PlaybackClock } from "./playback-clock.ts";
-import { TRACK_IDS, type TimelineBlock, type TimelineTracks, type TrackId } from "./timeline-items.ts";
+import { isDensityRun, mergeDensityRuns, type DrawnBlock } from "./timeline-density.ts";
+import { TRACK_IDS, type TimelineTracks, type TrackId } from "./timeline-items.ts";
 import { indexTimelineItems, mountedWindow, visibleItems, type SecondsWindow } from "./timeline-window.ts";
 
 export const PIXELS_PER_SECOND = 40;
-/** Seconds drawn past each viewport edge, so a fast scroll never shows an empty lane before the next frame. */
-const OVERSCAN_S = 10;
 /** jsdom and a not-yet-laid-out pane report 0 wide; draw a desktop-width window instead of nothing. */
 const FALLBACK_VIEWPORT_PX = 1280;
 const LABEL_WIDTH_PX = 104;
 
-const TRACK_META: Record<TrackId, { readonly label: string; readonly Icon: LucideIcon }> = {
-  video: { label: "Video", Icon: Film },
-  captions: { label: "Captions", Icon: Type },
-  cues: { label: "Cues", Icon: Layers },
-  audio: { label: "Audio", Icon: AudioLines },
+const TRACK_META: Record<TrackId, { readonly label: string; readonly itemNoun: string; readonly Icon: LucideIcon }> = {
+  video: { label: "Video", itemNoun: "edits", Icon: Film },
+  captions: { label: "Captions", itemNoun: "captions", Icon: Type },
+  cues: { label: "Cues", itemNoun: "cues", Icon: Layers },
+  audio: { label: "Audio", itemNoun: "sound effects", Icon: AudioLines },
 };
 
 interface TimelineProps {
@@ -33,12 +32,12 @@ interface TimelineProps {
 function windowFor(scroller: HTMLElement | null): SecondsWindow {
   const viewportPx = scroller?.clientWidth || FALLBACK_VIEWPORT_PX;
   const startS = ((scroller?.scrollLeft ?? 0) - LABEL_WIDTH_PX) / PIXELS_PER_SECOND;
-  return mountedWindow(startS, startS + viewportPx / PIXELS_PER_SECOND, OVERSCAN_S);
+  return mountedWindow(startS, startS + viewportPx / PIXELS_PER_SECOND);
 }
 
 const sameWindow = (left: SecondsWindow, right: SecondsWindow) => left.startS === right.startS && left.endS === right.endS;
 
-function blockStyle(block: TimelineBlock) {
+function blockStyle(block: DrawnBlock) {
   const left = block.at * PIXELS_PER_SECOND;
   return block.variant === "sfx" ? { left } : { left, width: Math.max(2, (block.end - block.at) * PIXELS_PER_SECOND) };
 }
@@ -48,7 +47,13 @@ export function Timeline({ tracks, sourceDurationS, keptSpans, clock, videoLaneE
   const scrollerRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const [visibleWindow, setVisibleWindow] = useState<SecondsWindow>(() => windowFor(null));
-  const indexes = useMemo(() => Object.fromEntries(TRACK_IDS.map((trackId) => [trackId, indexTimelineItems(tracks[trackId])])), [tracks]);
+  const indexes = useMemo(
+    () =>
+      Object.fromEntries(
+        TRACK_IDS.map((trackId) => [trackId, indexTimelineItems(mergeDensityRuns(tracks[trackId], PIXELS_PER_SECOND, TRACK_META[trackId].itemNoun))]),
+      ),
+    [tracks],
+  );
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -95,14 +100,20 @@ export function Timeline({ tracks, sourceDurationS, keptSpans, clock, videoLaneE
                 {label}
               </span>
               <ul className="track-lane" aria-labelledby={`track-${trackId}`} data-testid={`lane-${trackId}`}>
-                {blocks.map((block) => (
-                  <li key={block.id} className={`blk blk-${block.variant}`} style={blockStyle(block)} title={block.label || undefined}>
-                    <span className="sr-only">
-                      {block.variant} {formatDuration(block.at)}–{formatDuration(block.end)}{" "}
-                    </span>
-                    {block.variant === "cut" || block.variant === "sfx" ? null : block.label}
-                  </li>
-                ))}
+                {blocks.map((block) =>
+                  isDensityRun(block) ? (
+                    <li key={block.id} className={`blk blk-${block.variant} blk-run`} style={blockStyle(block)} title={block.label}>
+                      {block.label}
+                    </li>
+                  ) : (
+                    <li key={block.id} className={`blk blk-${block.variant}`} style={blockStyle(block)} title={block.label || undefined}>
+                      <span className="sr-only">
+                        {block.variant} {formatDuration(block.at)}–{formatDuration(block.end)}{" "}
+                      </span>
+                      {block.variant === "cut" || block.variant === "sfx" ? null : block.label}
+                    </li>
+                  ),
+                )}
                 {trackId === "video" && videoLaneExtras}
               </ul>
             </div>

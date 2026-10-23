@@ -39,12 +39,13 @@ export async function startTemplate(context: ToolContext, template: HomeTemplate
     request.insertAssetId === undefined || cameraAssetId === undefined ? undefined : await showcaseInserts(context, cameraAssetId, request.insertAssetId);
   const ingestTool = STUDIO_TOOLS_BY_NAME.get("ingest");
   if (ingestTool === undefined) throw new Error("the ingest tool is not in the catalog");
+  // Saved first: the ingest job reads the project's mode, and it can start before this call returns.
+  await writeProjectTemplate(context.db, context.projectId, { templateId: template.id, ingestMode: template.ingestMode });
   const result = await ingestTool.run(inserts === undefined ? { clips } : { clips, inserts }, context);
   const jobId = result.structuredContent?.["jobId"];
   if (result.isError === true || typeof jobId !== "string") {
     const [first] = result.content;
     throw badRequest(first?.type === "text" ? first.text : "The footage could not be ingested");
   }
-  await writeProjectTemplate(context.db, context.projectId, { templateId: template.id, ingestMode: template.ingestMode });
   return { ingestJobId: jobId };
 }

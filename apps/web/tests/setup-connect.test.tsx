@@ -2,8 +2,10 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
+import { Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 import type { Connection, DoctorCheck } from "../src/api/agent-client.ts";
+import { ROUTE_PATHS } from "../src/lib/routes.ts";
 import { SetupRoute } from "../src/routes/setup.tsx";
 import { jsonResponse } from "./fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "./render.tsx";
@@ -27,6 +29,22 @@ async function chooseApiKey(): Promise<void> {
 }
 
 describe("SetupRoute", () => {
+  it("links to the optional style step, connected or not", async () => {
+    stubSetup();
+    renderWithProviders(
+      <Routes>
+        <Route path={ROUTE_PATHS.setup} element={<SetupRoute />} />
+        <Route path={ROUTE_PATHS.style} element={<p>Style page</p>} />
+      </Routes>,
+      ROUTE_PATHS.setup,
+    );
+
+    const link = await screen.findByRole("link", { name: "Pick a house style" });
+    expect(link).toHaveAttribute("href", ROUTE_PATHS.style);
+    await userEvent.click(link);
+    expect(await screen.findByText("Style page")).toBeInTheDocument();
+  });
+
   it("offers the three ways in, recommended first", async () => {
     stubSetup();
     renderWithProviders(<SetupRoute />);

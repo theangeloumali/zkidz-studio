@@ -6,6 +6,7 @@ import type { Connection } from "../api/agent-client.ts";
 import { connectionQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { TERMINAL_PENDING_LABEL } from "../copy/claude.ts";
+import { ROUTE_PATHS } from "../lib/routes.ts";
 import { ApiKeyControls } from "../setup/api-key-card.tsx";
 import { ChoiceCard } from "../setup/choice-card.tsx";
 import { CloudControls } from "../setup/cloud-card.tsx";
@@ -89,6 +90,10 @@ export function SetupRoute() {
             </p>
           </>
         )}
+        {/* Style needs no connection, so the optional step is reachable before Continue unlocks. */}
+        <Link to={ROUTE_PATHS.style} className={buttonClass("secondary")}>
+          Pick a house style
+        </Link>
       </div>
     </div>
   );

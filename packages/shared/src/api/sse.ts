@@ -6,14 +6,16 @@ import { IdSchema } from "../primitives.ts";
 export const SSE_REPLAY_LIMIT = 500;
 export const LAST_EVENT_ID_HEADER = "last-event-id";
 
-/** `/api/events?project=a&project=b`: one EventSource per tab covers every open project. */
-export const EventsQuerySchema = z.strictObject({
-  // A single `?project=<id>` reaches the server as a string, not a one-element array.
-  project: z.preprocess((project) => (typeof project === "string" ? [project] : project), z.array(IdSchema).min(1)),
-});
-
 export const LastEventIdSchema = z
   .string()
   .regex(/^[0-9]+$/, "Last-Event-ID is an event id")
   .transform(Number)
   .pipe(z.int().positive());
+
+/** `/api/events?project=a&project=b`: one EventSource per tab covers every open project. */
+export const EventsQuerySchema = z.strictObject({
+  // A single `?project=<id>` reaches the server as a string, not a one-element array.
+  project: z.preprocess((project) => (typeof project === "string" ? [project] : project), z.array(IdSchema).min(1)),
+  // A new EventSource (after a reload) sends no Last-Event-ID, so the client passes its stored cursor here.
+  after: LastEventIdSchema.optional(),
+});

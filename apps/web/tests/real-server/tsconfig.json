@@ -1,0 +1,7 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "typeRoots": ["../../../server/node_modules/@types"]
+  },
+  "include": ["."]
+}

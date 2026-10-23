@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
-  "packageManager": "pnpm@12.15.0",
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61",
   "devEngines": {
     "runtime": {
       "name": "node",
@@ -13,12 +13,15 @@
     },
     "packageManager": {
       "name": "pnpm",
-      "version": "^12",
+      "version": "12.15.0",
       "onFail": "download"
     }
   },
   "scripts": {
-    "verify": "node scripts/check-attribution.mjs && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
+    "start": "pnpm -F @zks/web build && pnpm -F @zks/server start",
+    "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
+    "zks": "node packages/cli/src/main.ts",
+    "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r test",
     "db:test:matrix": "node scripts/db-test-matrix.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

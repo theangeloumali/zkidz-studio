@@ -1,0 +1,24 @@
+{
+  "name": "@zks/engine-hf",
+  "private": true,
+  "description": "Pinned HyperFrames CLI, GSAP and fontkit for the brand overlay renderer.",
+  "dependencies": {
+    "fontkit": "2.0.4",
+    "gsap": "3.15.0",
+    "hyperframes": "0.8.105"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "render": "node render.js"
+  },
+  "knip": {
+    "entry": [
+      "build.js",
+      "render.js"
+    ],
+    "ignoreDependencies": [
+      "hyperframes",
+      "gsap"
+    ]
+  }
+}

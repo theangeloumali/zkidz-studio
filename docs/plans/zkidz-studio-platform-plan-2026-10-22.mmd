@@ -43,7 +43,7 @@ sequenceDiagram
 %% ---
 flowchart TB
   URL{"DATABASE_URL"} -- "unset" --> B["Path B (default)<br/>PGlite, version pinned<br/>inside the server"]
-  URL -- "postgresql://" --> A["Path A (opt-in)<br/>Supabase CLI, PG 17<br/>Docker on 127.0.0.1"]
+  URL -- "postgresql://" --> A["Path A (opt-in)<br/>Supabase Postgres 17<br/>compose, 127.0.0.1 only"]
   B --> SCH["Drizzle schema studio<br/>one migrations folder<br/>PG 17 features only"]
   A --> SCH
 %% ---

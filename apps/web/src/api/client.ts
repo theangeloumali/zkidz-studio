@@ -1,0 +1,97 @@
+// Created by The Angelo Umali.
+import { API_ROUTES, CSRF_HEADER, isStateChangingMethod } from "@zks/shared";
+import { z } from "zod";
+
+// The server sends its per-launch token on every response; same-origin script is the only reader (ADR 0006).
+let launchCsrfToken: string | null = null;
+let pendingTokenFetch: Promise<string> | null = null;
+
+// No shared error DTO exists yet; accept either common shape and fall back to the status text.
+const ErrorBodySchema = z.object({ error: z.string().optional(), message: z.string().optional() });
+
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = "ApiError";
+  }
+}
+
+function rememberCsrfToken(response: Response): void {
+  launchCsrfToken = response.headers.get(CSRF_HEADER) ?? launchCsrfToken;
+}
+
+/** The launch token, read from a cheap GET first when no response has carried it yet. */
+export function ensureCsrfToken(): Promise<string> {
+  if (launchCsrfToken !== null) return Promise.resolve(launchCsrfToken);
+  pendingTokenFetch ??= fetch(API_ROUTES.listProjects.path)
+    .then((response) => {
+      rememberCsrfToken(response);
+      if (launchCsrfToken === null) throw new ApiError("The studio did not hand out a request token.", response.status);
+      return launchCsrfToken;
+    })
+    .finally(() => {
+      pendingTokenFetch = null;
+    });
+  return pendingTokenFetch;
+}
+
+export function routeUrl(path: string, params: Readonly<Record<string, string>> = {}): string {
+  return path.replace(/:(\w+)/g, (_match, name: string) => {
+    const value = params[name];
+    if (value === undefined) throw new Error(`Missing route parameter "${name}" for ${path}`);
+    return encodeURIComponent(value);
+  });
+}
+
+export function errorMessageFrom(body: unknown, fallback: string): string {
+  const parsed = ErrorBodySchema.safeParse(body);
+  return (parsed.success && (parsed.data.error ?? parsed.data.message)) || fallback;
+}
+
+interface RequestOptions {
+  readonly method?: string;
+  readonly body?: unknown;
+}
+
+export async function requestJson<Schema extends z.ZodType>(schema: Schema, url: string, options: RequestOptions = {}): Promise<z.infer<Schema>> {
+  const method = options.method ?? "GET";
+  const headers = new Headers();
+  if (isStateChangingMethod(method)) headers.set(CSRF_HEADER, await ensureCsrfToken());
+  if (options.body !== undefined) headers.set("content-type", "application/json");
+
+  const response = await fetch(url, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+  rememberCsrfToken(response);
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new ApiError(errorMessageFrom(body, response.statusText || `Request failed (${response.status})`), response.status);
+  return schema.parse(body);
+}
+
+export async function fetchProjects() {
+  const { projects } = await requestJson(API_ROUTES.listProjects.response, API_ROUTES.listProjects.path);
+  return projects;
+}
+
+export function fetchProject(projectId: string) {
+  return requestJson(API_ROUTES.getProject.response, routeUrl(API_ROUTES.getProject.path, { projectId }));
+}
+
+export function createProject(title: string) {
+  return requestJson(API_ROUTES.createProject.response, API_ROUTES.createProject.path, { method: "POST", body: { title } });
+}
+
+export async function fetchMedia(projectId: string) {
+  const { assets } = await requestJson(API_ROUTES.listMedia.response, routeUrl(API_ROUTES.listMedia.path, { projectId }));
+  return assets;
+}
+
+export function registerInPlace(projectId: string, path: string) {
+  return requestJson(API_ROUTES.registerInPlace.response, routeUrl(API_ROUTES.registerInPlace.path, { projectId }), { method: "POST", body: { path } });
+}
+
+export function listFolder(path: string | undefined) {
+  const query = path === undefined ? "" : `?${new URLSearchParams({ path }).toString()}`;
+  return requestJson(API_ROUTES.listFolder.response, `${API_ROUTES.listFolder.path}${query}`);
+}

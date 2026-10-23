@@ -1,0 +1,545 @@
+{
+  "frames": 2908,
+  "events": [
+    {
+      "time": 0.65,
+      "sound": "hook",
+      "pan": 0,
+      "gain": 0,
+      "kind": "hookTitle",
+      "cueStart": 0.5
+    },
+    {
+      "time": 1.07,
+      "sound": "rule",
+      "pan": 0,
+      "gain": 0,
+      "kind": "hookTitle",
+      "cueStart": 0.5
+    },
+    {
+      "time": 3.75,
+      "sound": "nodeSteel",
+      "pan": -0.15,
+      "gain": 0,
+      "kind": "lowerThird",
+      "cueStart": 3.6
+    },
+    {
+      "time": 4,
+      "sound": "pencil",
+      "pan": 0,
+      "gain": 0,
+      "dur": 0.45,
+      "kind": "lowerThird",
+      "cueStart": 3.6
+    },
+    {
+      "time": 4.47,
+      "sound": "nodeGold",
+      "pan": 0.15,
+      "gain": 0,
+      "kind": "lowerThird",
+      "cueStart": 3.6
+    },
+    {
+      "time": 6,
+      "sound": "chapter",
+      "pan": 0,
+      "gain": 0,
+      "kind": "chapterCard",
+      "cueStart": 6.1
+    },
+    {
+      "time": 8.15,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "chapterCard",
+      "cueStart": 6.1
+    },
+    {
+      "time": 8.55,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 8.5
+    },
+    {
+      "time": 8.82,
+      "sound": "rule",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 8.5
+    },
+    {
+      "time": 10.04,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 10.1
+    },
+    {
+      "time": 10.42,
+      "sound": "rule",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 10.1
+    },
+    {
+      "time": 11.749999999999998,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 11.699999999999998
+    },
+    {
+      "time": 13.15,
+      "sound": "pencil",
+      "pan": 0,
+      "gain": 0,
+      "dur": 0.8249999999999998,
+      "kind": "handNote",
+      "cueStart": 13.1
+    },
+    {
+      "time": 15.08,
+      "sound": "thud",
+      "pan": 0,
+      "gain": 0,
+      "kind": "slamStamp",
+      "cueStart": 14.9
+    },
+    {
+      "time": 16.64,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "statTile",
+      "cueStart": 16.7
+    },
+    {
+      "time": 16.95,
+      "sound": "count",
+      "pan": 0,
+      "gain": 0,
+      "dur": 1.8799999999999957,
+      "kind": "statTile",
+      "cueStart": 16.7
+    },
+    {
+      "time": 19.179999999999996,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "statTile",
+      "cueStart": 16.7
+    },
+    {
+      "time": 19.44,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "criteriaCard",
+      "cueStart": 19.5
+    },
+    {
+      "time": 20.25,
+      "sound": "check",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "criteriaCard",
+      "cueStart": 19.5
+    },
+    {
+      "time": 21.05,
+      "sound": "check",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "criteriaCard",
+      "cueStart": 19.5
+    },
+    {
+      "time": 21.85,
+      "sound": "check",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "criteriaCard",
+      "cueStart": 19.5
+    },
+    {
+      "time": 22.78,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "criteriaCard",
+      "cueStart": 19.5
+    },
+    {
+      "time": 23.040000000000003,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "pills",
+      "cueStart": 23.1
+    },
+    {
+      "time": 23.750000000000004,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "pills",
+      "cueStart": 23.1
+    },
+    {
+      "time": 24.35,
+      "sound": "tick",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "pills",
+      "cueStart": 23.1
+    },
+    {
+      "time": 24.950000000000003,
+      "sound": "nodeGold",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "pills",
+      "cueStart": 23.1
+    },
+    {
+      "time": 25.68,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "pills",
+      "cueStart": 23.1
+    },
+    {
+      "time": 26.55,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "chips",
+      "cueStart": 25.999999999999996
+    },
+    {
+      "time": 26.95,
+      "sound": "tick",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "chips",
+      "cueStart": 25.999999999999996
+    },
+    {
+      "time": 27.449999999999996,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "chips",
+      "cueStart": 25.999999999999996
+    },
+    {
+      "time": 28.44,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 28.95,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 29.61,
+      "sound": "tick",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 30.11,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 30.61,
+      "sound": "tick",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 31.01,
+      "sound": "nodeGold",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 31.78,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "timeline",
+      "cueStart": 28.5
+    },
+    {
+      "time": 32.04,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "flowRow",
+      "cueStart": 32.1
+    },
+    {
+      "time": 32.45,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "flowRow",
+      "cueStart": 32.1
+    },
+    {
+      "time": 33.050000000000004,
+      "sound": "tick",
+      "pan": 0.25,
+      "gain": 0,
+      "kind": "flowRow",
+      "cueStart": 32.1
+    },
+    {
+      "time": 33.65,
+      "sound": "tick",
+      "pan": -0.25,
+      "gain": 0,
+      "kind": "flowRow",
+      "cueStart": 32.1
+    },
+    {
+      "time": 34.38,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "flowRow",
+      "cueStart": 32.1
+    },
+    {
+      "time": 34.64,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "vsCard",
+      "cueStart": 34.7
+    },
+    {
+      "time": 35.300000000000004,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "vsCard",
+      "cueStart": 34.7
+    },
+    {
+      "time": 36.38,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "vsCard",
+      "cueStart": 34.7
+    },
+    {
+      "time": 36.64,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "titleSwap",
+      "cueStart": 36.7
+    },
+    {
+      "time": 37.6,
+      "sound": "scratch",
+      "pan": 0,
+      "gain": 0,
+      "dur": 0.35,
+      "kind": "titleSwap",
+      "cueStart": 36.7
+    },
+    {
+      "time": 38.17,
+      "sound": "rule",
+      "pan": 0,
+      "gain": 0,
+      "kind": "titleSwap",
+      "cueStart": 36.7
+    },
+    {
+      "time": 38.57999999999999,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "titleSwap",
+      "cueStart": 36.7
+    },
+    {
+      "time": 39.72,
+      "sound": "sign",
+      "pan": 0,
+      "gain": 0,
+      "kind": "endCard",
+      "cueStart": 38.9
+    },
+    {
+      "time": 44.00000000000001,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 2,
+      "kind": "cutaway",
+      "cueStart": 42
+    },
+    {
+      "time": 44.94,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "checklist",
+      "cueStart": 45
+    },
+    {
+      "time": 45.75,
+      "sound": "check",
+      "pan": 0,
+      "gain": 0,
+      "kind": "checklist",
+      "cueStart": 45
+    },
+    {
+      "time": 46.65,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "checklist",
+      "cueStart": 45
+    },
+    {
+      "time": 48.28,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "checklist",
+      "cueStart": 45
+    },
+    {
+      "time": 48.54,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "comment",
+      "cueStart": 48.6
+    },
+    {
+      "time": 50.58,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "comment",
+      "cueStart": 48.6
+    },
+    {
+      "time": 50.839999999999996,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "pipeline",
+      "cueStart": 50.9
+    },
+    {
+      "time": 54.18,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "pipeline",
+      "cueStart": 50.9
+    },
+    {
+      "time": 54.55,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "splitFlow",
+      "cueStart": 54.5
+    },
+    {
+      "time": 55.04,
+      "sound": "swish",
+      "pan": 0,
+      "gain": 0,
+      "kind": "splitFlow",
+      "cueStart": 54.5
+    },
+    {
+      "time": 57.38,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "splitFlow",
+      "cueStart": 54.5
+    },
+    {
+      "time": 57.75,
+      "sound": "tick",
+      "pan": 0,
+      "gain": 0,
+      "kind": "keyword",
+      "cueStart": 57.7
+    },
+    {
+      "time": 59.4,
+      "sound": "chapter",
+      "pan": 0,
+      "gain": 0,
+      "kind": "chapterCard",
+      "cueStart": 59.5
+    },
+    {
+      "time": 61.55,
+      "sound": "swishOut",
+      "pan": 0,
+      "gain": 0,
+      "kind": "chapterCard",
+      "cueStart": 59.5
+    },
+    {
+      "time": 62.05,
+      "sound": "hook",
+      "pan": 0,
+      "gain": 0,
+      "kind": "hookTitle",
+      "cueStart": 61.9
+    },
+    {
+      "time": 62.47,
+      "sound": "rule",
+      "pan": 0,
+      "gain": 0,
+      "kind": "hookTitle",
+      "cueStart": 61.9
+    }
+  ]
+}

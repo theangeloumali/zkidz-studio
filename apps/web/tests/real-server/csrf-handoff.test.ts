@@ -1,0 +1,66 @@
+// Created by The Angelo Umali.
+// @vitest-environment node
+// End to end against the real server: Kai's createSecurity guard in front of the real project routes, no mock guard.
+import { APP_PORT, CSRF_HEADER, isStateChangingMethod, PREVIEW_PORT } from "@zks/shared";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createSecurity } from "../../../server/src/security/index.ts";
+import { connectionFrom, createTestServer, TEST_HOST, type TestServer } from "../../../server/test/support/test-server.ts";
+
+const APP_ORIGIN = `http://${TEST_HOST}`;
+
+let server: TestServer;
+beforeAll(async () => {
+  const security = createSecurity({ appPort: APP_PORT, previewPort: PREVIEW_PORT, container: false });
+  server = await createTestServer({ security: { middleware: security.middleware, confinePath: security.confinePath } });
+}, 60_000);
+afterAll(async () => {
+  await server.close();
+});
+
+/** Adds only what a browser adds on its own (Host, Sec-Fetch-Site, Origin on writes); the client supplies the rest. */
+function routeFetchToServer(): string[] {
+  const exchanges: string[] = [];
+  vi.stubGlobal("fetch", async (path: string, init: RequestInit = {}) => {
+    const method = init.method ?? "GET";
+    const headers = new Headers(init.headers);
+    headers.set("host", TEST_HOST);
+    headers.set("sec-fetch-site", "same-origin");
+    if (isStateChangingMethod(method)) headers.set("origin", APP_ORIGIN);
+    const response = await server.app.request(path, { ...init, method, headers }, connectionFrom("127.0.0.1"));
+    exchanges.push(`${method} ${path} ${response.status}`);
+    return response;
+  });
+  return exchanges;
+}
+
+// A fresh module per test, so the token cache starts empty like a freshly loaded page.
+async function loadClient() {
+  vi.resetModules();
+  return import("../../src/api/client.ts");
+}
+
+describe("CSRF handoff through the real security middleware", () => {
+  it("bootstraps the launch token with a GET, then creates a project (201)", async () => {
+    const exchanges = routeFetchToServer();
+    const { createProject, fetchProjects } = await loadClient();
+
+    const project = await createProject("Beach day");
+
+    expect(project).toMatchObject({ title: "Beach day" });
+    expect(exchanges).toEqual(["GET /api/projects 200", "POST /api/projects 201"]);
+    expect((await fetchProjects()).map(({ id }) => id)).toContain(project.id);
+  });
+
+  it("is a real guard: a write carrying a stale token is refused with 403", async () => {
+    const exchanges = routeFetchToServer();
+
+    const response = await fetch("/api/projects", {
+      method: "POST",
+      headers: { [CSRF_HEADER]: "1", "content-type": "application/json" },
+      body: JSON.stringify({ title: "Forged" }),
+    });
+
+    expect(exchanges).toEqual(["POST /api/projects 403"]);
+    expect(await response.json()).toEqual({ error: "Forbidden: csrf" });
+  });
+});

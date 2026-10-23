@@ -8,7 +8,7 @@ from pathlib import Path
 
 from support import make_edl, seconds, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends, blur
+from zks_engine import backends, blur, ffio
 from zks_engine import prepare
 from zks_engine import render_final
 from zks_engine.pipeline import has_cuda
@@ -21,7 +21,7 @@ GPU_SKIP = "needs ffmpeg with CUDA and the NVIDIA OpenCL platform (the GPU compo
 def run_graph(graph, encoder, devices=()):
     """Runs a gpu_graph on a 4-second synthetic 4K clip and a transparent 1080p overlay, fed as CUDA frames."""
     graph = graph.replace("[0:v]", "[0:v]format=yuv420p,hwupload_cuda,", 1)
-    return subprocess.run(["ffmpeg", "-v", "error", *devices, "-f", "lavfi", "-i", "testsrc2=size=2160x3840:rate=30000/1001:duration=4",
+    return subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *devices, "-f", "lavfi", "-i", "testsrc2=size=2160x3840:rate=30000/1001:duration=4",
                            "-f", "lavfi", "-i", "color=black@0:size=1080x1920:rate=30000/1001:duration=4,format=rgba",
                            "-filter_complex", graph, "-map", "[v]", *encoder, "-f", "null", "-"], capture_output=True, text=True)
 
@@ -30,7 +30,7 @@ def edge_row(graph):
     """Runs a gpu_graph on one full-range 2160x3840 frame, black left and peak white right; returns the output's middle luma row."""
     width, height = render_final.UHD
     frame = (bytes(width // 2 + 1) + b"\xff" * (width // 2 - 1)) * height + b"\x80" * (width * height // 2)
-    result = subprocess.run(["ffmpeg", "-v", "error", *render_final.OPENCL_DEVICE, "-f", "rawvideo", "-pix_fmt", "nv12", "-color_range", "pc",
+    result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *render_final.OPENCL_DEVICE, "-f", "rawvideo", "-pix_fmt", "nv12", "-color_range", "pc",
                              "-s", f"{width}x{height}", "-i", "-", "-f", "lavfi", "-i", "color=black@0:size=1080x1920,format=rgba",
                              "-filter_complex", graph.replace("[0:v]", "[0:v]hwupload_cuda,", 1), "-map", "[v]", "-frames:v", "1",
                              "-f", "rawvideo", "-"], input=frame, capture_output=True, check=True)

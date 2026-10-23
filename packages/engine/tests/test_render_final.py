@@ -43,7 +43,7 @@ class RangeExprTests(unittest.TestCase):
     @unittest.skipUnless(has_ffmpeg(), "ffmpeg not installed")
     def test_ffmpeg_parses_150_ranges(self):
         expr = render_final.ranges_expr([(index * 10, index * 10 + 5) for index in range(150)])
-        result = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=32x32:rate=30000/1001:duration=1",
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc=size=32x32:rate=30000/1001:duration=1",
                                  "-vf", f"select='{expr}'", "-f", "null", "-"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -140,7 +140,7 @@ class BlurTests(unittest.TestCase):
         for blurs in ([], [[0, seconds(25), 0, 0, 1080, 400, "a"], [seconds(5), seconds(22), 500, 1500, 900, 900, "b"]]):
             regions = render_final.blur_regions({"blur": blurs}, timeline, (432, 768))
             graph = backend_graph.composite(CPU, timeline, regions=regions, frame_size=(432, 768))
-            result = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=432x768:rate=30000/1001:duration=1",
+            result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=432x768:rate=30000/1001:duration=1",
                                      "-f", "lavfi", "-i", "color=black@0:size=1080x1920:rate=30000/1001:duration=1,format=rgba",
                                      "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -190,10 +190,10 @@ class RestampTests(unittest.TestCase):
         """Joined sources are .mkv (time base 1/1000): setpts=N*1001 put frames 1.001 s apart (v8/v11, 2026-09-28)."""
         with tempfile.TemporaryDirectory() as folder:
             clip = Path(folder) / "clip.mkv"
-            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30000/1001:duration=0.5",
+            subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30000/1001:duration=0.5",
                             "-c:v", "ffv1", str(clip)], check=True)
             graph = f"select='between(n,0,9)',{render_final.restamp(make_edl([(0, 30)]))},showinfo"
-            log = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(clip), "-vf", graph, "-f", "null", "-"],
+            log = subprocess.run([ffio.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(clip), "-vf", graph, "-f", "null", "-"],
                                  capture_output=True, text=True).stderr
         times = [float(value) for value in re.findall(r"pts_time:([0-9.]+)", log)]
         self.assertEqual(len(times), 10, log[-500:])
@@ -335,13 +335,13 @@ class IntroTests(unittest.TestCase):
         tone = 8000 * np.sin(2 * np.pi * 440 * np.arange(144144) / 48000)
         write(edit, tone)
         write(track, np.zeros(96096))
-        subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=size=32x32:rate=30000/1001", "-frames:v", "150", "-c:v", "mpeg4",
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=size=32x32:rate=30000/1001", "-frames:v", "150", "-c:v", "mpeg4",
                         str(chunk)], check=True)
         listing = self.work / "chunks.txt"
         listing.write_text(f"file '{chunk.as_posix()}'\n", encoding="utf-8")
         out = self.work / "out.mp4"
         subprocess.run(render_final.join_command(listing, edit, [], out, track, 72072), check=True)
-        decoded = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-ac", "1", "-f", "f32le", "-"], capture_output=True, check=True).stdout
+        decoded = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-i", str(out), "-ac", "1", "-f", "f32le", "-"], capture_output=True, check=True).stdout
         audio = np.frombuffer(decoded, dtype="<f4")
         self.assertLessEqual(abs(len(audio) - 240240), 2048)
         level = lambda first, last: float(np.sqrt(np.mean(audio[int(first * 48000):int(last * 48000)] ** 2)))

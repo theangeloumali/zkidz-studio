@@ -10,7 +10,7 @@ from pathlib import Path
 
 from support import has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import __version__, cli
+from zks_engine import __version__, cli, ffio
 
 
 def run_cli(*args, env=None):
@@ -54,7 +54,7 @@ class CliTests(unittest.TestCase):
     def test_probe_prints_metadata(self):
         with tempfile.TemporaryDirectory() as scratch:
             clip = Path(scratch) / "clip.mkv"
-            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=25:duration=0.4", "-c:v", "ffv1",
+            subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x36:rate=25:duration=0.4", "-c:v", "ffv1",
                             str(clip)], check=True)
             result = run_cli("probe", "--json", str(clip))
         self.assertEqual(result.returncode, 0, result.stderr)

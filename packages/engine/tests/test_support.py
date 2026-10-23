@@ -70,11 +70,11 @@ class HasFfmpegTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"ZKS_FFMPEG": str(Path(tools) / "ffmpeg"), "PATH": ""}):
                 self.assertTrue(has_ffmpeg())
 
-    def test_no_test_looks_ffmpeg_up_on_path_directly(self):
+    def test_no_test_looks_ffmpeg_up_or_runs_it_from_path_directly(self):
         offenders = [
             f"{path.name}:{number}"
             for path in sorted(Path(__file__).parent.rglob("*.py"))
             for number, line in enumerate(path.read_text().splitlines(), 1)
-            if re.search(r"""which\(["']ff(mpeg|probe)["']\)""", line)
+            if re.search(r"""which\(["']ff(mpeg|probe)["']\)|run\(\[["']ff(mpeg|probe)["']""", line)
         ]
         self.assertEqual(offenders, [])

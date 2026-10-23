@@ -125,7 +125,13 @@ export const API_ROUTES = {
     response: ConnectionSchema,
   },
 
-  getDoctor: { method: "GET", path: "/api/doctor", response: z.strictObject({ checks: z.array(DoctorCheckSchema) }) },
+  /** The server caches the checks; `?refresh=1` runs them again. */
+  getDoctor: {
+    method: "GET",
+    path: "/api/doctor",
+    query: z.strictObject({ refresh: z.literal("1").optional() }),
+    response: z.strictObject({ checks: z.array(DoctorCheckSchema) }),
+  },
   getSettings: { method: "GET", path: "/api/settings", response: SettingsSchema },
   updateSettings: { method: "PUT", path: "/api/settings", body: SettingsUpdateSchema, response: SettingsSchema },
 

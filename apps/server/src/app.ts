@@ -6,6 +6,8 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
+import { registerDoctorRoutes } from "./doctor/routes.ts";
+import type { DoctorRunner } from "./doctor/runner.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import type { Logger } from "./logging/logger.ts";
@@ -29,6 +31,8 @@ export interface AppDependencies {
   readonly logger: Logger;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
   readonly agent?: Pick<AgentServices, "registerRoutes">;
+  /** GET /api/doctor; main.ts always passes it. */
+  readonly runDoctor?: DoctorRunner;
 }
 
 export function createApp(deps: AppDependencies): Hono {
@@ -42,6 +46,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus);
   deps.agent?.registerRoutes(app);
+  if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
   app.all("/api/*", () => {
     throw notFound();
   });

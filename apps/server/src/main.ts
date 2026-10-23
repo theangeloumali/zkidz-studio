@@ -12,6 +12,7 @@ import { createAgentServices } from "./agent-services.ts";
 import { createApp } from "./app.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
+import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
@@ -24,6 +25,7 @@ import { createCliEngineRunner } from "./tools/index.ts";
 const WEB_DIST_DIR = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
 const ENGINE_DIR = fileURLToPath(new URL("../../../packages/engine", import.meta.url));
+const CLI_ENTRY = fileURLToPath(new URL("../../../packages/cli/src/main.ts", import.meta.url));
 const PACKAGE_JSON_URL = new URL("../package.json", import.meta.url);
 /** Plan §6.3: a terminal frame is keystrokes or a resize, never bulk data. */
 const WS_MAX_PAYLOAD_BYTES = 256 * 1024;
@@ -78,6 +80,7 @@ async function main(): Promise<void> {
     webDistDir: WEB_DIST_DIR,
     logger,
     agent,
+    runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
   });
   const websocket = { server: new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES }) };
   const server = serve({ fetch: app.fetch, hostname: bindHost, port: config.port, websocket }, (address) => {

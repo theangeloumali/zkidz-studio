@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ZksContext } from "../src/context.ts";
 import { loadToolsLock, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
-import { chromeDownloadUrl, installTool, toolExecutablePath } from "../src/tools.ts";
+import { chromeDownloadUrl, installTool, tarExecutable, toolExecutablePath } from "../src/tools.ts";
 
 function contextFor(platform: PlatformKey): ZksContext {
   const home = mkdtempSync(path.join(tmpdir(), "zks-tools-"));
@@ -46,3 +46,19 @@ function withChromeUrl(context: ZksContext, platform: PlatformKey, url: string):
     tools: { ...context.lock.tools, "chrome-headless-shell": { ...chrome, platforms: { ...chrome.platforms, [platform]: { ...entry, url } } } },
   };
 }
+
+// Git Bash puts GNU tar first on PATH, which reads "D:\\..." as a remote host and fails `zks setup` on Windows.
+describe("tarExecutable", () => {
+  it("uses Windows' own bsdtar by absolute path, never the tar on PATH", () => {
+    expect(tarExecutable("win32", { SystemRoot: "C:\\Windows" })).toBe(path.win32.join("C:\\Windows", "System32", "tar.exe"));
+  });
+
+  it("falls back to C:\\Windows when SystemRoot is unset", () => {
+    expect(tarExecutable("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
+  });
+
+  it("uses tar from PATH on Linux and macOS", () => {
+    expect(tarExecutable("linux", {})).toBe("tar");
+    expect(tarExecutable("darwin", {})).toBe("tar");
+  });
+});

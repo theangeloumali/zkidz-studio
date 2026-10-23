@@ -38,13 +38,14 @@ export function registerStudioToolRoutes(app: Hono, deps: StudioToolRouteDeps): 
     annotations: { readOnlyHint: studioTool.contract.isReadOnly },
   }));
 
+  // Claude Code lists the tools before its SessionStart hook; the listing runs nothing, so only calls wait for the session.
   app.get(STUDIO_MCP_ROUTES.listTools, (c) => {
-    const session = authorizedSession(c, deps);
+    const session = authorizedSession(c, deps, { mustBeReady: false });
     return session instanceof Response ? session : c.json({ tools: listing });
   });
 
   app.post(STUDIO_MCP_ROUTES.callTool, async (c) => {
-    const session = authorizedSession(c, deps);
+    const session = authorizedSession(c, deps, { mustBeReady: true });
     if (session instanceof Response) return session;
     const request = CallRequestSchema.safeParse(await readJsonBody(c));
     if (!request.success) return c.json({ error: "Expected { name, arguments }" }, 400);
@@ -54,13 +55,13 @@ export function registerStudioToolRoutes(app: Hono, deps: StudioToolRouteDeps): 
   });
 }
 
-function authorizedSession(c: Context, deps: StudioToolRouteDeps): StudioToolSession | Response {
+function authorizedSession(c: Context, deps: StudioToolRouteDeps, { mustBeReady }: { mustBeReady: boolean }): StudioToolSession | Response {
   const session = deps.findSession(c.req.param("sessionId") ?? "");
   const authorization = c.req.header("authorization");
   const presentedToken = authorization?.startsWith(BEARER_PREFIX) ? authorization.slice(BEARER_PREFIX.length) : undefined;
   // An unknown session and a wrong token answer alike, so the route does not reveal which sessions exist.
   if (session === undefined || !deps.tokensMatch(session.token, presentedToken)) return c.json({ error: "Unauthorized" }, 401);
-  if (!session.isReady()) return c.json({ error: "The Claude Code session is not ready yet" }, 409);
+  if (mustBeReady && !session.isReady()) return c.json({ error: "The Claude Code session is not ready yet" }, 409);
   return session;
 }
 

@@ -91,13 +91,15 @@ describe("zks-mcp stdio twin", { timeout: 60_000 }, () => {
     await client.close();
   });
 
-  it("refuses calls with a wrong token or before the session is ready", async () => {
+  it("lists the tools before the session is ready but refuses calls until then, and refuses a wrong token", async () => {
     const fixture = await createToolFixture(server);
     const wrongToken = await connectTwin(addSession(fixture), "x".repeat(43));
     expect((await wrongToken.callTool({ name: "project_info", arguments: {} })).isError).toBe(true);
     await wrongToken.close();
 
     const notReady = await connectTwin(addSession(fixture, false));
+    // Claude Code lists the tools before its SessionStart hook, and an empty list left the session without them.
+    expect((await notReady.listTools()).tools.map((listed) => listed.name)).toContain("project_info");
     const refused = await notReady.callTool({ name: "project_info", arguments: {} });
     expect(JSON.stringify(refused.content)).toMatch(/not ready/i);
     await notReady.close();

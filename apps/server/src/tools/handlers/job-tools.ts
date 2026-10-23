@@ -1,11 +1,13 @@
 // Created by The Angelo Umali.
 // Long work goes through the Phase 1 job runner: ingest and transcribe answer with a jobId, job_* follow it (plan §6.8).
 import { jobs } from "@zks/db/schema";
-import type { JobStatus } from "@zks/shared";
+import { isStudioToolName, STUDIO_TOOLS, studioToolName, type JobStatus } from "@zks/shared";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { JobRow } from "../../dto.ts";
 import type { ToolContext } from "../context.ts";
 import { implementTool } from "../define-tool.ts";
+import { describeStudioGate } from "../gate-facts.ts";
 import { readJobResult } from "../job-results.ts";
 import { findProjectAsset, loadProject, projectRootOf } from "../project-files.ts";
 import { ToolError } from "../result.ts";
@@ -66,13 +68,29 @@ const jobCancel = implementTool("job_cancel", {
 
 const jobResume = implementTool("job_resume", {
   description: "Run an interrupted job again (cancelled mid-run, or cut off by a server restart) with the specs it started with.",
-  handler: async (input, context) => {
+  handler: async (input, context, signal) => {
     const job = await findProjectJob(context, input.jobId);
     if (job.status !== "interrupted") throw new ToolError(`Only an interrupted job can resume; this one is ${job.status}`);
+    await approveGatedResume(context, job, signal);
     await context.jobs.resume(job.id);
     return { output: { ok: true } };
   },
 });
+
+/** A job whose tool is gated resumes behind that tool's own card: it spends the same GPU time and writes the same files. */
+async function approveGatedResume(context: ToolContext, job: JobRow, signal?: AbortSignal): Promise<void> {
+  if (!isStudioToolName(job.kind) || STUDIO_TOOLS[job.kind].approval !== "gate") return;
+  const facts = await describeStudioGate(context, job.kind, startInputOf(STUDIO_TOOLS[job.kind].input, job.params));
+  if (facts === null) throw new ToolError(`This ${job.kind} job's parameters are no longer valid; start a new ${job.kind} instead`);
+  const decision = await context.requestApproval({ tool: studioToolName(job.kind), facts: { ...facts, action: `Resume: ${facts.action}` } }, signal);
+  if (decision !== "allow") throw new ToolError(`The user declined resuming ${job.kind}`);
+}
+
+/** The tool's own input, picked from the job's params, which also hold what the handler resolved (a render's sourceAssetId). */
+function startInputOf(toolInput: z.ZodType, params: Record<string, unknown>): unknown {
+  if (!(toolInput instanceof z.ZodObject)) return params;
+  return Object.fromEntries(Object.keys(toolInput.shape).flatMap((key) => (Object.hasOwn(params, key) ? [[key, params[key]]] : [])));
+}
 
 async function findProjectJob(context: ToolContext, jobId: string): Promise<JobRow> {
   const [job] = await context.db

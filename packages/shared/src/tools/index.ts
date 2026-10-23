@@ -53,7 +53,7 @@ export function studioToolName(toolName: StudioToolName): `mcp__studio__${Studio
   return `${STUDIO_TOOL_PREFIX}${toolName}`;
 }
 
-function isStudioToolName(candidateName: string): candidateName is StudioToolName {
+export function isStudioToolName(candidateName: string): candidateName is StudioToolName {
   return Object.hasOwn(STUDIO_TOOLS, candidateName);
 }
 

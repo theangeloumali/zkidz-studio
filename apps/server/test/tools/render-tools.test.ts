@@ -94,9 +94,9 @@ function argumentAfter(request: EngineRequest | undefined, flag: string): string
   return args[args.indexOf(flag) + 1] ?? "";
 }
 
-/** A project with a camera clip, its cut spec and transcript, ready for render tools. */
-async function editedProject(): Promise<{ fixture: ToolFixture; assetId: string }> {
-  const fixture = await createToolFixture(server);
+/** A project with a camera clip, its cut spec and transcript, ready for render tools. Approval cards are denied unless `decide` says otherwise. */
+async function editedProject(decide?: Parameters<typeof createToolFixture>[1]): Promise<{ fixture: ToolFixture; assetId: string }> {
+  const fixture = await createToolFixture(server, decide);
   const asset = await insertCameraAsset(fixture);
   await insertTranscript(fixture, asset.id, [{ at: 0.2, end: 0.6, text: " hello" }]);
   const setCuts = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id) });
@@ -123,8 +123,8 @@ describe("render_master", () => {
     expect(request?.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("cancels a running render through job_cancel, leaving it interrupted, and job_resume runs it again", async () => {
-    const { fixture } = await editedProject();
+  it("cancels a running render through job_cancel, leaving it interrupted, and job_resume runs it again once approved", async () => {
+    const { fixture } = await editedProject(() => Promise.resolve("allow"));
     const { promise: renderStarted, resolve: markStarted } = Promise.withResolvers<void>();
     hangNextRender = markStarted;
     const queued = await callTool(fixture, "render_master", { target: "full", quality: "draft" });
@@ -137,6 +137,30 @@ describe("render_master", () => {
     expect((await callTool(fixture, "job_resume", { jobId })).structuredContent).toEqual({ ok: true });
     const resumed = await callTool(fixture, "job_wait", { jobId, timeoutS: 10 });
     expect(resumed.structuredContent).toMatchObject({ status: "succeeded", result: { frames: 1798 } });
+  });
+
+  it("gates job_resume on a render with the same card a fresh render raises, marked as a resume", async () => {
+    const { fixture } = await editedProject(() => Promise.resolve("allow"));
+    const jobId = await interruptedRender(fixture);
+
+    expect((await callTool(fixture, "job_resume", { jobId })).structuredContent).toEqual({ ok: true });
+
+    expect(fixture.approvalCards).toMatchObject([
+      { tool: "mcp__studio__render_master", facts: { action: "Resume: Render the draft master", outputPaths: ["work/out/v1-draft.mp4"] } },
+    ]);
+  });
+
+  it("leaves a render interrupted, and never starts the engine, when the user declines its resume", async () => {
+    const { fixture } = await editedProject();
+    const jobId = await interruptedRender(fixture);
+    const enginesBefore = engineRequests.length;
+
+    const result = await callTool(fixture, "job_resume", { jobId });
+
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("The user declined resuming render_master");
+    expect((await callTool(fixture, "job_status", { jobId })).structuredContent).toMatchObject({ status: "interrupted" });
+    expect(engineRequests).toHaveLength(enginesBefore);
   });
 
   it("refuses to resume a job that was not interrupted", async () => {
@@ -252,7 +276,44 @@ async function writeProjectFile(fixture: ToolFixture, relPath: string, content: 
   await writeFile(join(fixture.projectRoot, relPath), content);
 }
 
+/** A draft render cancelled mid-run, as job_cancel leaves it. */
+async function interruptedRender(fixture: ToolFixture): Promise<string> {
+  const { promise: renderStarted, resolve: markStarted } = Promise.withResolvers<void>();
+  hangNextRender = markStarted;
+  const queued = await callTool(fixture, "render_master", { target: "full", quality: "draft" });
+  const jobId = String(queued.structuredContent?.jobId);
+  await renderStarted;
+  await callTool(fixture, "job_cancel", { jobId });
+  expect((await callTool(fixture, "job_status", { jobId })).structuredContent).toMatchObject({ status: "interrupted" });
+  return jobId;
+}
+
 describe("export_deliverable", () => {
+  it("gates job_resume on an interrupted export, and a declined resume leaves it interrupted", async () => {
+    const { fixture } = await editedProject();
+    await writeProjectFile(fixture, "work/out/v1-4k.mp4", "master bytes");
+    const [job] = await server.database.db
+      .insert(jobs)
+      .values({
+        projectId: fixture.context.projectId,
+        kind: "export_deliverable",
+        videoId: "v1",
+        lane: "cpu",
+        status: "interrupted",
+        params: { kinds: ["full"] },
+      })
+      .returning();
+    const jobId = job?.id ?? expect.fail("no export job row");
+
+    const result = await callTool(fixture, "job_resume", { jobId });
+
+    expect(result.isError).toBe(true);
+    expect(fixture.approvalCards).toMatchObject([
+      { tool: "mcp__studio__export_deliverable", facts: { outputPaths: [`deliverables/${basename(fixture.projectRoot)}-4k.mp4`] } },
+    ]);
+    expect((await callTool(fixture, "job_status", { jobId })).structuredContent).toMatchObject({ status: "interrupted" });
+  });
+
   it("exports the QC'd master and a cover through a cpu job and returns each file's SHA-256", async () => {
     const { fixture } = await editedProject();
     await writeProjectFile(fixture, "work/out/v1-4k.mp4", "master bytes");

@@ -1,5 +1,5 @@
 # Created by The Angelo Umali.
-# render_master: the quality plan per backend, the step order, and a real CPU master checked against the EDL and loudness.
+# render_master: the quality plan per backend, the step order, and real CPU and NVIDIA masters checked against the EDL and loudness.
 import json
 import os
 import shutil
@@ -11,7 +11,7 @@ from unittest import mock
 
 from support import has_ffmpeg, make_edl  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import cli, ffio, render
+from zks_engine import backends, cli, ffio, qc, render
 from zks_engine.pipeline import frame_to_sample
 from zks_engine.specs.gates import GateFailed
 
@@ -23,9 +23,10 @@ def run(command, **options):
     subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-nostdin", "-y", *command], check=True, timeout=180, **options)
 
 
-def scratch_project():
-    """A project folder in the layout render_final reads: media/, work/{cuts,edl,audio,frames}."""
+def scratch_project(test):
+    """A project folder in the layout render_final reads: media/, work/{cuts,edl,audio,frames}; removed when `test` ends."""
     root = Path(tempfile.mkdtemp(prefix="zks-render-"))
+    test.addCleanup(shutil.rmtree, root, ignore_errors=True)
     work = root / "work"
     for sub in ("cuts", "edl", "audio", "frames/v1"):
         (work / sub).mkdir(parents=True)
@@ -33,20 +34,20 @@ def scratch_project():
     return root, work
 
 
-def build_inputs(root, work, loudness_target=-14):
+def build_inputs(root, work, loudness_target=-14, edl=EDL, seconds=6):
     """A moving source with a noise track, the edit's audio at the target loudness, and one clear overlay PNG per frame."""
     source = root / "media" / "source.mkv"
-    run(["-f", "lavfi", "-i", f"testsrc2=size=540x960:rate={FPS}", "-f", "lavfi", "-i", "anoisesrc=seed=2:amplitude=0.2:sample_rate=48000", "-t", "6",
-         "-c:v", "libx264", "-preset", "ultrafast", "-g", "10", "-c:a", "pcm_s16le", str(source)])
-    (work / "cuts" / "v1.json").write_text(json.dumps({"source": "media/source.mkv", "remove": [], "duration": 6}), encoding="utf-8")
-    (work / "edl" / "v1.json").write_text(json.dumps(EDL), encoding="utf-8")
-    samples = frame_to_sample(EDL["frames"], EDL)
-    run(["-f", "lavfi", "-t", "5", "-i", "anoisesrc=seed=3:amplitude=0.2:sample_rate=48000",
+    run(["-f", "lavfi", "-i", f"testsrc2=size=540x960:rate={FPS}", "-f", "lavfi", "-i", "anoisesrc=seed=2:amplitude=0.2:sample_rate=48000",
+         "-t", str(seconds), "-c:v", "libx264", "-preset", "ultrafast", "-g", "10", "-c:a", "pcm_s16le", str(source)])
+    (work / "cuts" / "v1.json").write_text(json.dumps({"source": "media/source.mkv", "remove": [], "duration": seconds}), encoding="utf-8")
+    (work / "edl" / "v1.json").write_text(json.dumps(edl), encoding="utf-8")
+    samples = frame_to_sample(edl["frames"], edl)
+    run(["-f", "lavfi", "-t", str(seconds - 1), "-i", "anoisesrc=seed=3:amplitude=0.2:sample_rate=48000",
          "-af", f"loudnorm=I={loudness_target}:TP=-2:LRA=7,aresample=48000,atrim=end_sample={samples}", "-ac", "2", "-c:a", "pcm_s16le",
          str(work / "audio" / "v1_edit.wav")])
     clear = work / "frames" / "clear.png"
     run(["-f", "rawvideo", "-pix_fmt", "rgba", "-s", "1080x1920", "-i", "-", "-frames:v", "1", str(clear)], input=bytes(1080 * 1920 * 4))
-    for frame in range(EDL["frames"]):
+    for frame in range(edl["frames"]):
         shutil.copyfile(clear, work / "frames" / "v1" / f"{frame:05d}.png")
 
 
@@ -130,7 +131,7 @@ class CliTests(unittest.TestCase):
 @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
 class CpuMasterTests(unittest.TestCase):
     def render(self, loudness_target=-14):
-        root, work = scratch_project()
+        root, work = scratch_project(self)
         build_inputs(root, work, loudness_target)
         with mock.patch("zks_engine.pipeline.WORK", work), mock.patch("zks_engine.render_final.WORK", work), \
                 mock.patch.dict(os.environ, {"ZKS_BACKEND": "cpu", "RENDER_JOBS": "1"}):
@@ -155,6 +156,31 @@ class CpuMasterTests(unittest.TestCase):
     def test_a_quiet_master_fails_the_loudness_gate(self):
         with self.assertRaisesRegex(GateFailed, "LUFS"):
             self.render(loudness_target=-20)
+
+
+def nvidia_passes_its_probe():
+    return has_ffmpeg() and any(attempt["backend"] == "nvidia" and attempt["ok"] for attempt in backends.probe_attempts())
+
+
+# Plan Phase 5 AC: a 60 s edit renders to 4K HEVC on nvidia with frames = EDL, -14 +/-1 LUFS and the motion gate passing.
+@unittest.skipUnless(nvidia_passes_its_probe(), "needs an NVIDIA GPU that passes the encode probe")
+class NvidiaMasterTests(unittest.TestCase):
+    def test_a_60_s_edit_renders_a_4k_hevc_master_that_matches_the_edl_and_moves(self):
+        edl = make_edl([(0, 900), (930, 1830)])
+        root, work = scratch_project(self)
+        build_inputs(root, work, edl=edl, seconds=62)
+        with mock.patch("zks_engine.pipeline.WORK", work), mock.patch("zks_engine.render_final.WORK", work), \
+                mock.patch("zks_engine.qc.inputs.WORK", work), mock.patch.dict(os.environ, {"ZKS_BACKEND": "nvidia"}):
+            report = render.render_master("v1", "4k", "media/source.mkv", edit=lambda video, source: None, overlays=lambda video: None, work=work)
+            master = work / report["path"]
+            motion = qc.check_motion_master("v1", master, root / "media" / "source.mkv")
+        stream = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height",
+                                 "-of", "csv=p=0", str(master)], capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(stream, "hevc,2160,3840")
+        self.assertEqual(report["frames"], edl["frames"])
+        self.assertLessEqual(abs(report["lufs"] + 14), 1)
+        self.assertEqual(motion["verdict"], "PASS", motion)
+        self.assertEqual(len(motion["shots"]), 2)
 
 
 if __name__ == "__main__":

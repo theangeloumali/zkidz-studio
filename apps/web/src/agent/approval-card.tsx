@@ -2,7 +2,7 @@
 import { buttonClass } from "../components/button-class.ts";
 import { CardShell } from "./card-shell.tsx";
 import { DecisionFooter } from "./decision-footer.tsx";
-import type { EventOf } from "./feed-notes.ts";
+import { formatGpuMinutes, type EventOf } from "./feed-notes.ts";
 import { useDecision } from "./use-decision.ts";
 
 type Facts = EventOf<"approval.requested">["facts"];
@@ -11,7 +11,7 @@ function factRows(facts: Facts, tool: string): [string, string][] {
   const rows: [string, string][] = [["Tool", tool]];
   if (facts.target) rows.push(["Video", facts.target]);
   if (facts.quality) rows.push(["Quality", facts.quality]);
-  if (facts.estimatedGpuMinutes !== undefined) rows.push(["GPU time", `about ${Math.round(facts.estimatedGpuMinutes)} GPU minutes`]);
+  if (facts.estimatedGpuMinutes !== undefined) rows.push(["GPU time", formatGpuMinutes(facts.estimatedGpuMinutes)]);
   rows.push(["Writes", facts.outputPaths.length > 0 ? facts.outputPaths.join(", ") : "Nothing"]);
   if (facts.filesToDelete.length > 0) rows.push(["Deletes", facts.filesToDelete.join(", ")]);
   return rows;

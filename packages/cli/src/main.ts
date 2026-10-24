@@ -15,6 +15,11 @@ const USAGE =
 const EXIT_USAGE = 2;
 
 async function main(argv: string[]): Promise<number> {
+  // Help wins over every command: `zks setup --help` must not start a download.
+  if (argv.some((arg) => arg === "--help" || arg === "-h")) {
+    console.log(USAGE);
+    return 0;
+  }
   const [command, ...rest] = argv;
   const flags = new Set(rest.filter((arg) => arg.startsWith("--")));
   const context = createContext();

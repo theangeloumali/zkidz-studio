@@ -22,6 +22,15 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
     for (const home of tempHomes) rmSync(home, { recursive: true, force: true });
   });
 
+  // `zks setup --help` once ignored the flag and ran the whole setup, downloads included.
+  it.each([["setup", "--help"], ["doctor", "-h"], ["--help"]])("prints the usage for %s %s and runs nothing", (...args) => {
+    const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
+    const outcome = runCli(args, home);
+    expect(outcome.status, outcome.stderr).toBe(0);
+    expect(outcome.stdout).toMatch(/^usage: zks setup/);
+    expect(existsSync(path.join(home, "tools"))).toBe(false);
+  });
+
   it("lists pinned models as JSON without downloading", () => {
     const listing = runCli(["models", "--json"]);
     expect(listing.status).toBe(0);

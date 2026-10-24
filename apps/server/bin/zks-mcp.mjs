@@ -87,6 +87,19 @@ function send(message) {
   process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
 }
 
+function isRequestId(id) {
+  return typeof id === "string" || typeof id === "number";
+}
+
+function kindOf(message) {
+  if (message === null || typeof message !== "object" || Array.isArray(message)) return "invalid";
+  if (typeof message.method === "string") {
+    if (message.id === undefined) return "notification";
+    return isRequestId(message.id) ? "request" : "invalid";
+  }
+  return "result" in message || "error" in message ? "response" : "invalid";
+}
+
 async function answer(endpoint, line) {
   let message;
   try {
@@ -94,8 +107,10 @@ async function answer(endpoint, line) {
   } catch {
     return send({ id: null, error: { code: -32700, message: "Parse error" } });
   }
-  // Notifications and the client's own responses carry no id to answer.
-  if (message?.id === undefined || typeof message.method !== "string") return;
+  const kind = kindOf(message);
+  // Notifications have no id and the client's own responses no method; neither is answered.
+  if (kind === "notification" || kind === "response") return;
+  if (kind === "invalid") return send({ id: isRequestId(message?.id) ? message.id : null, error: { code: -32600, message: "Invalid Request" } });
   try {
     send({ id: message.id, result: await handle(endpoint, message.method, message.params) });
   } catch (error) {

@@ -41,6 +41,10 @@ class QcProvenanceTests(unittest.TestCase):
         cls.still_source = cls.folder / "media" / "still.mp4"
         shutil.copyfile(cls.frozen, cls.still_source)
 
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.folder, ignore_errors=True)
+
     def setUp(self):
         self.work = Path(tempfile.mkdtemp(prefix="work-", dir=self.folder))
         for sub, body in (("edl", fixtures.EDL), ("cuts", {"source": "media/source.mkv", "facecam": []}), ("cues", [fixtures.CAPTION])):

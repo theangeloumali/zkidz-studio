@@ -4,7 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { QcCheck } from "@zks/shared";
 import { z } from "zod";
-import { findLatestMaster, renderedVideoId } from "./master-files.ts";
+import { findLatestMaster, QcMasterRecordSchema, renderedVideoId } from "./master-files.ts";
 
 // qc_master's gates, in the engine's order.
 const GATE_LABELS: Readonly<Record<string, string>> = {
@@ -21,11 +21,9 @@ const PASS_DETAIL = "pass";
 const STALE_DETAIL = "The master changed after this check ran";
 
 const QcReportSchema = z.object({
-  fingerprint: z.object({ name: z.string(), bytes: z.number() }),
+  master: QcMasterRecordSchema,
   checks: z.array(z.object({ name: z.string(), ok: z.boolean(), detail: z.string() })),
 });
-// mtimeNs is past 2^53, so JSON.parse would round it; the digits are read from the text.
-const MTIME_NS_PATTERN = /"mtimeNs":\s*(\d+)/;
 
 function pendingChecks(detail: string | null, idPrefix: string, labelPrefix: string): QcCheck[] {
   return Object.entries(GATE_LABELS).map(([name, label]) => ({ id: `${idPrefix}${name}`, label: `${labelPrefix}${label}`, status: "pending", detail }));
@@ -40,13 +38,11 @@ async function readCurrentReport(projectRoot: string, videoId: string): Promise<
   } catch {
     return { stale: false };
   }
-  const mtimeNs = MTIME_NS_PATTERN.exec(reportText)?.[1];
   const master = await findLatestMaster(projectRoot, videoId);
-  if (!parsed.success || mtimeNs === undefined || master === undefined) return { stale: false };
+  if (!parsed.success || master === undefined) return { stale: false };
   const masterStats = await stat(join(projectRoot, master.relPath), { bigint: true });
-  const { fingerprint } = parsed.data;
-  const isCurrent =
-    fingerprint.name === master.relPath.split("/").at(-1) && BigInt(fingerprint.bytes) === masterStats.size && BigInt(mtimeNs) === masterStats.mtimeNs;
+  const judged = parsed.data.master;
+  const isCurrent = `work/${judged.relPath}` === master.relPath && BigInt(judged.size) === masterStats.size && judged.mtimeNs === String(masterStats.mtimeNs);
   return isCurrent ? { report: parsed.data } : { stale: true };
 }
 

@@ -24,6 +24,10 @@ test("a dropped clip is cut, approved, rendered, QC'd and delivered with matchin
   const qcReport = await readQcReport(studio, projectId);
   expect(qcReport.checks.filter((check) => !check.ok)).toEqual([]);
   expect(qcReport.ok).toBe(true);
+  // The panel must read the engine's report, not just the file existing: every gate shows passed, none still waiting.
+  const checkRows = page.getByRole("region", { name: "Checks" }).getByRole("listitem");
+  await expect(checkRows.filter({ hasText: "Moving footage" })).toContainText("passed");
+  await expect(checkRows.filter({ hasText: "waiting" })).toHaveCount(0);
 
   const deliveredDir = await deliverablesDir(studio, projectId);
   const deliveredFiles = await deliveredFileNames(studio, projectId);

@@ -19,6 +19,7 @@ test("a master whose footage froze fails the motion gate, so the approved export
   await page.goto(`/p/${projectId}/render`);
   const deliverables = page.getByRole("region", { name: "Deliverables" });
   await expect(deliverables.getByText("No files yet.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Checks" }).getByRole("listitem").filter({ hasText: "Moving footage" })).toContainText("failed");
   await expect(deliverables.getByRole("listitem")).toHaveCount(0);
   expect(await deliveredFileNames(studio, projectId)).toEqual([]);
 });

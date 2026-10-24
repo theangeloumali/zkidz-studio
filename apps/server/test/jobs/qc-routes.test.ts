@@ -26,13 +26,12 @@ async function projectWithMaster() {
   return { project, workDir, masterPath };
 }
 
-/** Written as the engine writes it: mtimeNs is an integer past 2^53, so it must survive JSON parsing exactly. */
+/** As qc_master writes it (qc/__init__.py master_record): the judged master's work-relative path, and mtimeNs as a string. */
 async function writeReport(workDir: string, videoId: string, masterPath: string, failing: string | null) {
   const { size, mtimeNs } = await stat(masterPath, { bigint: true });
   const checks = GATES.map((name) => ({ name, ok: name !== failing, detail: name === failing ? "frozen 2.0–4.5 s" : "pass" }));
-  const fingerprint = `{"name": "${videoId}-4k.mp4", "bytes": ${size}, "mtimeNs": ${mtimeNs}}`;
-  const report = `{"master": "${videoId}-4k.mp4", "fingerprint": ${fingerprint}, "ok": ${failing === null}, "checks": ${JSON.stringify(checks)}}`;
-  await writeFile(join(workDir, "qc", `${videoId}.json`), report);
+  const master = { relPath: `out/${videoId}-4k.mp4`, size: Number(size), mtimeNs: String(mtimeNs), sha256: "0".repeat(64) };
+  await writeFile(join(workDir, "qc", `${videoId}.json`), JSON.stringify({ master, ok: failing === null, checks }, null, 2));
 }
 
 async function readChecks(projectId: string) {

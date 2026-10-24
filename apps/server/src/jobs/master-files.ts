@@ -2,7 +2,12 @@
 // Mirrors the engine's render.master_path and qc.latest_master, so the server names the files the engine really writes.
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { RENDER_PROFILES, STUDIO_TOOLS } from "@zks/shared";
+import { RENDER_PROFILES, Sha256Schema, STUDIO_TOOLS } from "@zks/shared";
+import { z } from "zod";
+
+// qc_master's record of the exact master it judged (qc/__init__.py master_record): relPath is under work/, and mtimeNs is a
+// string because nanoseconds pass 2^53.
+export const QcMasterRecordSchema = z.object({ relPath: z.string(), size: z.int().nonnegative(), mtimeNs: z.string().regex(/^\d+$/), sha256: Sha256Schema });
 
 type RenderQuality = "draft" | "final" | "4k";
 type RenderProfile = (typeof RENDER_PROFILES)[number];

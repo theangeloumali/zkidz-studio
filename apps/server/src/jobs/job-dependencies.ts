@@ -8,7 +8,7 @@ import type { JobRow } from "../dto.ts";
 
 const dependency = alias(jobs, "dependency");
 const DEAD_END_STATUSES = ["failed", "cancelled"] as const;
-export const DEPENDENCY_FAILED_ERROR = "Cancelled: a job it depends on failed or was cancelled";
+const DEPENDENCY_FAILED_ERROR = "Cancelled: a job it depends on failed or was cancelled";
 
 function dependenciesWhere(database: StudioDatabase, condition: SQL) {
   return database

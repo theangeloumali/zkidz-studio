@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { STUDIO_TOOLS } from "@zks/shared";
 import { findOnPath, loadToolsLock, platformKey } from "@zks/shared/node";
 import { afterAll, describe, expect, it } from "vitest";
-import { checkCapabilities, ENGINE_DIR } from "../src/capabilities.ts";
+import { writeCapabilities, ENGINE_DIR } from "../src/capabilities.ts";
 import type { ZksContext } from "../src/context.ts";
 import type { CommandRunner } from "../src/exec.ts";
 
@@ -36,12 +36,12 @@ afterAll(() => {
   for (const home of tempHomes) rmSync(home, { recursive: true, force: true });
 });
 
-describe("checkCapabilities", () => {
+describe("writeCapabilities", () => {
   it("runs zks-engine capabilities with the pinned ffmpeg and ZKS_HOME, and reports the profile", () => {
     const context = scratchContext();
     const calls: { command: string; args: string[]; env?: Record<string, string> }[] = [];
     const report = { capabilities: CAPABILITIES, path: path.join(context.home, "capabilities.json"), attempts: ATTEMPTS };
-    const check = checkCapabilities(context, "/opt/ffmpeg", engineRunner(report, 0, calls), "/bin/uv");
+    const check = writeCapabilities(context, "/opt/ffmpeg", engineRunner(report, 0, calls), "/bin/uv");
     expect(calls[0]?.command).toBe("/bin/uv");
     expect(calls[0]?.args).toEqual(["run", "--project", ENGINE_DIR, "zks-engine", "capabilities", "--json"]);
     expect(calls[0]?.env).toMatchObject({ ZKS_HOME: context.home, ZKS_FFMPEG: "/opt/ffmpeg" });
@@ -52,26 +52,26 @@ describe("checkCapabilities", () => {
   it("warns when only the CPU passed", () => {
     const capabilities = { ...CAPABILITIES, profile: "cpu" };
     const attempts = [{ backend: "nvidia", encoder: "hevc_nvenc", ok: false }, ATTEMPTS[1]];
-    const check = checkCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner({ capabilities, path: "x", attempts }), "/bin/uv");
+    const check = writeCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner({ capabilities, path: "x", attempts }), "/bin/uv");
     expect(check).toMatchObject({ status: "warn", required: false, detail: "cpu (libx265), capabilities.json written" });
   });
 
   it("fails, required, when no backend passed a test encode", () => {
     const attempts = ATTEMPTS.map((attempt) => ({ ...attempt, ok: false }));
-    const check = checkCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner({ capabilities: CAPABILITIES, path: "x", attempts }), "/bin/uv");
+    const check = writeCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner({ capabilities: CAPABILITIES, path: "x", attempts }), "/bin/uv");
     expect(check).toMatchObject({ status: "fail", required: true });
   });
 
   it("fails with the engine's own message when the engine errors", () => {
     const report = { error: { code: "engine_error", message: "OSError: boom" } };
-    const check = checkCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner(report, 1), "/bin/uv");
+    const check = writeCapabilities(scratchContext(), "/opt/ffmpeg", engineRunner(report, 1), "/bin/uv");
     expect(check).toMatchObject({ id: "gpu", status: "fail", required: true, detail: "zks-engine capabilities: OSError: boom" });
   });
 
   it("never creates a ZKS_HOME that setup has not made", () => {
     const context = { ...scratchContext(), home: path.join(tmpdir(), `zks-absent-${process.pid}`) };
     const calls: { command: string; args: string[] }[] = [];
-    const check = checkCapabilities(context, "/opt/ffmpeg", engineRunner({}, 0, calls), "/bin/uv");
+    const check = writeCapabilities(context, "/opt/ffmpeg", engineRunner({}, 0, calls), "/bin/uv");
     expect(calls).toEqual([]);
     expect(check).toMatchObject({ status: "fail", fix: "run: pnpm zks setup" });
     expect(existsSync(context.home)).toBe(false);

@@ -37,7 +37,7 @@ function failed(detail: string, fix?: string): CheckResult {
 }
 
 /** The engine's own probe (plan §7.2) writes ZKS_HOME/capabilities.json; doctor reports the profile it chose. */
-export function checkCapabilities(
+export function writeCapabilities(
   context: ZksContext,
   ffmpegPath: string,
   run: CommandRunner = runCommand,

@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { redactReport, redactText, type PathRoots } from "@zks/shared";
-import { checkCapabilities } from "./capabilities.ts";
+import { writeCapabilities } from "./capabilities.ts";
 import type { ZksContext } from "./context.ts";
 import {
   checkBootstrapTool,
@@ -32,7 +32,7 @@ export async function runDoctor(context: ZksContext): Promise<CheckResult[]> {
     checkBootstrapTool(context, "uv"),
     checkPython(context),
     ffmpegCheck,
-    typeof ffmpegPath === "string" ? checkCapabilities(context, ffmpegPath) : undefined,
+    typeof ffmpegPath === "string" ? writeCapabilities(context, ffmpegPath) : undefined,
     checkWhisper(context),
     checkChromeRender(context),
     checkModels(context),

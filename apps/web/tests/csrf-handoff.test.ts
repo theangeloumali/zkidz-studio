@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { API_ROUTES, CSRF_HEADER } from "@zks/shared";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeUploadRequest, PROJECT_ID, makeAsset, makeProject } from "./fakes.ts";
 
 const LAUNCH_TOKEN = "per-launch-token";
@@ -33,6 +33,11 @@ async function loadApi() {
 describe("CSRF token handoff", () => {
   beforeEach(() => {
     FakeUploadRequest.instances.length = 0;
+  });
+  // Workers share modules across files (isolate: false): drop this file's client, whose cache holds LAUNCH_TOKEN.
+  afterAll(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
   });
 
   it("fetches the launch token before the first write when no response has carried it yet", async () => {

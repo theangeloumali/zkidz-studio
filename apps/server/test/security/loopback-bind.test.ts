@@ -9,7 +9,8 @@ import { createSecurity, NonLoopbackBindError } from "../../src/security/index.t
 import { CONTAINER_MARKER_PATHS, hasContainerMarker } from "../../src/security/loopback-bind.ts";
 
 const SERVER_MAIN = fileURLToPath(new URL("../../src/main.ts", import.meta.url));
-const SPAWN_TIMEOUT_MS = 60_000;
+// A cold start of main.ts takes ~30 s on a DrvFs checkout and passed 60 s with parallel test runs on the machine.
+const SPAWN_TIMEOUT_MS = 180_000;
 
 function securityFor(container: boolean, containerMarkerPresent = () => true) {
   return createSecurity({ appPort: 4317, previewPort: 4318, container, containerMarkerPresent });

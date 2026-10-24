@@ -5,7 +5,7 @@ import type { AgentCredential } from "../auth/connection-store.ts";
 import { createConfineReadsHook } from "./confine-reads.ts";
 import type { DecisionBroker } from "./decisions.ts";
 import { BASE_TOOLS, DISALLOWED_TOOLS } from "./init-assertion.ts";
-import { createToolDecider } from "./policy.ts";
+import { createToolDecider, type ToolDeciderOptions } from "./policy.ts";
 
 // Tried in order when the primary model is overloaded or unavailable (plan §6.6); the SDK retries the primary each turn.
 const FALLBACK_MODELS = "sonnet,haiku";
@@ -26,6 +26,7 @@ export interface QueryOptionsInput {
   readonly broker: DecisionBroker;
   readonly limits: SessionLimits;
   readonly studioMcpServer: McpServerConfig | null;
+  readonly describeGate: ToolDeciderOptions["describeGate"];
   /** The user's rules block; "" when they have none, undefined to leave the SDK default prompt. */
   readonly systemPromptAppend?: string;
 }
@@ -47,7 +48,7 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     ...(input.studioMcpServer === null ? {} : { mcpServers: { studio: input.studioMcpServer } }),
     strictMcpConfig: true,
     permissionMode: "default",
-    canUseTool: createToolDecider({ projectId, broker: input.broker }),
+    canUseTool: createToolDecider({ projectId, broker: input.broker, describeGate: input.describeGate }),
     hooks: { PreToolUse: [{ matcher: "Read", hooks: [createConfineReadsHook({ projectDir, pluginDir })] }] },
     includePartialMessages: true,
     maxTurns: limits.maxTurns,

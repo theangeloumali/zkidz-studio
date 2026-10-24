@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import ffio
 from .specs.cuts import cut_spec_to_engine
+from .specs.gates import GateFailed
 from .specs.paths import inside_project, video_id
 from .specs.schema import SpecError
 
@@ -46,11 +47,49 @@ WORK = work_dir()
 MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
 
 
+def source_record(video):
+    """Where the edit stage notes the source file a studio cut spec names only by asset id."""
+    return WORK / "edl" / f"{video_id(video)}.source.json"
+
+
+DERIVED = "derived"  # the engine's own writes (the reel cut, caption cues, placeholder sheets), never a spec folder
+
+
+def derived_file(work, rel):
+    return Path(work) / DERIVED / rel
+
+
+def spec_file(work, rel):
+    """A spec as the job's start snapshot holds it (ZKS_SPECS, plan §7.6), else work/; a derived file backs either. In a job a
+    spec the snapshot lacks stays missing: work/ is where the agent keeps editing after the render started."""
+    snapshot = os.environ.get("ZKS_SPECS")
+    primary = Path(snapshot or work) / rel
+    derived = derived_file(work, rel)
+    return derived if not primary.is_file() and derived.is_file() else primary
+
+
+def snapshot_input(path):
+    """A command-line spec file (a cover sheet, a post caption): in a job, the snapshot's copy of a file under work/."""
+    resolved = command_input(path)
+    snapshot = os.environ.get("ZKS_SPECS")
+    if not snapshot or Path(snapshot).resolve() in resolved.parents:
+        return resolved
+    if WORK.resolve() not in resolved.parents:
+        raise GateFailed(f"{path} is not a spec file of this job's snapshot")
+    copy = Path(snapshot) / resolved.relative_to(WORK.resolve())
+    if not copy.is_file():
+        raise GateFailed(f"{copy.relative_to(snapshot).as_posix()} is missing from the job's spec snapshot")
+    return copy
+
+
 def load_cuts(video):
-    """cuts/vN.json in the engine's dict shape; a studio CutSpec (schemaVersion) is validated and converted first."""
-    spec = json.loads((WORK / "cuts" / f"{video_id(video)}.json").read_text(encoding="utf-8"))
+    """cuts/vN.json in the engine's dict shape; a studio CutSpec (schemaVersion) is validated and converted first, and takes
+    the source file the edit stage recorded for it, when there is one."""
+    spec = json.loads(spec_file(WORK, f"cuts/{video_id(video)}.json").read_text(encoding="utf-8"))
     if "schemaVersion" in spec:
         spec = studio_cuts_to_engine(spec)
+        if source_record(video).exists():
+            spec["source"] = json.loads(source_record(video).read_text(encoding="utf-8"))["source"]
     if "base" in spec:
         video_id(spec["base"])  # a reel reads its base's EDL, audio and mask by this name
     return spec

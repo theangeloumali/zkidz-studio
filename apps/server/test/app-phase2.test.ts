@@ -10,9 +10,12 @@ import { writeConnection } from "../src/auth/connection-store.ts";
 import { createSecretStore } from "../src/auth/secret-store.ts";
 import { projectDir } from "../src/config.ts";
 import { createSecurity } from "../src/security/index.ts";
+import { awaitCutReview, holdCutReviewCard, resolveCutReview } from "../src/tools/cut-review.ts";
 import type { EngineRequest } from "../src/tools/engine-jobs.ts";
 import { memoryKeyring } from "./auth/memory-keyring.ts";
-import { connectionFrom, createTestServer, insertProject, TEST_HOST, type TestServer, type TestServerBase } from "./support/test-server.ts";
+import { readJob } from "./jobs/job-test-kit.ts";
+import { openSseReader } from "./support/sse-reader.ts";
+import { connectionFrom, createTestServer, getRequest, insertProject, TEST_HOST, type TestServer, type TestServerBase } from "./support/test-server.ts";
 import { writeStubClaude } from "./terminal/stub-claude.ts";
 
 const APP_PORT = 4317;
@@ -108,11 +111,36 @@ describe("createApp with the Phase 2 services", () => {
     expect((await browserPost(projectPath(API_ROUTES.openTerminal.path, project.id))).status).toBe(409);
   });
 
+  it("sends a new event stream the cut review still waiting on the user", async () => {
+    const project = await insertProject(server);
+    const requestId = randomUUID();
+    const candidates = [{ id: "c1", kind: "filler" as const, at: 1, end: 1.4, context: "um", reason: "filler word" }];
+    const review = awaitCutReview({ projectId: project.id, requestId, candidates });
+    const card = await server.eventBus.publish({ type: "cuts.proposed", projectId: project.id, requestId, candidates });
+    holdCutReviewCard(card);
+
+    const sse = await openSseReader(await getRequest(server, `/api/events?project=${project.id}`));
+    const [frame] = await sse.nextFrames(1);
+    await sse.close();
+    resolveCutReview(project.id, requestId, { approved: [], rejected: ["c1"] });
+    await review;
+    expect(frame).toEqual({ id: undefined, data: card });
+  });
+
   it("runs engine jobs through the registered handlers", async () => {
     const project = await insertProject(server);
     await server.jobRunner.enqueue({ projectId: project.id, kind: "transcribe", videoId: "v1", lane: "cpu", params: { language: "en", model: "base" } });
     await server.jobRunner.idle();
     expect(engineRequests.map((request) => request.command)).toEqual(["transcribe"]);
+  });
+
+  it("runs export_deliverable through the registered export handler", async () => {
+    const project = await insertProject(server);
+    const job = await server.jobRunner.enqueue({ projectId: project.id, kind: "export_deliverable", videoId: "v1", lane: "cpu", params: { kinds: ["full"] } });
+    await server.jobRunner.idle();
+    // Export asks the engine's QC gate first; this stub engine refuses, so nothing is copied.
+    expect(engineRequests.at(-1)).toMatchObject({ command: "qc-status", args: ["--video", "v1"] });
+    expect((await readJob(server, job.id)).error).toMatch(/^v1 has not passed QC: engine not installed in tests/);
   });
 
   it.skipIf(isWindows)("opens a terminal in terminal mode, and shutdown kills it", async () => {

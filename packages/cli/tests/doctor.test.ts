@@ -2,47 +2,15 @@
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkDisk } from "../src/checks.ts";
+import { checkDisk, listsEncoder } from "../src/checks.ts";
 import { doctorExitCode, formatDoctorJson, formatFatalError, type CheckResult } from "../src/doctor.ts";
-import { probeGpuBackend } from "../src/gpu.ts";
-import type { CommandRunner } from "../src/exec.ts";
 
-const ENCODER_LISTING = [
-  " V....D hevc_nvenc  NVIDIA NVENC hevc encoder",
-  " V....D hevc_vaapi  H.265/HEVC (VAAPI)",
-  " V....D libx265  libx265 H.265 / HEVC",
-].join("\n");
-
-function fakeRunner(passingEncoders: string[], calls: string[][] = []): CommandRunner {
-  return (_command, args) => {
-    calls.push(args);
-    const encoder = args[args.indexOf("-c:v") + 1] ?? "";
-    return { code: passingEncoders.includes(encoder) ? 0 : 1, stdout: "", stderr: "" };
-  };
-}
-
-describe("probeGpuBackend", () => {
-  it("trusts a test encode, not the encoder list", () => {
-    const probe = probeGpuBackend("ffmpeg", ENCODER_LISTING, fakeRunner(["libx265"]));
-    expect(probe.backend).toBe("cpu");
-    expect(probe.attempts).toContainEqual({ backend: "nvidia", encoder: "hevc_nvenc", ok: false });
-  });
-
-  it("picks the first passing backend in probe order", () => {
-    expect(probeGpuBackend("ffmpeg", ENCODER_LISTING, fakeRunner(["hevc_nvenc", "hevc_vaapi", "libx265"])).backend).toBe("nvidia");
-  });
-
-  it("uploads frames to the render node for VAAPI", () => {
-    const calls: string[][] = [];
-    probeGpuBackend("ffmpeg", ENCODER_LISTING, fakeRunner(["libx265"], calls));
-    const vaapiCall = calls.find((args) => args.includes("hevc_vaapi"));
-    expect(vaapiCall).toEqual(expect.arrayContaining(["-vaapi_device", "/dev/dri/renderD128", "format=nv12,hwupload"]));
-  });
-
-  it("skips encoders the build does not list", () => {
-    const calls: string[][] = [];
-    probeGpuBackend("ffmpeg", ENCODER_LISTING, fakeRunner([], calls));
-    expect(calls.some((args) => args.includes("hevc_qsv"))).toBe(false);
+describe("listsEncoder", () => {
+  it("matches a whole encoder name in ffmpeg -encoders, not a prefix", () => {
+    const listing = " V....D hevc_nvenc  NVIDIA NVENC H.265 encoder\n V....D libx265  libx265 H.265 / HEVC";
+    expect(listsEncoder(listing, "hevc_nvenc")).toBe(true);
+    expect(listsEncoder(listing, "hevc")).toBe(false);
+    expect(listsEncoder(listing, "hevc_qsv")).toBe(false);
   });
 });
 

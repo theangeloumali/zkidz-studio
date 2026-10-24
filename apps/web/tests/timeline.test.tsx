@@ -11,6 +11,8 @@ import { buildTimelineTracks } from "../src/editor/timeline-items.ts";
 import { renderWithProviders } from "./render.tsx";
 
 const NODE_CAP = 600;
+// The test bounds DOM nodes, not speed; re-rendering 2,000 cues overran waitFor's 1 s default at load 25+ in ci:local.
+const BULK_RERENDER_TIMEOUT_MS = 5_000;
 const BULK_DURATION_S = 600;
 /** The e2e bulk fixture (harness/serve.ts): 2,000 cues 0.3 s apart, each 80% of its slot. */
 const bulkCues = Array.from({ length: 2000 }, (_, index): Cue => {
@@ -61,7 +63,9 @@ describe("Timeline windowing", () => {
 
     scroller.scrollLeft = 12_000;
     fireEvent.scroll(scroller);
-    await waitFor(() => expect(within(screen.getByTestId("lane-cues")).getByRole("listitem", { name: /Cue 1000$/ })).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByTestId("lane-cues")).getByRole("listitem", { name: /Cue 1000$/ })).toBeInTheDocument(), {
+      timeout: BULK_RERENDER_TIMEOUT_MS,
+    });
     expect(nodeCount()).toBeLessThanOrEqual(NODE_CAP);
 
     await userEvent.click(zoomButton("Fit"));

@@ -32,6 +32,9 @@ export const jobWait = defineTool({
 
 export const jobCancel = defineTool({ input: JobInputSchema, output: z.strictObject({ ok: z.literal(true) }), approval: "auto", isReadOnly: false });
 
+/** Requeues an interrupted job with the params and spec snapshot it started with; a gated job's resume raises that tool's card again. */
+export const jobResume = defineTool({ input: JobInputSchema, output: z.strictObject({ ok: z.literal(true) }), approval: "auto", isReadOnly: false });
+
 export const approve = defineTool({
   input: z.strictObject({ tool: z.string().min(1), input: z.unknown() }),
   output: z.discriminatedUnion("behavior", [

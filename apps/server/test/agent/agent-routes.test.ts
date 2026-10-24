@@ -19,7 +19,7 @@ import type { NewStudioEvent } from "../../src/events/event-bus.ts";
 import { errorBody, toHttpError } from "../../src/http/http-error.ts";
 import { createLogger } from "../../src/logging/logger.ts";
 import { memoryKeyring } from "../auth/memory-keyring.ts";
-import { initMessage, REQUIRED_SKILLS, resultMessage, SDK_SESSION_ID } from "./sdk-fixtures.ts";
+import { initMessage, REQUIRED_SKILLS, resultMessage, SDK_SESSION_ID, stubGateFacts } from "./sdk-fixtures.ts";
 import { ScriptedQuery, settle } from "./scripted-query.ts";
 
 const API_KEY = "test-key-0000abcd";
@@ -51,6 +51,7 @@ describe("agent routes", () => {
       broker: new DecisionBroker({ publish }),
       limits: { maxTurns: 8, maxBudgetUsd: 2 },
       studioMcpServer: () => ({ type: "stdio", command: "studio-mcp" }),
+      describeGate: (_project, tool) => stubGateFacts(tool),
       cancelProjectJobs: (id) => {
         cancelledJobs.push(id);
         return Promise.resolve();

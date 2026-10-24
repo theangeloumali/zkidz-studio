@@ -12,6 +12,7 @@ import {
   findRejectedCandidates,
   reachesOutsideCandidate,
   recordRejectedCandidates,
+  holdCutReviewCard,
 } from "../cut-review.ts";
 import { findProjectAsset, loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
@@ -32,7 +33,7 @@ const proposeCuts = implementTool("propose_cuts", {
     if (candidates.length === 0) return { output: { candidates, approved: [], rejected: [] } };
     await assertRoomForRejections(context, candidates);
     const review = awaitCutReview({ projectId: context.projectId, requestId, candidates }, signal);
-    await context.events.publish({ type: "cuts.proposed", projectId: context.projectId, requestId, candidates });
+    holdCutReviewCard(await context.events.publish({ type: "cuts.proposed", projectId: context.projectId, requestId, candidates }));
     const decision = await review;
     const rejectedIds = new Set(decision.rejected);
     await recordRejectedCandidates(

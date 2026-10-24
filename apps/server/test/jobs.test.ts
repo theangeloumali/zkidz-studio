@@ -107,34 +107,31 @@ describe("JobRunner", () => {
     expect(timeline.indexOf("start gpu-2")).toBeGreaterThan(timeline.indexOf("end gpu-1"));
   });
 
-  it("cancels one project's queued jobs on stop, leaving its running job and other projects alone", async () => {
+  it("on stop cancels a project's queued jobs and interrupts its running one, leaving other projects alone", async () => {
     const stopped = await insertProject(server);
     const other = await insertProject(server);
     const received = recordEvents(stopped.id);
     const runner = newRunner();
     const ran: string[] = [];
-    let releaseRunning = () => undefined as void;
-    const runningBlocked = new Promise<void>((resolve) => {
-      releaseRunning = resolve;
-    });
-    runner.registerHandler("slow", async (job) => {
+    runner.registerHandler("slow", (job, _reportProgress, signal) => {
       ran.push(String(job.params["name"]));
-      if (job.params["name"] === "running") await runningBlocked;
+      if (job.params["name"] !== "running") return Promise.resolve();
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("engine killed")), { once: true }));
     });
     const running = await runner.enqueue({ projectId: stopped.id, kind: "slow", videoId: "v1", lane: "gpu", params: { name: "running" } });
     await expect.poll(() => ran.includes("running")).toBe(true);
     const queued = await runner.enqueue({ projectId: stopped.id, kind: "slow", videoId: "v1", lane: "gpu", params: { name: "queued" } });
     await runner.enqueue({ projectId: other.id, kind: "slow", videoId: "v1", lane: "gpu", params: { name: "other" } });
 
-    expect(await runner.cancelQueued(stopped.id)).toBe(1);
-    releaseRunning();
+    await runner.cancelProject(stopped.id);
     await runner.idle();
 
     expect(ran).toEqual(["running", "other"]);
     const statusOf = async (id: string) => (await server.database.db.select().from(jobs).where(eq(jobs.id, id)))[0]?.status;
     expect(await statusOf(queued.id)).toBe("cancelled");
-    expect(await statusOf(running.id)).toBe("succeeded");
+    expect(await statusOf(running.id)).toBe("interrupted");
     expect(received).toContainEqual(expect.objectContaining({ type: "job.finished", jobId: queued.id, status: "cancelled" }));
+    expect(received).toContainEqual(expect.objectContaining({ type: "job.finished", jobId: running.id, status: "interrupted" }));
   });
 
   it("marks jobs left running by a dead server as interrupted", async () => {

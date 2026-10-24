@@ -35,7 +35,13 @@ class Job:
 
     def save(self):
         with self.lock:
-            self.record["updated"] = self.written = time.time()
+            now = time.time()
+            eta = progress_eta.eta_seconds(self.record, read_history(), now)
+            if eta is None:
+                self.record.pop("etaS", None)
+            else:
+                self.record["etaS"] = eta
+            self.record["updated"] = self.written = now
             write_record(self.record)
             refresh()
 
@@ -186,13 +192,29 @@ def snapshot(now=None):
         else:
             edited.append(mark)
     edited.sort(key=lambda mark: mark["started"])
-    return {"now": now, "active": active, "finished": finished, "planned": planned, "edited": edited, "history": read_history() if active else []}
+    running = {name: record for name, record in records.items() if record["state"] == "running"}
+    return {"now": now, "active": active, "finished": finished, "planned": planned, "edited": edited, "history": read_history() if active else [],
+            "running": running}
+
+
+def leave_etas(running, history, now):
+    """Each running record's etaS where hf/progress.js picks it up; a stage that ended takes its file with it."""
+    for name, record in running.items():
+        eta = progress_eta.eta_seconds(record, history, now)
+        if eta is None:
+            progress_store.eta_path(name).unlink(missing_ok=True)
+        else:
+            write_atomic(progress_store.eta_path(name), json.dumps({"stage": record["stage"], "started": record["started"], "etaS": eta}))
+    for path in (progress_store.PROGRESS / "eta").glob("*.json"):
+        if path.name not in running:
+            path.unlink(missing_ok=True)
 
 
 def refresh(now=None):
     """Rebuilds statusline.txt (expires|updated|active|text lines) from snapshot()."""
     snap = snapshot(now)
     now, active = snap["now"], snap["active"]
+    leave_etas(snap["running"], snap["history"], now)
     if active:
         lines = [(now + LIVE, progress_eta.line(active, snap["finished"], snap["planned"], snap["history"], now, snap["edited"]))]
     else:

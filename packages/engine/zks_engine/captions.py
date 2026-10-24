@@ -1,14 +1,14 @@
 # Created by The Angelo Umali.
 # English caption track: kept speech split into short phrases timed to the audio, then the translations as cues.
 # Usage (from the work dir): python -m zks_engine.captions v6 --phrases [--reel reels/v6.json]  → captions/v6.phrases.json
-#                            python -m zks_engine.captions v6                                  → cues/v6-cc.json from captions/v6.json
+#                            python -m zks_engine.captions v6                                  → derived/cues/v6-cc.json from captions/v6.json
 # captions/vN.json = [{"ids": [3, 4], "en": "..."}]; timing always comes from the phrase file, never the translation.
 import json
 import sys
 
 import numpy as np
 
-from .pipeline import ENERGY_WINDOW, FPS, WORK, load_cuts, load_edl, load_energy
+from .pipeline import ENERGY_WINDOW, FPS, WORK, derived_file, load_cuts, load_edl, load_energy, spec_file
 from .specs import gates
 
 PAUSE_BREAK = 0.35
@@ -159,7 +159,7 @@ def check_entries(entries, phrases):
 
 def emit_cues(video):
     phrases = json.loads((WORK / "captions" / f"{video}.phrases.json").read_text(encoding="utf-8"))
-    entries = json.loads((WORK / "captions" / f"{video}.json").read_text(encoding="utf-8"))
+    entries = json.loads(spec_file(WORK, f"captions/{video}.json").read_text(encoding="utf-8"))
     try:
         gates.check_captions(entries, phrases)
     except gates.GateFailed as failure:
@@ -168,7 +168,8 @@ def emit_cues(video):
         sys.exit(f"{video} captions:\n  " + "\n  ".join(problems))
     cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip()}
             for entry in sorted(entries, key=lambda entry: entry["ids"][0])]
-    target = WORK / "cues" / f"{video}-cc.json"
+    target = derived_file(WORK, f"cues/{video}-cc.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(cues, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"{video}: {len(cues)} captions -> {target}")
 

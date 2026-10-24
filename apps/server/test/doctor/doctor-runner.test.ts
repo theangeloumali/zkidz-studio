@@ -2,7 +2,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createCliDoctorRunner } from "../../src/doctor/runner.ts";
 
 let scratchDir = "";
@@ -11,6 +11,9 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await rm(scratchDir, { recursive: true, force: true });
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 /** A stand-in for packages/cli/src/main.ts that echoes what it was given. */
@@ -26,6 +29,25 @@ describe("createCliDoctorRunner", () => {
     const runDoctor = createCliDoctorRunner({ cliEntry, studioHome: "/studio/home" });
 
     expect(await runDoctor()).toEqual({ argv: ["doctor", "--json"], home: "/studio/home" });
+  });
+
+  it("hands the CLI only the allowlisted env, never the server's credentials or tool overrides", async () => {
+    for (const [name, value] of Object.entries({
+      ANTHROPIC_API_KEY: "sk-ant-leak",
+      LC_ANTHROPIC_API_KEY: "sk-ant-leak",
+      DATABASE_URL: "database-url-leak",
+      AWS_SECRET_ACCESS_KEY: "aws-leak",
+      ZKS_FFMPEG: "/elsewhere/ffmpeg",
+      ZKS_HOME: "/elsewhere/home",
+      ZKS_PORT: "4111",
+    }))
+      vi.stubEnv(name, value);
+    const cliEntry = await writeFakeCli("console.log(JSON.stringify(process.env));");
+
+    const childEnv = await createCliDoctorRunner({ cliEntry, studioHome: "/studio/home" })();
+
+    expect(childEnv).toMatchObject({ ZKS_HOME: "/studio/home", ZKS_PORT: "4111", PATH: process.env.PATH });
+    expect(Object.keys(childEnv ?? {})).not.toEqual(expect.arrayContaining([expect.stringMatching(/ANTHROPIC|DATABASE_URL|AWS_|ZKS_FFMPEG/)]));
   });
 
   it("fails when the CLI prints no JSON", async () => {

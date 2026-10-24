@@ -3,8 +3,9 @@
 import { join } from "node:path";
 import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
+import type { StudioEvent } from "@zks/shared";
 import type { Hono } from "hono";
-import { DecisionBroker } from "./agent/decisions.ts";
+import { DecisionBroker, sortById } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
 import { createPrintSessions, type PrintSessions } from "./agent/print-sessions.ts";
 import type { QueryFunction } from "./agent/query-function.ts";
@@ -16,7 +17,9 @@ import type { FetchFunction } from "./auth/key-check.ts";
 import { registerConnectRoutes } from "./auth/routes.ts";
 import type { SecretStore } from "./auth/secret-store.ts";
 import type { EventBus } from "./events/event-bus.ts";
+import { registerExportHandler } from "./jobs/deliverables.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
+import { snapshotRenderJobSpecs } from "./jobs/spec-snapshot.ts";
 import type { Logger } from "./logging/logger.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
 import { loadSessionSetup } from "./rules/session-setup.ts";
@@ -29,7 +32,9 @@ import { registerTerminalRoutes } from "./terminal/routes.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
-import { createStudioMcpServer, registerEngineJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
+import { pendingCutReviewCards } from "./tools/cut-review.ts";
+import { describeStudioGate } from "./tools/gate-facts.ts";
+import { createStudioMcpServer, registerEngineJobHandlers, registerRenderJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
 const REQUIRED_SKILLS = ["zkidz-studio:edit-director", "zkidz-studio:cut-spec"];
 // No model: both the SDK and the terminal use the account's default.
@@ -63,13 +68,15 @@ export interface AgentServices {
   readonly terminalSessions: TerminalSessions;
   readonly agentRunner: "sdk" | "print";
   readonly registerRoutes: (app: Hono) => void;
+  /** Approval, question and cut-review cards still waiting, sent to every new event stream. */
+  readonly pendingCards: (projectIds: readonly string[]) => StudioEvent[];
   /** Kills every PTY and SDK child so none outlives the server. */
   readonly shutdown: () => void;
 }
 
 export function createAgentServices(deps: AgentServicesDeps): AgentServices {
   const broker = new DecisionBroker({ publish: (event) => deps.eventBus.publish(event) });
-  const cancelProjectJobs = (projectId: string) => deps.jobRunner.cancelQueued(projectId).then(() => undefined);
+  const cancelProjectJobs = (projectId: string) => deps.jobRunner.cancelProject(projectId);
   const toolContextFor = (projectId: string): ToolContext => ({
     projectId,
     studioHome: deps.studioHome,
@@ -95,6 +102,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     limits: SESSION_LIMITS,
     loadSessionSetup: (project) => loadSessionSetup(deps.database, project.id),
     studioMcpServer: printSessions === undefined ? (project) => createStudioMcpServer(toolContextFor(project.id)) : null,
+    describeGate: (project, tool, input) => describeStudioGate(toolContextFor(project.id), tool, input),
     cancelProjectJobs,
   });
   const terminalSessions = createTerminalSessions({
@@ -111,12 +119,16 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     cancelProjectJobs,
     logger: deps.logger,
   });
-  registerEngineJobHandlers(deps.jobRunner, {
+  const engineJobDeps = {
     db: deps.database,
     studioHome: deps.studioHome,
     engine: deps.engine,
-    probeSource: (filePath) => probeMedia(deps.ffprobePath, filePath),
-  });
+    probeSource: (filePath: string) => probeMedia(deps.ffprobePath, filePath),
+  };
+  registerEngineJobHandlers(deps.jobRunner, engineJobDeps);
+  registerRenderJobHandlers(deps.jobRunner, engineJobDeps);
+  snapshotRenderJobSpecs(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome });
+  registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine });
 
   const registerRoutes = (app: Hono) => {
     registerConnectRoutes(app, {
@@ -170,6 +182,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     terminalSessions,
     agentRunner: printSessions === undefined ? "sdk" : "print",
     registerRoutes,
+    pendingCards: (projectIds) => sortById([...broker.pendingCards(projectIds), ...pendingCutReviewCards(projectIds)]),
     shutdown: () => {
       terminalSessions.killAll();
       manager.closeAll();

@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // English caption plate: paper Inter on an ink plate with a goldBright rule on its left edge, in the bottom safe band.
-// Cues come from cues/<video>-cc.json (zks_engine/captions.py), which loads last, so the plate draws over every card.
+// Cues come from derived/cues/<video>-cc.json (zks_engine/captions.py), which loads last, so the plate draws over every card.
 // Crisp on purpose: no boil, no wobble. Moving linework re-encodes every frame, and subtitles must read at a glance.
 // Bottom at 1430: under the face zone (y ~700-1100), inside TikTok's relaxed bottom bound (1436). The both-platform
 // bound (1248) sat the plate on the speaker's chest.

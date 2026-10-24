@@ -2,9 +2,11 @@
 import os from "node:os";
 import { redactText } from "@zks/shared";
 import type { ToolName } from "@zks/shared/node";
+import { writeCapabilities } from "./capabilities.ts";
 import { ensureHomeLayout, type ZksContext } from "./context.ts";
+import { runCommand, type CommandRunner } from "./exec.ts";
 import { fetchModel } from "./models.ts";
-import { installTool } from "./tools.ts";
+import { installTool, toolExecutablePath } from "./tools.ts";
 
 const SETUP_TOOLS: readonly ToolName[] = ["ffmpeg", "whisper-cpp", "chrome-headless-shell"];
 
@@ -23,6 +25,16 @@ export async function runSetup(context: ZksContext, log: (line: string) => void 
     if (downloaded) downloadCount += 1;
     log(`${`model ${name}`.padEnd(22)} ${downloaded ? "installed" : "present"} (${model.file})`);
   }
+  recordCapabilities(context, log);
   log(`setup done: ${downloadCount} download(s)`);
   return downloadCount;
+}
+
+/** Last, after the tools and the engine venv (setup.sh syncs it first): get_capabilities works from the first start. */
+export function recordCapabilities(context: ZksContext, log: (line: string) => void, run: CommandRunner = runCommand, uv?: string): void {
+  const ffmpegPath = toolExecutablePath(context, "ffmpeg");
+  if (!ffmpegPath) throw new Error("ffmpeg has no pinned build for this platform");
+  const check = writeCapabilities(context, ffmpegPath, run, uv);
+  if (check.status === "fail") throw new Error(`${check.detail}${check.fix ? ` (${check.fix})` : ""}`);
+  log(`${"capabilities".padEnd(22)} ${check.detail}`);
 }

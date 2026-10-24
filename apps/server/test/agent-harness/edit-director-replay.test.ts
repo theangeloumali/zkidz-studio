@@ -16,7 +16,7 @@ import { writeConnection } from "../../src/auth/connection-store.ts";
 import { createSecretStore } from "../../src/auth/secret-store.ts";
 import type { NewStudioEvent } from "../../src/events/event-bus.ts";
 import { createLogger } from "../../src/logging/logger.ts";
-import { REQUIRED_SKILLS } from "../agent/sdk-fixtures.ts";
+import { REQUIRED_SKILLS, stubGateFacts } from "../agent/sdk-fixtures.ts";
 import { memoryKeyring } from "../auth/memory-keyring.ts";
 import { createFakeAgent } from "./fake-agent.ts";
 
@@ -74,6 +74,7 @@ describe("edit-director replay", () => {
       }),
       limits: { maxTurns: 8, maxBudgetUsd: 2 },
       studioMcpServer: () => ({ type: "stdio", command: "studio-mcp" }),
+      describeGate: (_project, tool) => stubGateFacts(tool),
       cancelProjectJobs: () => Promise.resolve(),
     });
     app = new Hono();

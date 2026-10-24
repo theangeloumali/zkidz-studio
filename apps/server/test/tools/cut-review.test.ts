@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   approvedCandidateSpan,
   awaitCutReview,
+  holdCutReviewCard,
   MAX_APPROVED_IDS_PER_PROJECT,
   MAX_PROJECTS_WITH_APPROVALS,
+  pendingCutReviewCards,
   resolveCutReview,
 } from "../../src/tools/cut-review.ts";
 
@@ -32,5 +34,22 @@ describe("cut review approvals", () => {
     for (const projectId of projectIds) await approveAll(projectId, ["only"]);
     expect(approvedCandidateSpan(projectIds[0] ?? "", "only")).toBeUndefined();
     expect(approvedCandidateSpan(projectIds.at(-1) ?? "", "only")).toBeDefined();
+  });
+});
+
+describe("pending cut review cards", () => {
+  it("lists a held cuts.proposed card until its review is decided", async () => {
+    const projectId = crypto.randomUUID();
+    const requestId = crypto.randomUUID();
+    const candidates = [{ id: "c1", kind: "filler" as const, at: 1, end: 2, context: "um", reason: "Filler word" }];
+    const review = awaitCutReview({ projectId, requestId, candidates });
+    const card = { type: "cuts.proposed" as const, projectId, requestId, candidates, id: 41, at: "2026-10-24T10:00:00.000Z" };
+    holdCutReviewCard(card);
+
+    expect(pendingCutReviewCards([projectId])).toEqual([card]);
+    expect(pendingCutReviewCards([crypto.randomUUID()])).toEqual([]);
+    resolveCutReview(projectId, requestId, { approved: [], rejected: ["c1"] });
+    await review;
+    expect(pendingCutReviewCards([projectId])).toEqual([]);
   });
 });

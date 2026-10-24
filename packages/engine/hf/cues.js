@@ -8,10 +8,18 @@ const CUE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const SAME_TIME = 1e-6;
 const isPatch = (entry) => entry !== null && typeof entry === "object" && "op" in entry;
 
+// As pipeline.spec_file: a job reads its start snapshot (ZKS_SPECS, plan §7.6), never the live work/cues the agent edits;
+// the engine's derived sheets (<v>-cc, placeholders) back either one from work/derived.
+function cueFilePath(work, name) {
+  const primary = path.join(process.env.ZKS_SPECS || work, "cues", `${name}.json`);
+  const derived = path.join(work, "derived", "cues", `${name}.json`);
+  return !fs.existsSync(primary) && fs.existsSync(derived) ? derived : primary;
+}
+
 function readCueFile(work, name) {
   if (!CUE_NAME.test(name)) throw new Error(`${JSON.stringify(name)} is not a cue file name (letters, digits, - and _)`);
   const label = `cues/${name}.json`;
-  const file = path.join(work, "cues", `${name}.json`);
+  const file = cueFilePath(work, name);
   if (!fs.existsSync(file)) throw new Error(`${label} is missing`);
   let entries;
   try {

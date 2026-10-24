@@ -2,7 +2,8 @@
 import { events } from "@zks/db/schema";
 import { LAST_EVENT_ID_HEADER, SSE_REPLAY_LIMIT, type StudioEvent } from "@zks/shared";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { DecisionBroker } from "../src/agent/decisions.ts";
 import { openSseReader } from "./support/sse-reader.ts";
 import { createTestServer, getRequest, insertProject, type TestServer } from "./support/test-server.ts";
 
@@ -132,5 +133,80 @@ describe("GET /api/events", () => {
     await sse.close();
     expect(frames[0]).toMatchObject({ id: String(newest.id), data: { type: "resync", projectId: project.id } });
     expect(frames[1]?.data).toEqual(live);
+  }, 60_000);
+});
+
+describe("GET /api/events with cards still waiting on the user", () => {
+  let cardServer: TestServer;
+  let broker: DecisionBroker;
+  beforeAll(async () => {
+    cardServer = await createTestServer((base) => {
+      broker = new DecisionBroker({ publish: (event) => base.eventBus.publish(event) });
+      return { agent: { registerRoutes: () => undefined, pendingCards: (projectIds) => broker.pendingCards(projectIds) } };
+    });
+  });
+  afterAll(async () => {
+    await cardServer.close();
+  });
+
+  async function askAndPublishAfter(projectId: string) {
+    void broker.askQuestions(projectId, [{ question: "Which take?", header: "Take", options: [{ label: "A" }, { label: "B" }], multiSelect: false }]);
+    // The card is held only once the bus has persisted it and handed back its id.
+    await vi.waitFor(() => expect(broker.pendingCards([projectId])).toHaveLength(1));
+    const [card] = broker.pendingCards([projectId]);
+    if (card === undefined) throw new Error("the question card was not published");
+    return { card, later: await cardServer.eventBus.publish(narration(projectId, "after the card")) };
+  }
+
+  it("sends a new tab every pending card first, without moving its cursor", async () => {
+    const project = await insertProject(cardServer);
+    const { card } = await askAndPublishAfter(project.id);
+
+    const sse = await openSseReader(await getRequest(cardServer, `/api/events?project=${project.id}`));
+    const live = await cardServer.eventBus.publish(narration(project.id, "live"));
+    const frames = await sse.nextFrames(2);
+    await sse.close();
+    expect(frames).toEqual([
+      { id: undefined, data: card },
+      { id: String(live.id), data: live },
+    ]);
+  });
+
+  it("sends a reloaded page the cards older than its cursor, then the replay", async () => {
+    const project = await insertProject(cardServer);
+    const { card, later } = await askAndPublishAfter(project.id);
+    const missed = await cardServer.eventBus.publish(narration(project.id, "missed during reload"));
+
+    const sse = await openSseReader(await getRequest(cardServer, `/api/events?project=${project.id}&after=${later.id}`));
+    const frames = await sse.nextFrames(2);
+    await sse.close();
+    expect(frames).toEqual([
+      { id: undefined, data: card },
+      { id: String(missed.id), data: missed },
+    ]);
+  });
+
+  it("leaves a card newer than the cursor to the replay, so it arrives once", async () => {
+    const project = await insertProject(cardServer);
+    const seen = await cardServer.eventBus.publish(narration(project.id, "seen"));
+    const { card, later } = await askAndPublishAfter(project.id);
+
+    const sse = await openSseReader(await getRequest(cardServer, `/api/events?project=${project.id}&after=${seen.id}`));
+    const frames = await sse.nextFrames(2);
+    await sse.close();
+    expect(frames.map((frame) => frame.data)).toEqual([card, later]);
+  });
+
+  it("sends the cards after a resync without their ids, since the cleared feed would drop them as already seen", async () => {
+    const project = await insertProject(cardServer);
+    const { card, later } = await askAndPublishAfter(project.id);
+    for (let index = 0; index <= SSE_REPLAY_LIMIT; index += 1) await cardServer.eventBus.publish(narration(project.id, `n${index}`));
+
+    const sse = await openSseReader(await getRequest(cardServer, `/api/events?project=${project.id}`, { [LAST_EVENT_ID_HEADER]: String(later.id) }));
+    const frames = await sse.nextFrames(2);
+    await sse.close();
+    expect(frames[0]?.data).toMatchObject({ type: "resync" });
+    const { id: _cardId, ...cardWithoutId } = card;
+    expect(frames[1]).toEqual({ id: undefined, data: cardWithoutId });
   }, 60_000);
 });

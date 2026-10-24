@@ -33,7 +33,7 @@ const STYLE_ATTRIBUTE = /(<[a-zA-Z][^>]*?\s)style="/g;
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const readJsonIfPresent = (file) => (fs.existsSync(file) ? readJson(file) : null);
 
-// captions/vN.json groups timed by the phrase file, as zks_engine.captions emit_cues writes cues/vN-cc.json.
+// captions/vN.json groups timed by the phrase file, as zks_engine.captions emit_cues writes derived/cues/vN-cc.json.
 function captionCues(work, video) {
   const entries = readJsonIfPresent(path.join(work, "captions", `${video}.json`));
   const phrases = readJsonIfPresent(path.join(work, "captions", `${video}.phrases.json`));

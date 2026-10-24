@@ -1,11 +1,11 @@
 # Created by The Angelo Umali.
 # Writes a Reels cut spec: the full edit's cut spec narrowed to hand-picked keep ranges, still in source order.
-# Usage (from the work dir): python -m zks_engine.make_reels v4 reels/v4.json   (reads cuts/v4.json, writes cuts/v4r.json)
+# Usage (from the work dir): python -m zks_engine.make_reels v4 reels/v4.json   (reads cuts/v4.json, writes derived/cuts/v4r.json)
 import json
 import sys
 
 from .edl import SNAP_RADIUS
-from .pipeline import WORK, load_cuts
+from .pipeline import WORK, derived_file, load_cuts
 
 OUTSIDE_KEEP = "reel: outside keep"
 
@@ -57,7 +57,8 @@ def main(video, keep_path):
     spec = load_cuts(video)
     keep = merged(json.loads((WORK / keep_path).read_text(encoding="utf-8"))["keep"], spec["duration"])
     reel = reel_spec(video, spec, keep)
-    target = WORK / "cuts" / f"{video}r.json"
+    target = derived_file(WORK, f"cuts/{video}r.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(reel, indent=1), encoding="utf-8")
     kept = sum(end - start for start, end, *_ in keep)
     estimate = kept - overlap(keep, merged(spec["remove"], spec["duration"]))

@@ -2,6 +2,7 @@
 // One live agent session per project (plan §6.12): start on the first prompt, resume from agent_sessions, auto-resume one crash.
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import type { StudioDatabase } from "@zks/db";
+import type { ApprovalFacts } from "@zks/shared";
 import { loadAgentCredential, type AgentCredential } from "../auth/connection-store.ts";
 import { agentConfigDir, buildAgentEnv, ensureAgentConfigDir } from "../auth/agent-env.ts";
 import type { SecretStore } from "../auth/secret-store.ts";
@@ -39,6 +40,7 @@ export interface AgentManagerDeps {
   readonly loadSessionSetup?: (project: ProjectRow) => Promise<SessionSetup>;
   /** null on the `-p` path, whose child reaches the studio tools through the HTTP twin instead. */
   readonly studioMcpServer: ((project: ProjectRow) => McpServerConfig) | null;
+  readonly describeGate: (project: ProjectRow, tool: string, input: unknown) => Promise<ApprovalFacts | null>;
   readonly cancelProjectJobs: (projectId: string) => Promise<void>;
   readonly initTimeoutMs?: number;
 }
@@ -203,6 +205,7 @@ export class AgentManager {
         limits: { ...deps.limits, ...start.setup?.limits },
         studioMcpServer: deps.studioMcpServer?.(project) ?? null,
         ...(start.setup === undefined ? {} : { systemPromptAppend: start.setup.systemPromptAppend }),
+        describeGate: (tool: string, input: unknown) => deps.describeGate(project, tool, input),
       }),
       publish: deps.broker.publish,
       broker: deps.broker,

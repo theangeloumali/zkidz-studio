@@ -75,7 +75,7 @@ function addSession(fixture: ToolFixture, isReady = true): string {
   return sessionId;
 }
 
-// Each test spawns node; on a slow filesystem module loading alone can take seconds.
+// Each test spawns node and writes PGlite fixtures, which both slow sharply under CI load.
 describe("zks-mcp stdio twin", { timeout: 60_000 }, () => {
   it("lists the catalog and runs tools through the server", async () => {
     const fixture = await createToolFixture(server);

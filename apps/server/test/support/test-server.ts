@@ -54,6 +54,7 @@ export async function createTestServer(overrides: Partial<AppDependencies> | ((b
     uploadLimits: DEFAULT_UPLOAD_LIMITS,
     webDistDir: join(scratchDir, "web-dist"),
     logger,
+    jobRunner,
     ...appOverrides,
   });
   return {

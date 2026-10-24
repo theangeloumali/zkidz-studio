@@ -6,19 +6,26 @@ import json
 import platform
 import sys
 
-from . import __version__, backends, ffio, join_sources, prepare, showcase, specs, theme_index, transcribe
+from . import __version__, backends, capabilities, ffio, join_sources, prepare, showcase, specs, theme_index, transcribe
 from .pipeline import WORK
+from .render import commands as render_commands
+from .specs.gates import GateFailed
 from .specs.paths import video_id
 
-EXIT_FAILED = 1
+EXIT_ENGINE_ERROR = 1
 EXIT_REJECTED = 3
 EXIT_TOOL_MISSING = 4
 EXIT_THEME_INVALID = 5
 EXIT_SPEC_INVALID = 6
+EXIT_GATE_FAILED = 7
 
 
 def version_payload(_args):
     return {"name": "zks-engine", "version": __version__, "python": platform.python_version()}
+
+
+def capabilities_payload(args):
+    return capabilities.probe(args.refresh)
 
 
 def probe_payload(args):
@@ -137,8 +144,12 @@ def parser():
     transcription.add_argument("--language", default="auto")
     transcription.add_argument("--model", help="a pinned whisper model; default the most accurate installed")
     transcription.set_defaults(handler=transcribe_payload)
-    for command in (version, probe, index, kinds, validate, ingest, transcription):
+    probed = commands.add_parser("capabilities", help="probe the render backends and write ZKS_HOME/capabilities.json")
+    probed.add_argument("--refresh", action="store_true", help="probe again instead of reusing this ffmpeg + driver's cached result")
+    probed.set_defaults(handler=capabilities_payload)
+    for command in (version, probe, probed, index, kinds, validate, ingest, transcription):
         command.add_argument("--json", action="store_true", required=True, help="print JSON (the only output format)")
+    render_commands.register(commands)
     return root
 
 
@@ -156,10 +167,14 @@ def main(argv=None):
         payload, code = {"error": {"code": "theme_invalid", "message": str(error)}}, EXIT_THEME_INVALID
     except specs.SpecError as error:
         payload, code = {"error": {"code": "spec_invalid", "message": str(error)}}, EXIT_SPEC_INVALID
+    except GateFailed as error:
+        payload, code = {"error": {"code": "gate_failed", "message": str(error)}}, EXIT_GATE_FAILED
     except SystemExit as error:  # the pipeline modules sys.exit("why") on a failed step
         if not isinstance(error.code, str):
             raise
-        payload, code = {"error": {"code": "engine_failed", "message": error.code}}, EXIT_FAILED
+        payload, code = {"error": {"code": "engine_failed", "message": error.code}}, EXIT_ENGINE_ERROR
+    except Exception as error:  # noqa: BLE001 - the server reads JSON; a traceback would reach the user as the error text
+        payload, code = {"error": {"code": "engine_error", "message": f"{type(error).__name__}: {error}"}}, EXIT_ENGINE_ERROR
     print(json.dumps(payload))
     return code
 

@@ -11,6 +11,10 @@ import type { DoctorRunner } from "./doctor/runner.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
+import { registerDeliverableRoutes, type FolderOpener } from "./jobs/deliverable-routes.ts";
+import { registerJobControlRoutes } from "./jobs/job-control-routes.ts";
+import type { JobRunner } from "./jobs/job-runner.ts";
+import { registerRenderStatusRoutes } from "./jobs/render-status-routes.ts";
 import type { Logger } from "./logging/logger.ts";
 import type { OnboardingServices } from "./onboarding/onboarding-services.ts";
 import type { UploadLimits } from "./media-io/store.ts";
@@ -34,14 +38,17 @@ export interface AppDependencies {
   readonly uploadLimits: UploadLimits;
   readonly webDistDir: string;
   readonly logger: Logger;
+  readonly jobRunner: Pick<JobRunner, "resume">;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
-  readonly agent?: Pick<AgentServices, "registerRoutes">;
+  readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
   /** GET /api/doctor; main.ts always passes it. */
   readonly runDoctor?: DoctorRunner;
   /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
   readonly onboarding?: OnboardingServices;
   /** The player EDL and the composition rebuild loop; main.ts always passes it. */
   readonly previewService?: PreviewService;
+  /** Tests replace the OS file manager the reveal route opens. */
+  readonly openFolder?: FolderOpener;
 }
 
 export function createApp(deps: AppDependencies): Hono {
@@ -54,13 +61,16 @@ export function createApp(deps: AppDependencies): Hono {
   registerMediaStreamRoute(app, { ...deps, confinePath: deps.security.confinePath });
   registerFsRoutes(app, deps);
   registerJobRoutes(app, deps.database);
-  registerEventRoutes(app, deps.eventBus);
+  registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);
   registerSpecRoutes(app, deps);
   deps.previewService?.registerRoutes(app);
+  registerDeliverableRoutes(app, deps);
+  registerJobControlRoutes(app, deps);
+  registerRenderStatusRoutes(app, deps);
   app.all("/api/*", () => {
     throw notFound();
   });

@@ -1,11 +1,14 @@
 // Created by The Angelo Umali.
 // Long work goes through the Phase 1 job runner: ingest and transcribe answer with a jobId, job_* follow it (plan §6.8).
 import { jobs } from "@zks/db/schema";
-import type { JobStatus } from "@zks/shared";
+import { isStudioToolName, STUDIO_TOOLS, studioToolName, type JobStatus } from "@zks/shared";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import type { JobRow } from "../../dto.ts";
 import type { ToolContext } from "../context.ts";
 import { implementTool } from "../define-tool.ts";
+import { describeStudioGate } from "../gate-facts.ts";
+import { fenceJobError } from "../job-error-fence.ts";
 import { readJobResult } from "../job-results.ts";
 import { findProjectAsset, loadProject, projectRootOf } from "../project-files.ts";
 import { ToolError } from "../result.ts";
@@ -52,22 +55,41 @@ const jobWait = implementTool("job_wait", {
 });
 
 const jobCancel = implementTool("job_cancel", {
-  description: "Cancel a job that has not started yet.",
+  description: "Cancel a job. A queued job is dropped; a running one is stopped and left interrupted, so job_resume can run it again.",
   handler: async (input, context) => {
-    const [cancelled] = await context.db
-      .update(jobs)
-      .set({ status: "cancelled", finishedAt: new Date() })
-      .where(and(eq(jobs.id, input.jobId), eq(jobs.projectId, context.projectId), eq(jobs.status, "queued")))
-      .returning();
-    if (cancelled === undefined) {
-      const job = await findProjectJob(context, input.jobId);
-      // The Phase 1 runner has no way to stop a handler mid-run.
-      throw new ToolError(job.status === "running" ? "A running job cannot be cancelled" : `The job is already ${job.status}`);
-    }
-    await context.events.publish({ type: "job.finished", projectId: context.projectId, jobId: cancelled.id, kind: cancelled.kind, status: cancelled.status });
+    const job = await findProjectJob(context, input.jobId);
+    if (!OPEN_STATUSES.has(job.status)) throw new ToolError(`The job is already ${job.status}`);
+    await context.jobs.cancel(job.id);
     return { output: { ok: true } };
   },
 });
+
+const jobResume = implementTool("job_resume", {
+  description: "Run an interrupted job again (cancelled mid-run, or cut off by a server restart) with the specs it started with.",
+  handler: async (input, context, signal) => {
+    const job = await findProjectJob(context, input.jobId);
+    if (job.status !== "interrupted") throw new ToolError(`Only an interrupted job can resume; this one is ${job.status}`);
+    await approveGatedResume(context, job, signal);
+    await context.jobs.resume(job.id);
+    return { output: { ok: true } };
+  },
+});
+
+/** A job whose tool is gated resumes behind that tool's own card: it spends the same GPU time and writes the same files. */
+async function approveGatedResume(context: ToolContext, job: JobRow, signal?: AbortSignal): Promise<void> {
+  if (!isStudioToolName(job.kind) || STUDIO_TOOLS[job.kind].approval !== "gate") return;
+  const startInput = startInputOf(STUDIO_TOOLS[job.kind].input, job.params);
+  const facts = await describeStudioGate(context, job.kind, startInput, job.specSnapshotSha256 ?? undefined);
+  if (facts === null) throw new ToolError(`This ${job.kind} job's parameters are no longer valid; start a new ${job.kind} instead`);
+  const decision = await context.requestApproval({ tool: studioToolName(job.kind), facts: { ...facts, action: `Resume: ${facts.action}` } }, signal);
+  if (decision !== "allow") throw new ToolError(`The user declined resuming ${job.kind}`);
+}
+
+/** The tool's own input, picked from the job's params, which can also hold what the handler resolved. */
+function startInputOf(toolInput: z.ZodType, params: Record<string, unknown>): unknown {
+  if (!(toolInput instanceof z.ZodObject)) return params;
+  return Object.fromEntries(Object.keys(toolInput.shape).flatMap((key) => (Object.hasOwn(params, key) ? [[key, params[key]]] : [])));
+}
 
 async function findProjectJob(context: ToolContext, jobId: string): Promise<JobRow> {
   const [job] = await context.db
@@ -87,7 +109,7 @@ async function jobSnapshot(context: ToolContext, jobId: string) {
     ...(job.stage === null ? {} : { stage: job.stage }),
     ...(job.pct === null ? {} : { pct: job.pct }),
     ...(job.etaS === null ? {} : { etaS: job.etaS }),
-    logTail: job.error === null ? [] : [job.error],
+    logTail: job.error === null ? [] : [fenceJobError(job.error)],
     ...(result === undefined ? {} : { result }),
   };
 }
@@ -112,4 +134,4 @@ async function waitForJobToClose(context: ToolContext, wait: { jobId: string; ti
   }
 }
 
-export const jobTools = [ingest, transcribe, jobStatus, jobWait, jobCancel];
+export const jobTools = [ingest, transcribe, jobStatus, jobWait, jobCancel, jobResume];

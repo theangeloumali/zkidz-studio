@@ -4,7 +4,9 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { API_ROUTES, CSRF_HEADER } from "@zks/shared";
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import { mediaAssets } from "@zks/db/schema";
+import { API_ROUTES, CSRF_HEADER, type StudioEvent } from "@zks/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAgentServices, type AgentServices } from "../../src/agent-services.ts";
 import type { QueryFunction } from "../../src/agent/query-function.ts";
@@ -46,7 +48,8 @@ interface Harness {
   readonly server: TestServer;
   readonly services: AgentServices;
   readonly sdkCalls: string[];
-  readonly submitPrompt: () => Promise<{ status: number; dir: string }>;
+  readonly sdkOptions: Options[];
+  readonly submitPrompt: () => Promise<{ status: number; dir: string; projectId: string }>;
   readonly close: () => Promise<void>;
 }
 
@@ -56,8 +59,10 @@ async function startHarness(hasSdkBinary: boolean): Promise<Harness> {
   await writeFile(claudePath, PRINT_CLAUDE_SOURCE);
   await chmod(claudePath, 0o755);
   const sdkCalls: string[] = [];
-  const sdkQuery: QueryFunction = ({ projectId }) => {
+  const sdkOptions: Options[] = [];
+  const sdkQuery: QueryFunction = ({ projectId, options }) => {
     sdkCalls.push(projectId);
+    sdkOptions.push(options);
     return (async function* () {})();
   };
   const security = createSecurity({ appPort: APP_PORT, previewPort: 4318, container: false });
@@ -104,13 +109,14 @@ async function startHarness(hasSdkBinary: boolean): Promise<Harness> {
       },
       connectionFrom("127.0.0.1"),
     );
-    return { status: response.status, dir };
+    return { status: response.status, dir, projectId: project.id };
   };
   const finalServices = services;
   return {
     server,
     services: finalServices,
     sdkCalls,
+    sdkOptions,
     submitPrompt,
     close: async () => {
       finalServices.shutdown();
@@ -132,6 +138,26 @@ describe("agent services with the SDK's claude binary installed", () => {
     expect((await harness.submitPrompt()).status).toBe(200);
     expect(harness.sdkCalls).toHaveLength(1);
     expect(mcpServersBuilt.count).toBe(1);
+  });
+
+  it("names the asset's file on a delete_asset approval card", async () => {
+    const { dir, projectId } = await harness.submitPrompt();
+    const relPath = "media/raw/clip.mp4";
+    const [asset] = await harness.server.database.db
+      .insert(mediaAssets)
+      .values({ projectId, kind: "camera", name: "clip.mp4", relPath, bytes: 16, mtimeMs: 0, durationS: 30, fpsNum: 30000, fpsDen: 1001 })
+      .returning();
+    const cards: StudioEvent[] = [];
+    const unsubscribe = harness.server.eventBus.subscribe([projectId], (event) => {
+      if (event.type === "approval.requested") cards.push(event);
+    });
+    const canUseTool = harness.sdkOptions.at(-1)?.canUseTool;
+    const controller = new AbortController();
+    void canUseTool?.("mcp__studio__delete_asset", { assetId: asset?.id }, { signal: controller.signal, toolUseID: "t", requestId: "r" });
+    await expect.poll(() => cards.length).toBe(1);
+    expect(cards[0]).toMatchObject({ tool: "delete_asset", facts: { filesToDelete: [join(dir, relPath)] } });
+    controller.abort();
+    unsubscribe();
   });
 });
 

@@ -15,6 +15,13 @@ export function formatEta(etaS: number): string {
   return etaS < 60 ? `about ${Math.round(etaS)} s left` : `about ${Math.round(etaS / 60)} min left`;
 }
 
+/** A short render rounds to 0 minutes, which reads as free; below one it says so. */
+export function formatGpuMinutes(minutes: number): string {
+  const rounded = Math.round(minutes);
+  if (rounded < 1) return "under 1 GPU minute";
+  return `about ${rounded} GPU ${rounded === 1 ? "minute" : "minutes"}`;
+}
+
 function describeLimit(event: EventOf<"limit">): string | null {
   if (event.status === "rejected") return event.resetsAt ? `Plan limit reached. Resets at ${formatClock(event.resetsAt)}.` : "Plan limit reached.";
   if (event.status === "allowed_warning") {

@@ -5,7 +5,7 @@ import { DecisionBroker } from "../../src/agent/decisions.ts";
 import { createToolDecider } from "../../src/agent/policy.ts";
 import { createAgentSession, type AgentSessionOptions } from "../../src/agent/session.ts";
 import type { NewStudioEvent } from "../../src/events/event-bus.ts";
-import { initMessage, REQUIRED_SKILLS, resultMessage, textDelta } from "./sdk-fixtures.ts";
+import { initMessage, REQUIRED_SKILLS, resultMessage, stubGateFacts, textDelta } from "./sdk-fixtures.ts";
 import { ScriptedQuery, settle } from "./scripted-query.ts";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
@@ -92,7 +92,7 @@ describe("agent session", () => {
     const { scripted, session, broker, cancelProjectJobs } = setup();
     scripted.emit(initMessage());
     await settle();
-    const decide = createToolDecider({ projectId: PROJECT_ID, broker });
+    const decide = createToolDecider({ projectId: PROJECT_ID, broker, describeGate: stubGateFacts });
     const pending = decide(
       "mcp__studio__render_master",
       { target: "full", quality: "4k" },

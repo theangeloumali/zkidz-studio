@@ -7,8 +7,15 @@ import rootConfig from "../../eslint.config.mjs";
 export default defineConfig(
   rootConfig,
   {
-    languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } },
+    // One project service per lint run: playwright.config.ts sits beside the app's tsconfig, so the e2e one types it.
+    languageOptions: {
+      parserOptions: {
+        projectService: { allowDefaultProject: ["playwright.config.ts"], defaultProject: "e2e/tsconfig.json" },
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
   },
+  { files: ["**/*.{js,mjs,cjs,jsx}"], languageOptions: { parserOptions: { projectService: false } } },
   {
     files: ["**/*.{ts,tsx}"],
     extends: [reactHooks.configs.flat["recommended-latest"], jsxA11y.flatConfigs.recommended],

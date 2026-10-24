@@ -9,7 +9,6 @@ import { findOnPath } from "@zks/shared/node";
 import type { ZksContext } from "./context.ts";
 import { sha256File } from "./download.ts";
 import { bootstrapDirs, runCommand, type CommandRunner } from "./exec.ts";
-import { listsEncoder, probeGpuBackend } from "./gpu.ts";
 import { listModels } from "./models.ts";
 import { isWslDrvfsPath } from "./platform.ts";
 import { toolExecutablePath } from "./tools.ts";
@@ -35,6 +34,10 @@ const MIN_CLAUDE_VERSION = [2, 1, 295] as const;
 const CLAUDE_INSTALL_URL = "https://code.claude.com/docs/en/setup";
 const CLAUDE_UPDATE_FIX = `terminal mode needs Claude Code ${MIN_CLAUDE_VERSION.join(".")}+: run claude update`;
 const HEVC_FAMILY = ["hevc_nvenc", "h264_nvenc", "hevc_videotoolbox", "hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265", "libx264"];
+
+export function listsEncoder(encoderListing: string, encoder: string): boolean {
+  return new RegExp(`\\s${encoder}\\s`).test(encoderListing);
+}
 
 function firstLine(text: string): string {
   return text.trim().split(/\r?\n/)[0] ?? "";
@@ -70,12 +73,12 @@ export function checkPython(context: ZksContext): CheckResult {
   return { id: "python", status: "ok", required: true, detail: firstLine(version.stdout), data: { path: firstLine(found.stdout) } };
 }
 
-export async function checkFfmpeg(context: ZksContext): Promise<CheckResult[]> {
+export async function checkFfmpeg(context: ZksContext): Promise<CheckResult> {
   const executable = toolExecutablePath(context, "ffmpeg");
   const version = executable && existsSync(executable) ? runCommand(executable, ["-hide_banner", "-version"]) : undefined;
   if (!executable || version?.code !== 0) {
     const fix = process.env[ENV.ffmpeg] ? `${ENV.ffmpeg} does not run; unset it or point it at a working ffmpeg` : SETUP_FIX;
-    return [{ id: "ffmpeg", status: "fail", required: true, detail: "not installed", fix }];
+    return { id: "ffmpeg", status: "fail", required: true, detail: "not installed", fix };
   }
   const encoderListing = runCommand(executable, ["-hide_banner", "-encoders"]).stdout;
   const hwaccels = runCommand(executable, ["-hide_banner", "-hwaccels"])
@@ -83,7 +86,7 @@ export async function checkFfmpeg(context: ZksContext): Promise<CheckResult[]> {
     .slice(1)
     .map((line) => line.trim())
     .filter(Boolean);
-  const ffmpegCheck: CheckResult = {
+  return {
     id: "ffmpeg",
     status: "ok",
     required: true,
@@ -95,26 +98,6 @@ export async function checkFfmpeg(context: ZksContext): Promise<CheckResult[]> {
       hwaccels,
     },
   };
-  const probe = probeGpuBackend(executable, encoderListing, runCommand);
-  const gpuCheck: CheckResult =
-    probe.backend === "none"
-      ? {
-          id: "gpu",
-          status: "fail",
-          required: true,
-          detail: "no encoder passed a test encode, CPU included",
-          fix: SETUP_FIX,
-          data: { attempts: probe.attempts },
-        }
-      : {
-          id: "gpu",
-          status: probe.backend === "cpu" ? "warn" : "ok",
-          required: false,
-          detail: `${probe.backend} (${probe.encoder})`,
-          ...(probe.backend === "cpu" ? { fix: "no GPU encoder passed a test encode; renders use the CPU" } : {}),
-          data: { attempts: probe.attempts },
-        };
-  return [ffmpegCheck, gpuCheck];
 }
 
 export function checkWhisper(context: ZksContext): CheckResult {

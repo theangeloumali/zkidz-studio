@@ -6,8 +6,8 @@ import type { ToolContext } from "./context.ts";
 
 export type { ToolContext } from "./context.ts";
 export { registerEngineJobHandlers, type EngineRunner } from "./engine-jobs.ts";
-export { createCliEngineRunner } from "./engine-runner.ts";
 export { registerStudioToolRoutes } from "./routes.ts";
+export { registerRenderJobHandlers } from "./render-tools.ts";
 
 const STUDIO_MCP_SERVER_NAME = "studio";
 const STUDIO_MCP_VERSION = "0.1.0";

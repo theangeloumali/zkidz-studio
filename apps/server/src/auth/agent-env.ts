@@ -3,10 +3,9 @@
 import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { assertNever } from "../agent/assert-never.ts";
+import { inheritedParentEnv, pickDefined } from "../security/parent-env.ts";
 import { PROVIDER_VARIABLES, type CloudProvider } from "./cloud-config.ts";
 
-const OS_BASICS = ["PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TMP", "TEMP", "TMPDIR", "SystemRoot", "ComSpec", "PATHEXT", "LANG"];
-const PROXY_VARS = ["HTTPS_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS"];
 const OWNER_ONLY_DIR_MODE = 0o700;
 
 export interface TerminalTokens {
@@ -41,11 +40,8 @@ export async function ensureAgentConfigDir(configDir: string): Promise<void> {
 }
 
 export function buildAgentEnv(mode: AgentAuthMode, options: AgentEnvOptions): Record<string, string> {
-  const parentEnv = options.parentEnv ?? process.env;
-  const localeNames = Object.keys(parentEnv).filter((name) => name.startsWith("LC_"));
   return {
-    ...pickDefined([...OS_BASICS, ...localeNames], parentEnv),
-    ...(options.proxyOptIn ? pickDefined(PROXY_VARS, parentEnv) : {}),
+    ...inheritedParentEnv({ proxyOptIn: options.proxyOptIn, parentEnv: options.parentEnv }),
     CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     CLAUDE_AGENT_SDK_CLIENT_APP: `zkidz-studio/${options.appVersion}`,
@@ -73,8 +69,4 @@ function credentialEnv(mode: AgentAuthMode, studioHome: string): Record<string, 
     default:
       return assertNever(mode);
   }
-}
-
-function pickDefined(names: readonly string[], source: Readonly<Record<string, string | undefined>>): Record<string, string> {
-  return Object.fromEntries(names.flatMap((name) => (source[name] ? [[name, source[name]]] : [])));
 }

@@ -3,10 +3,10 @@
 # Local CI, run before every merge: the Linux jobs the GitHub workflows ran, against the pinned tools. The workflows are
 # manual-only because per-push runs emailed every failure. Linux x64 only (the pinned scanners are Linux builds).
 # The lint, scan and install run in turn; then every check that shares nothing runs side by side, each test lane capped
-# at ZKS_CI_JOBS workers. Every step runs even after one fails, and the exit code is 1 when any step failed.
+# at ZKS_CI_JOBS workers (at most four). Every step runs even after one fails, and the exit code is 1 when any step failed.
 set -uo pipefail
 
-USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
+USAGE="usage: scripts/ci-local.sh [--release] [--list] [--list-jobs] [--list-lanes] [--list-test-env]   (--release adds a fresh setup.sh and the doctor, for develop -> main)"
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=scripts/lib/ci-lanes.sh
 source "$REPO_ROOT/scripts/lib/ci-lanes.sh"
@@ -14,6 +14,9 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zks-ci"
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 LANE_WORKERS="${ZKS_CI_JOBS:-6}"
+# Machine-wide, so worktrees running ci:local at once queue instead of starving each other's vitest workers.
+LOCK_FILE="${ZKS_CI_LOCK:-$CACHE_DIR/ci-local.lock}"
+LOCK_WAIT_S="${ZKS_CI_LOCK_WAIT_S:-3600}"
 # A zero or non-numeric count would leave the lane loop waiting forever.
 for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
   if [[ -n "${!count_var:-}" && ! "${!count_var}" =~ ^[1-9][0-9]*$ ]]; then
@@ -21,6 +24,9 @@ for count_var in ZKS_CI_JOBS ZKS_CI_LANES; do
     exit 2
   fi
 done
+# Beside the engine pool's CPU renders, six forks per test lane missed vitest's 60 s worker-start timeout; four start.
+VITEST_WORKERS_MAX=4
+VITEST_WORKERS=$((LANE_WORKERS < VITEST_WORKERS_MAX ? LANE_WORKERS : VITEST_WORKERS_MAX))
 
 release=0
 list=0
@@ -31,6 +37,7 @@ for arg in "$@"; do
     --list) list=1 ;;
     --list-jobs) echo "$LANE_WORKERS" && exit 0 ;;
     --list-lanes) list_lanes=1 ;;
+    --list-test-env) echo "VITEST_MAX_WORKERS=$VITEST_WORKERS workspace-concurrency=1" && exit 0 ;;
     *) echo "$USAGE" >&2 && exit 2 ;;
   esac
 done
@@ -41,11 +48,13 @@ serial_steps=(actionlint gitleaks install)
 parallel_steps=(engine lint test-server typecheck test-other format)
 
 # Every lane at once on an idle machine; on one already busier than its cores, two, or vitest cannot start its workers.
+# A checkout on WSL's /mnt drives runs two whatever the CPU: there the file reads run out first.
 lane_count() {
   local load="${ZKS_CI_LOAD:-$(cut -d' ' -f1 /proc/loadavg)}" cores="${ZKS_CI_CORES:-$(nproc)}"
+  local slow_fs="${ZKS_CI_SLOW_FS:-$([[ "$REPO_ROOT" == /mnt/[a-z]/* ]] && echo 1 || echo 0)}"
   if [[ -n "${ZKS_CI_LANES:-}" ]]; then
     echo "$ZKS_CI_LANES"
-  elif awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
+  elif [[ "$slow_fs" == 1 ]] || awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
     echo 2
   else
     echo "${#parallel_steps[@]}"
@@ -113,8 +122,8 @@ export_pinned_tools() {
 step_format() { node scripts/check-attribution.mjs && pnpm exec prettier --check .; }
 step_lint() { pnpm -r lint; }
 step_typecheck() { pnpm -r typecheck; }
-step_test-server() { export_pinned_tools && VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -F @zks/server test; }
-step_test-other() { VITEST_MAX_WORKERS="$LANE_WORKERS" pnpm -r --workspace-concurrency=1 --filter '!@zks/server' test; }
+step_test-server() { export_pinned_tools && VITEST_MAX_WORKERS="$VITEST_WORKERS" pnpm -F @zks/server test; }
+step_test-other() { VITEST_MAX_WORKERS="$VITEST_WORKERS" pnpm -r --workspace-concurrency=1 --filter '!@zks/server' test; }
 
 # The engine and golden frames with the pinned ffmpeg and Chrome, the overlay renderer tests forbidden to skip, one
 # process per test module. Each process gets its own scratch ZKS_HOME from tests/support.py.
@@ -153,10 +162,11 @@ step_setup-doctor() {
 [[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
 # One run at a time per machine: overlapping runs from parallel sessions pushed vitest past its worker-start timeout.
-exec 9>"${ZKS_CI_LOCK:-${XDG_RUNTIME_DIR:-/tmp}/zks-ci-local.lock}"
+mkdir -p "$(dirname "$LOCK_FILE")"
+exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "ci-local: waiting for another ci-local run on this machine to finish" >&2
-  flock 9
+  echo "ci-local: waiting for another ci-local run on this machine to finish (up to ${LOCK_WAIT_S}s)" >&2
+  flock -w "$LOCK_WAIT_S" 9 || { echo "ci-local: another ci-local run holds $LOCK_FILE" >&2 && exit 1; }
 fi
 
 log_dir="${TMPDIR:-/tmp}/zks-ci-local-$(date +%Y%m%d-%H%M%S)"

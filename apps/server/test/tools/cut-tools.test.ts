@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { findRejectedCandidates, MAX_REJECTED_SPANS, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
+import { findRejectedCandidates, MAX_REJECTED_SPANS, pendingCutReviewCards, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
@@ -77,6 +77,7 @@ describe("propose_cuts", () => {
     const proposal = fixture.events.find((event) => event.type === "cuts.proposed");
     if (proposal?.type !== "cuts.proposed") throw new Error("no proposal");
     expect(proposal.candidates.map((candidate) => candidate.kind).sort()).toEqual(["filler", "pause", "stutter"]);
+    await expect.poll(() => pendingCutReviewCards([fixture.context.projectId])).toEqual([proposal]);
 
     const filler = proposal.candidates.find((candidate) => candidate.kind === "filler");
     if (filler === undefined) throw new Error("no filler candidate");
@@ -85,6 +86,7 @@ describe("propose_cuts", () => {
 
     const result = await pending;
     expect(result.structuredContent).toMatchObject({ approved: [filler.id], rejected: rejectedIds });
+    expect(pendingCutReviewCards([fixture.context.projectId])).toEqual([]);
 
     const removal = { at: filler.at, end: filler.end, reason: filler.reason, fromCandidate: filler.id };
     const setResult = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [removal]) });

@@ -6,12 +6,14 @@ import { fileURLToPath } from "node:url";
 import { mediaAssets, transcripts } from "@zks/db/schema";
 import type { StudioEvent } from "@zks/shared";
 import { createProjectDirs, projectDir } from "../../src/config.ts";
+import { createEngineProcessRunner } from "../../src/jobs/engine-process.ts";
 import type { ApprovalCard, AskedQuestions, QuestionAnswers, ToolContext } from "../../src/tools/context.ts";
-import { createCliEngineRunner } from "../../src/tools/engine-runner.ts";
 import type { TranscriptWord } from "../../src/tools/transcript-store.ts";
 import { insertProject, type TestServer } from "../support/test-server.ts";
 
 const ENGINE_DIR = fileURLToPath(new URL("../../../../packages/engine", import.meta.url));
+// Cue checks spawn neither ffmpeg nor Chrome; absent paths make any step that would fail loudly, never fall back to PATH.
+const NO_RENDER_TOOLS = { ffmpegPath: join(ENGINE_DIR, "no-ffmpeg-in-tool-tests"), chromePath: join(ENGINE_DIR, "no-chrome-in-tool-tests") };
 
 export interface ToolFixture {
   readonly context: ToolContext;
@@ -41,7 +43,12 @@ export async function createToolFixture(
     events: server.eventBus,
     jobs: server.jobRunner,
     // The real engine, as main.ts runs it, so cue checks are the engine's own (plan §7.7).
-    engine: createCliEngineRunner({ executable: "uv", prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"], studioHome: server.studioHome }),
+    engine: createEngineProcessRunner({
+      executable: "uv",
+      prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"],
+      studioHome: server.studioHome,
+      tools: NO_RENDER_TOOLS,
+    }),
     requestApproval: (card, signal) => {
       approvalCards.push(card);
       approvalSignals.push(signal);

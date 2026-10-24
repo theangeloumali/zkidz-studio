@@ -7,12 +7,13 @@ import { cueTools } from "./handlers/cue-tools.ts";
 import { cutTools } from "./handlers/cut-tools.ts";
 import { jobTools } from "./handlers/job-tools.ts";
 import { projectTools } from "./handlers/project-tools.ts";
+import { renderTools } from "./render-tools.ts";
 
 export { implementTool, type StudioTool } from "./define-tool.ts";
 
-/** Phase 2 tools plus Phase 4's cue, caption and reel tools; the rest of STUDIO_TOOLS lands with the phase that owns its engine step. */
+/** Phase 2 tools, Phase 4's cue, caption and reel tools and Phase 5's render tools; the rest of STUDIO_TOOLS lands with the phase that owns its engine step. */
 export function studioToolCatalog(): readonly StudioTool[] {
-  return [...projectTools, ...jobTools, ...cutTools, ...cueTools, ...captionReelTools];
+  return [...projectTools, ...jobTools, ...cutTools, ...cueTools, ...captionReelTools, ...renderTools];
 }
 
 /** What the stdio twin serves: the catalog plus `approve`, the `claude -p` fallback's --permission-prompt-tool (plan §6.7). */

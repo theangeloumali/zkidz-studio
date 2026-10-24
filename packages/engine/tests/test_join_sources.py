@@ -71,6 +71,15 @@ class BackendPieceTests(unittest.TestCase):
         self.assertNotIn("vulkan", command)
         self.assertEqual(command[command.index("-c:v"):command.index("-an")], CPU.mezzanine)
 
+    def test_nvidia_without_a_vulkan_device_never_opens_vulkan_and_still_encodes_on_nvenc(self):
+        # WSL exposes CUDA but no Vulkan device, and libplacebo cannot start without one; the scale stays on CUDA (CudaPieceTests).
+        command = command_for(clip(), NVIDIA)
+        graph = command[command.index("-vf") + 1]
+        self.assertNotIn("vulkan", command)
+        self.assertNotIn("libplacebo", graph)
+        self.assertIn("scale_cuda", graph)
+        self.assertEqual(command[command.index("-c:v"):command.index("-an")], NVIDIA.mezzanine)
+
     def test_vaapi_uploads_the_finished_frame_to_its_render_node(self):
         vaapi = backends.get("vaapi")
         command = command_for(clip(), vaapi)

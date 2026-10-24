@@ -29,6 +29,11 @@ def editing_path(video):
     return PROGRESS / "editing" / record_path(video).name
 
 
+def eta_path(name):
+    """refresh()'s ETA for a record node writes (hf/progress.js copies it in), so the formula lives only in progress_eta."""
+    return PROGRESS / "eta" / name
+
+
 def read_record(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))

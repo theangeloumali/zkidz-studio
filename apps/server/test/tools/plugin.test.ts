@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
-const BUNDLED_SKILLS = ["captions", "cues", "cut-spec", "edit-director", "reels", "style-rules"];
+const BUNDLED_SKILLS = ["captions", "covers", "cues", "cut-spec", "edit-director", "qc-gates", "reels", "style-rules"];
 // Names and places from the source edits that must never ship in a public skill.
 const PRIVATE_NAMES = /zkidz-films|tailscale|\bnas\b|ep\d+\b/i;
 

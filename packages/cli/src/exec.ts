@@ -8,15 +8,21 @@ interface CommandOutput {
   stdout: string;
   stderr: string;
 }
-export type CommandRunner = (command: string, args: string[], timeoutMs?: number) => CommandOutput;
+export type CommandRunner = (command: string, args: string[], timeoutMs?: number, env?: Record<string, string>) => CommandOutput;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const isWindows = process.platform === "win32";
 
-export const runCommand: CommandRunner = (command, args, timeoutMs = DEFAULT_TIMEOUT_MS) => {
+export const runCommand: CommandRunner = (command, args, timeoutMs = DEFAULT_TIMEOUT_MS, env) => {
   // pnpm and claude are .cmd shims on Windows, which only start through a shell; args here are constants, never user input.
   const needsShell = isWindows && !path.isAbsolute(command);
-  const child = spawnSync(command, args, { encoding: "utf8", timeout: timeoutMs, windowsHide: true, shell: needsShell });
+  const child = spawnSync(command, args, {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    windowsHide: true,
+    shell: needsShell,
+    env: env ? { ...process.env, ...env } : process.env,
+  });
   return { code: child.error ? null : child.status, stdout: child.stdout ?? "", stderr: child.stderr ?? "" };
 };
 

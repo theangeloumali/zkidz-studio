@@ -36,12 +36,25 @@ def stage_left(record, history, now):
     pace = rate(record["stage"], history)
     planned = (total - done) / pace if pace else None
     if not done:
-        return planned or 0.0
+        return max(0.0, planned - elapsed) if planned else 0.0
     live = (total - done) * elapsed / done
     if planned is None:
         return live
     trust = min(1.0, done / total / TRUST_SHARE)
     return trust * live + (1 - trust) * planned
+
+
+def eta_seconds(record, history, now):
+    """Whole seconds left in a running stage, the record's etaS; None until a pace, seed or past run says anything."""
+    if record.get("state") != "running":
+        return None
+    stage, total = record["stage"], record.get("total")
+    known = (record.get("done") or rate(stage, history)) if total else stage_seconds(stage, record.get("frames"), history)
+    if not known:
+        return None
+    left = round(stage_left(record, history, now))
+    # Waiting on a first unit past the seed's estimate: 0 would claim it is about to finish, so say nothing.
+    return None if left == 0 and total and not record.get("done") else left
 
 
 def ahead(edit, history, now):

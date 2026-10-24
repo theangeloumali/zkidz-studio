@@ -11,6 +11,8 @@ export const AGENT_TRANSCRIPT_NAMES = [
   "rate-limit",
   "init-foreign-mcp",
   "edit-director-openings",
+  "render-flow",
+  "render-frozen",
 ] as const;
 export type AgentTranscriptName = (typeof AGENT_TRANSCRIPT_NAMES)[number];
 

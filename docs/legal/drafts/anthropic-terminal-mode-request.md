@@ -36,6 +36,8 @@ Options 1 and 2 ship regardless of your answer.
 - The user turns it on after reading a disclosure: it runs the Claude Code they installed, unmodified; they sign in with Claude
   Code's own `/login`; ZKidz Studio never sees or stores the sign-in; usage counts against their own Claude plan's limits. The
   disclosure links to your legal page, the Agent SDK overview and the help center article on using the SDK with a Claude plan.
+  [Angelo: true only once the mode T card links all three pages; today it links the Consumer Terms only. See
+  `docs/release/policy-check.md`, F1.]
 - The app finds the `claude` binary the user installed and starts it in a pseudo-terminal on their machine, shown in a terminal pane
   in the browser tab. It passes the binary an argument list directly, with no shell.
 - The binary is never modified, patched or wrapped. It is never bundled or redistributed; release downloads do not include it.
@@ -49,7 +51,8 @@ Options 1 and 2 ship regardless of your answer.
 - It runs Claude only for the person at the keyboard of that machine. Requests to the terminal from any other web origin are refused.
   There is no LAN mode, no remote access and no shared account.
 - It does not use the Agent SDK at all. The SDK is used only with an API key or a cloud provider (options 1 and 2).
-- The product name is "ZKidz Studio". The UI says "Powered by Claude" and, in plain text, "runs Claude Code on your computer". It uses
+- The product name is "ZKidz Studio". The UI names Claude and Claude Code only in plain text that describes what runs, for example
+  "The studio runs Claude on this computer" and "Use Claude Code in a terminal (your own sign-in)". It uses
   no Claude or Anthropic logos and no Claude Code artwork.
 
 This is the same pattern as Orca (https://github.com/stablyai/orca), which runs the user's own Claude Code in its terminals.

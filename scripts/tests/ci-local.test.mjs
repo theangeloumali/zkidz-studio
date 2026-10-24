@@ -34,9 +34,17 @@ describe("ci-local", () => {
   it("runs every lane at once on an idle machine and fewer when the load already exceeds the cores", () => {
     const lanes = (/** @type {Record<string, string>} */ env) =>
       spawnSync("bash", [SCRIPT, "--list-lanes"], { encoding: "utf8", env: { ...CALLER_ENV, ...env } }).stdout.trim();
-    expect(lanes({ ZKS_CI_LOAD: "2", ZKS_CI_CORES: "24" })).toBe("6");
-    expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24" })).toBe("2");
+    expect(lanes({ ZKS_CI_LOAD: "2", ZKS_CI_CORES: "24", ZKS_CI_SLOW_FS: "0" })).toBe("6");
+    expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24", ZKS_CI_SLOW_FS: "0" })).toBe("2");
     expect(lanes({ ZKS_CI_LOAD: "40", ZKS_CI_CORES: "24", ZKS_CI_LANES: "4" })).toBe("4");
+  });
+
+  // Over WSL's /mnt drives the file reads, not the CPU, run out: six lanes timed out at a load of 8 on 24 cores.
+  it("runs two lanes on a checkout over a slow filesystem, however idle the CPU", () => {
+    const lanes = (/** @type {Record<string, string>} */ env) =>
+      spawnSync("bash", [SCRIPT, "--list-lanes"], { encoding: "utf8", env: { ...CALLER_ENV, ...env } }).stdout.trim();
+    expect(lanes({ ZKS_CI_LOAD: "2", ZKS_CI_CORES: "24", ZKS_CI_SLOW_FS: "1" })).toBe("2");
+    expect(lanes({ ZKS_CI_LOAD: "2", ZKS_CI_CORES: "24", ZKS_CI_SLOW_FS: "1", ZKS_CI_LANES: "6" })).toBe("6");
   });
 
   // A zero or non-numeric count would leave the lane loop waiting forever on a run that never starts.

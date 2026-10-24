@@ -48,11 +48,13 @@ serial_steps=(actionlint gitleaks install)
 parallel_steps=(engine lint test-server typecheck test-other format)
 
 # Every lane at once on an idle machine; on one already busier than its cores, two, or vitest cannot start its workers.
+# A checkout on WSL's /mnt drives runs two whatever the CPU: there the file reads run out first.
 lane_count() {
   local load="${ZKS_CI_LOAD:-$(cut -d' ' -f1 /proc/loadavg)}" cores="${ZKS_CI_CORES:-$(nproc)}"
+  local slow_fs="${ZKS_CI_SLOW_FS:-$([[ "$REPO_ROOT" == /mnt/[a-z]/* ]] && echo 1 || echo 0)}"
   if [[ -n "${ZKS_CI_LANES:-}" ]]; then
     echo "$ZKS_CI_LANES"
-  elif awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
+  elif [[ "$slow_fs" == 1 ]] || awk -v busy="$load" -v cpus="$cores" 'BEGIN { exit !(busy > cpus) }'; then
     echo 2
   else
     echo "${#parallel_steps[@]}"

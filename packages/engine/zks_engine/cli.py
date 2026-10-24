@@ -6,7 +6,7 @@ import json
 import platform
 import sys
 
-from . import __version__, backends, ffio, join_sources, prepare, showcase, specs, theme_index, transcribe
+from . import __version__, backends, capabilities, ffio, join_sources, prepare, showcase, specs, theme_index, transcribe
 from .pipeline import WORK
 from .render import commands as render_commands
 from .specs.gates import GateFailed
@@ -22,6 +22,10 @@ EXIT_GATE_FAILED = 7
 
 def version_payload(_args):
     return {"name": "zks-engine", "version": __version__, "python": platform.python_version()}
+
+
+def capabilities_payload(args):
+    return capabilities.probe(args.refresh)
 
 
 def probe_payload(args):
@@ -140,7 +144,10 @@ def parser():
     transcription.add_argument("--language", default="auto")
     transcription.add_argument("--model", help="a pinned whisper model; default the most accurate installed")
     transcription.set_defaults(handler=transcribe_payload)
-    for command in (version, probe, index, kinds, validate, ingest, transcription):
+    probed = commands.add_parser("capabilities", help="probe the render backends and write ZKS_HOME/capabilities.json")
+    probed.add_argument("--refresh", action="store_true", help="probe again instead of reusing this ffmpeg + driver's cached result")
+    probed.set_defaults(handler=capabilities_payload)
+    for command in (version, probe, probed, index, kinds, validate, ingest, transcription):
         command.add_argument("--json", action="store_true", required=True, help="print JSON (the only output format)")
     render_commands.register(commands)
     return root

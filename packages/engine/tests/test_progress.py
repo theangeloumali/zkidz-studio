@@ -309,7 +309,8 @@ class EtaTests(unittest.TestCase):
         record = {"stage": "frames", "state": "running", "done": 500, "total": 1000, "started": NOW - 100}
         self.assertAlmostEqual(progress_eta.stage_left(record, [], NOW), 100)  # 5 fps measured, 100 s to go
         unstarted = {**record, "done": 0, "started": NOW - 20}
-        self.assertAlmostEqual(progress_eta.stage_left(unstarted, [], NOW), 1000 / progress_eta.SEED_RATES["frames"])
+        # No unit yet: the seed's plan, less the 20 s already spent waiting.
+        self.assertAlmostEqual(progress_eta.stage_left(unstarted, [], NOW), 1000 / progress_eta.SEED_RATES["frames"] - 20)
 
     def test_an_early_pace_blends_with_history(self):
         # 10 % in after 60 s (a browser start-up inside): live says 540 s left, history 60 s; 40 % live.
@@ -340,6 +341,11 @@ class EtaSecondsTests(unittest.TestCase):
     def test_a_counted_stage_reports_whole_seconds_from_its_pace(self):
         record = {"stage": "master", "state": "running", "done": 0, "total": 670, "started": NOW}
         self.assertEqual(progress_eta.eta_seconds(record, [], NOW), 10)  # 670 frames at the 67 fps seed
+
+    def test_before_its_first_unit_a_counted_stage_counts_down_then_stops_guessing(self):
+        record = {"stage": "master", "state": "running", "done": 0, "total": 670, "started": NOW - 4}
+        self.assertEqual(progress_eta.eta_seconds(record, [], NOW), 6)  # the 10 s seed, 4 s spent waiting on the first frame
+        self.assertIsNone(progress_eta.eta_seconds({**record, "started": NOW - 30}, [], NOW))  # start-up outlived the seed
 
     def test_a_stage_without_units_uses_its_history(self):
         history = [{"stage": "join", "units": 0, "seconds": 330}]

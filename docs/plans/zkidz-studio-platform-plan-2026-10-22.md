@@ -24,7 +24,8 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
       bridge, MCP tools v1, activity feed) (done 2026-10-23; terminal mode stays opt-in and labelled pending Anthropic approval)
 - [x] Phase 3: Engine portability (hardware backends, whisper.cpp, JSON specs, theme packs) (done 2026-10-23, PR #12; amf/qsv/vaapi
       untested on hardware, videotoolbox frame 0 at SSIM 0.993 pending a manual macOS run, OpenCL composite pending a native NVIDIA host)
-- [ ] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions)
+- [x] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions) (done 2026-10-24; the preview clock
+      follows the playing proxy until Phase 5 renders the edit audio)
 - [ ] Phase 5: Render, covers, export and QC gates
 - [x] Phase 6: Bundled skills, rules panel, style onboarding, demo project (done 2026-10-24, PR #14; also added the engine
       `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)

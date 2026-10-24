@@ -144,7 +144,8 @@ const contains = (outer: Box, inner: Box) => inner.left >= outer.left && inner.t
 
 test("a long comment cue writes on in full, inside its bubble", async ({ page, request }) => {
   await openEditor(page, request);
-  await expect(await hostileCueBuilt(page, request, 105)).toBeAttached();
+  // An odd step's cue sits at 5 + step % 9 s: 103 lands at 9 s, clear of the seeded 10–14 s cut that drops 105's cue.
+  await expect(await hostileCueBuilt(page, request, 103)).toBeAttached();
   await page.getByRole("button", { name: "Play" }).click();
 
   // The pen window grows until the reveal ends; with fallback type the text outgrew it and was cropped.

@@ -5,6 +5,14 @@ import { DecisionBroker } from "../../src/agent/decisions.ts";
 import type { NewStudioEvent } from "../../src/events/event-bus.ts";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
+const APPROVAL_FACTS = {
+  action: "Render the 4K master",
+  target: "v1",
+  quality: "4K HEVC",
+  estimatedGpuMinutes: 6,
+  outputPaths: ["out/v1.mp4"],
+  filesToDelete: [],
+};
 const QUESTIONS = [{ question: "Which take?", header: "Take", options: [{ label: "A" }, { label: "B" }], multiSelect: false }];
 
 function setup() {
@@ -48,5 +56,25 @@ describe("DecisionBroker.askQuestions (the studio tools' ask_user and the SDK de
 
     expect(await stopped).toBeNull();
     expect(await abandoned).toBeNull();
+  });
+});
+
+describe("DecisionBroker.pendingCards (replayed to a page that opens after the card was sent)", () => {
+  it("lists each published card of the asked projects until it is settled", async () => {
+    const { broker, lastRequestId } = setup();
+    const otherProjectId = "00000000-0000-4000-8000-000000000002";
+    const answered = broker.askQuestions(PROJECT_ID, QUESTIONS);
+    const requestId = await lastRequestId();
+    void broker.requestApproval(otherProjectId, { tool: "mcp__studio__render_master", facts: APPROVAL_FACTS });
+    await lastRequestId();
+
+    expect(broker.pendingCards([PROJECT_ID])).toMatchObject([{ type: "question.asked", projectId: PROJECT_ID, requestId }]);
+    broker.settle(PROJECT_ID, { kind: "question", requestId, answers: { "Which take?": "A" } });
+    await answered;
+
+    expect(broker.pendingCards([PROJECT_ID])).toEqual([]);
+    expect(broker.pendingCards([otherProjectId])).toMatchObject([{ type: "approval.requested" }]);
+    broker.cancelProject(otherProjectId);
+    expect(broker.pendingCards([otherProjectId])).toEqual([]);
   });
 });

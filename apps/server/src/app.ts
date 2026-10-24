@@ -40,7 +40,7 @@ export interface AppDependencies {
   readonly logger: Logger;
   readonly jobRunner: Pick<JobRunner, "resume">;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
-  readonly agent?: Pick<AgentServices, "registerRoutes">;
+  readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
   /** GET /api/doctor; main.ts always passes it. */
   readonly runDoctor?: DoctorRunner;
   /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
@@ -61,7 +61,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerMediaStreamRoute(app, { ...deps, confinePath: deps.security.confinePath });
   registerFsRoutes(app, deps);
   registerJobRoutes(app, deps.database);
-  registerEventRoutes(app, deps.eventBus);
+  registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });

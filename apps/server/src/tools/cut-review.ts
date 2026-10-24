@@ -2,7 +2,8 @@
 // propose_cuts blocks here until the user reviews the candidate chips; set_cuts only accepts approved ids (plan §6.8).
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CutCandidate } from "@zks/shared";
+import { hasErrorCode } from "@zks/db";
+import type { CutCandidate, StudioEvent } from "@zks/shared";
 import { z } from "zod";
 import type { ToolContext } from "./context.ts";
 import { loadProject, projectRootOf } from "./project-files.ts";
@@ -33,6 +34,8 @@ interface PendingReview {
   readonly projectId: string;
   readonly candidates: readonly CandidateSpan[];
   readonly resolve: (decision: CutReviewDecision) => void;
+  /** The published cuts.proposed card, kept so a page that opens later still sees it. */
+  card?: StudioEvent;
 }
 
 const pendingReviews = new Map<string, PendingReview>();
@@ -57,6 +60,16 @@ export function awaitCutReview(review: { projectId: string; requestId: string; c
       },
     });
   });
+}
+
+export function holdCutReviewCard(card: StudioEvent): void {
+  if (card.type !== "cuts.proposed") return;
+  const review = pendingReviews.get(card.requestId);
+  if (review !== undefined) review.card = card;
+}
+
+export function pendingCutReviewCards(projectIds: readonly string[]): StudioEvent[] {
+  return [...pendingReviews.values()].filter((review) => projectIds.includes(review.projectId)).flatMap((review) => review.card ?? []);
 }
 
 /** Called by the decisions route; ids the user did not approve count as rejected. */
@@ -163,7 +176,7 @@ async function readRejectedSpans(context: ToolContext): Promise<CandidateSpan[]>
   try {
     text = await readFile(await rejectedSpansPath(context), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (hasErrorCode(error, "ENOENT")) return [];
     throw error;
   }
   const parsed = RejectedSpansSchema.safeParse(JSON.parse(text));

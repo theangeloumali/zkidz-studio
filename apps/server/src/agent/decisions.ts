@@ -24,6 +24,8 @@ interface PendingCard {
   readonly projectId: string;
   readonly kind: DecisionKind;
   readonly resolve: (decision: DecisionRequest | null) => void;
+  /** The published card, kept so a page that opens later still sees it. */
+  card?: StudioEvent;
 }
 
 export class DecisionBroker {
@@ -43,7 +45,9 @@ export class DecisionBroker {
       this.#pending.set(requestId, { projectId: request.projectId, kind: request.kind, resolve });
     });
     request.signal?.addEventListener("abort", () => this.#finish(requestId, null), { once: true });
-    await this.publish(request.card(requestId));
+    const card = await this.publish(request.card(requestId));
+    const pending = this.#pending.get(requestId);
+    if (pending !== undefined) pending.card = card;
     return decision;
   }
 
@@ -77,6 +81,11 @@ export class DecisionBroker {
     return true;
   }
 
+  /** Cards still waiting on the user in these projects, oldest first. */
+  pendingCards(projectIds: readonly string[]): StudioEvent[] {
+    return sortById([...this.#pending.values()].filter((pending) => projectIds.includes(pending.projectId)).flatMap((pending) => pending.card ?? []));
+  }
+
   cancelProject(projectId: string): void {
     for (const [requestId, pending] of this.#pending) {
       if (pending.projectId === projectId) this.#finish(requestId, null);
@@ -87,4 +96,8 @@ export class DecisionBroker {
     this.#pending.get(requestId)?.resolve(decision);
     this.#pending.delete(requestId);
   }
+}
+
+export function sortById(cards: readonly StudioEvent[]): StudioEvent[] {
+  return [...cards].sort((left, right) => (left.id ?? 0) - (right.id ?? 0));
 }

@@ -3,8 +3,9 @@
 import { join } from "node:path";
 import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
+import type { StudioEvent } from "@zks/shared";
 import type { Hono } from "hono";
-import { DecisionBroker } from "./agent/decisions.ts";
+import { DecisionBroker, sortById } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
 import { createPrintSessions, type PrintSessions } from "./agent/print-sessions.ts";
 import type { QueryFunction } from "./agent/query-function.ts";
@@ -31,6 +32,7 @@ import { registerTerminalRoutes } from "./terminal/routes.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
+import { pendingCutReviewCards } from "./tools/cut-review.ts";
 import { describeStudioGate } from "./tools/gate-facts.ts";
 import { createStudioMcpServer, registerEngineJobHandlers, registerRenderJobHandlers, registerStudioToolRoutes, type EngineRunner } from "./tools/index.ts";
 
@@ -66,6 +68,8 @@ export interface AgentServices {
   readonly terminalSessions: TerminalSessions;
   readonly agentRunner: "sdk" | "print";
   readonly registerRoutes: (app: Hono) => void;
+  /** Approval, question and cut-review cards still waiting, sent to every new event stream. */
+  readonly pendingCards: (projectIds: readonly string[]) => StudioEvent[];
   /** Kills every PTY and SDK child so none outlives the server. */
   readonly shutdown: () => void;
 }
@@ -178,6 +182,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     terminalSessions,
     agentRunner: printSessions === undefined ? "sdk" : "print",
     registerRoutes,
+    pendingCards: (projectIds) => sortById([...broker.pendingCards(projectIds), ...pendingCutReviewCards(projectIds)]),
     shutdown: () => {
       terminalSessions.killAll();
       manager.closeAll();

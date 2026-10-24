@@ -5,7 +5,6 @@ import { AskedQuestionSchema, findStudioTool, type ApprovalFacts } from "@zks/sh
 import { z } from "zod";
 import { assertNever } from "./assert-never.ts";
 import type { DecisionBroker } from "./decisions.ts";
-import { describeGateCall } from "./gate-facts.ts";
 import { bareToolName } from "./tool-names.ts";
 
 /** Read is confined by the PreToolUse hook, which runs before this. */
@@ -15,8 +14,8 @@ const AskUserQuestionInputSchema = z.object({ questions: z.array(AskedQuestionSc
 export interface ToolDeciderOptions {
   readonly projectId: string;
   readonly broker: DecisionBroker;
-  /** The project-aware facts (output paths, GPU estimate); without it the card shows only what the input says. */
-  readonly describeGate?: (tool: string, input: unknown) => Promise<ApprovalFacts | null>;
+  /** The server-derived card facts (files, output paths, GPU estimate); the one builder every mode shares. */
+  readonly describeGate: (tool: string, input: unknown) => Promise<ApprovalFacts | null>;
 }
 
 type DeciderCall = ToolDeciderOptions & { readonly toolName: string; readonly input: Record<string, unknown>; readonly signal: AbortSignal };
@@ -53,8 +52,7 @@ async function askQuestions(call: DeciderCall): Promise<PermissionResult> {
 
 async function askApproval(call: DeciderCall): Promise<PermissionResult> {
   const tool = bareToolName(call.toolName);
-  const describeGate = call.describeGate ?? ((name: string, input: unknown) => Promise.resolve(describeGateCall(name, input)));
-  const facts = await describeGate(tool, call.input).catch(() => null);
+  const facts = await call.describeGate(tool, call.input).catch(() => null);
   if (facts === null) return deny(call, "The tool input was invalid");
   const decision = await call.broker.ask({
     projectId: call.projectId,

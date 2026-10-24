@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { transcripts } from "@zks/db/schema";
 import { TranscriptWordSchema } from "@zks/shared";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ToolContext } from "./context.ts";
 import { loadProject, projectRootOf } from "./project-files.ts";
@@ -14,12 +14,13 @@ export type TranscriptWord = z.infer<typeof TranscriptWordSchema>;
 
 const TranscriptWordsSchema = z.array(TranscriptWordSchema);
 
-export async function readLatestWords(context: ToolContext): Promise<TranscriptWord[]> {
+/** mediaAssetId narrows it to that source's transcript, so QC compares a master with the words of what it rendered. */
+export async function readLatestWords(context: ToolContext, mediaAssetId?: string): Promise<TranscriptWord[]> {
   const project = await loadProject(context);
   const [transcript] = await context.db
     .select({ wordsRelPath: transcripts.wordsRelPath })
     .from(transcripts)
-    .where(eq(transcripts.projectId, context.projectId))
+    .where(and(eq(transcripts.projectId, context.projectId), mediaAssetId === undefined ? undefined : eq(transcripts.mediaAssetId, mediaAssetId)))
     .orderBy(desc(transcripts.createdAt))
     .limit(1);
   if (transcript === undefined) throw new ToolError("There is no transcript yet: call transcribe first");

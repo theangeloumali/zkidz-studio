@@ -1,10 +1,15 @@
 // Created by The Angelo Umali.
 // Minimal SDK messages for tests; the real types carry many fields the server never reads.
 import type { SDKMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
-import { STUDIO_TOOL_NAMES } from "@zks/shared";
+import { STUDIO_TOOL_NAMES, type ApprovalFacts } from "@zks/shared";
 
 export const SDK_SESSION_ID = "sdk-session-1";
 export const REQUIRED_SKILLS = ["zkidz-studio:edit-video"];
+
+/** Stands in for the server's describeStudioGate where a test needs a card but no project files. */
+export function stubGateFacts(tool: string): Promise<ApprovalFacts> {
+  return Promise.resolve({ action: `Run ${tool}`, outputPaths: [], filesToDelete: [] });
+}
 
 export function sdkMessage(fields: Record<string, unknown>): SDKMessage {
   return { uuid: crypto.randomUUID(), session_id: SDK_SESSION_ID, ...fields } as unknown as SDKMessage;

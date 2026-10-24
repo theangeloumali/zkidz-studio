@@ -2,27 +2,33 @@
 // Plan §7.6 export: each master is copied into ZKS_HOME/projects/<slug>/deliverables/ and recorded with its SHA-256.
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { access, open, rename, rm, type FileHandle } from "node:fs/promises";
+import { access, lstat, mkdir, realpath, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { StudioDatabase } from "@zks/db";
-import { deliverables, jobs } from "@zks/db/schema";
-import { STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
-import { and, eq, inArray } from "drizzle-orm";
+import { deliverables } from "@zks/db/schema";
+import { SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { openConfined } from "../security/confine-path.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
 import type { JobRunner } from "./job-runner.ts";
 import { findLatestMaster } from "./master-files.ts";
+import { assertNoRenderInFlight, findRenderOf } from "./render-provenance.ts";
 
 const OWNER_ONLY_FILE_MODE = 0o600;
 export const EXPORT_JOB_KIND = "export_deliverable";
-const IN_FLIGHT_STATUSES = ["queued", "running"] as const;
-// qc-status names the exact master it passed; mtimeNs is a string because a JS number cannot hold it exactly.
-const QcVerdictSchema = z.object({ ok: z.literal(true), master: z.string(), bytes: z.int().nonnegative(), mtimeNs: z.string().regex(/^\d+$/) });
+// qc-status names the exact master it passed and the inputs it judged; mtimeNs is a string as a JS number cannot hold it.
+const QcVerdictSchema = z.object({
+  ok: z.literal(true),
+  master: z.object({ relPath: z.string(), size: z.int().nonnegative(), mtimeNs: z.string().regex(/^\d+$/), sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
+  source: z.object({ relPath: z.string() }),
+  specsSnapshot: SpecsSnapshotRefSchema,
+});
 type QcVerdict = z.infer<typeof QcVerdictSchema>;
 
 export interface DeliverableDeps {
@@ -54,7 +60,7 @@ interface DeliverableSource {
   readonly gateVideoId: string;
   readonly sourceRelPath: string;
   readonly deliverableName: string;
-  /** A master only: the file QC passed, which the copy must still match byte count and mtime for. */
+  /** A master only: the file QC passed, which the copy must still match by size, mtime and SHA-256. */
   readonly passedQc?: QcVerdict;
 }
 type SourceResolution = { readonly source: DeliverableSource } | { readonly problem: string };
@@ -116,7 +122,7 @@ export async function plannedDeliverableNames(projectRoot: string, videoId: stri
 export async function exportDeliverables(deps: DeliverableDeps, request: ExportRequest): Promise<ExportedDeliverable[]> {
   const project = await findProjectOrThrow(deps.database, request.projectId);
   const projectRoot = projectDir(deps.studioHome, project.slug);
-  await assertNoRenderInFlight(deps.database, request);
+  await assertNoRenderInFlight(deps.database, request, "export");
   const verdicts = await qcVerdicts(deps.engine, projectRoot, request);
   // Every source is resolved before the first copy, so a missing one leaves no partial export behind.
   const sources = new Map<DeliverableKind, DeliverableSource>();
@@ -125,33 +131,19 @@ export async function exportDeliverables(deps: DeliverableDeps, request: ExportR
     if ("problem" in resolution) throw new Error(resolution.problem);
     const verdict = verdicts.get(resolution.source.gateVideoId);
     const isMaster = isRenderedKind(kind) && LAYOUT_BY_KIND[kind].cover === undefined;
-    sources.set(kind, isMaster && verdict !== undefined ? bindToQcVerdict(resolution.source, verdict) : resolution.source);
+    const bound = isMaster && verdict !== undefined ? bindToQcVerdict(resolution.source, verdict) : resolution.source;
+    if (bound.passedQc !== undefined) await assertJudgedAsRendered(deps.database, projectRoot, request, bound, bound.passedQc);
+    sources.set(kind, bound);
   }
+  const deliverablesDir = await realDeliverablesDir(projectRoot);
   const exported: ExportedDeliverable[] = [];
   for (const [kind, source] of sources) {
     const relPath = `deliverables/${source.deliverableName}`;
-    const { sha256, bytes } = await copyWithSha256(projectRoot, source, join(projectRoot, relPath));
+    const { sha256, bytes } = await copyWithSha256(projectRoot, source, join(deliverablesDir, source.deliverableName));
     await replaceDeliverableRow(deps.database, { projectId: request.projectId, jobId: request.jobId, kind, relPath, bytes, sha256 });
     exported.push({ kind, path: relPath, sha256 });
   }
   return exported;
-}
-
-/** A render landing mid-export would replace the master QC is about to judge; a reel renders under its base video's job. */
-async function assertNoRenderInFlight(database: StudioDatabase, request: ExportRequest): Promise<void> {
-  const [render] = await database
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(
-      and(
-        eq(jobs.projectId, request.projectId),
-        eq(jobs.kind, "render_master"),
-        eq(jobs.videoId, request.videoId),
-        inArray(jobs.status, [...IN_FLIGHT_STATUSES]),
-      ),
-    )
-    .limit(1);
-  if (render !== undefined) throw new Error(`${request.videoId} is still rendering; export once render_master finishes`);
 }
 
 /** The engine owns the verdict: qc-status fails unless the latest master's own QC report passed, and names that master. */
@@ -170,9 +162,40 @@ async function qcVerdicts(engine: EngineProcessRunner, projectRoot: string, requ
 
 /** The master to copy is the one QC passed; a newer one means QC has not judged what export would ship. */
 function bindToQcVerdict(source: DeliverableSource, verdict: QcVerdict): DeliverableSource {
-  const passedRelPath = `work/${verdict.master}`;
+  const passedRelPath = `work/${verdict.master.relPath}`;
   if (source.sourceRelPath !== passedRelPath) throw newerMasterError(source.gateVideoId, source.sourceRelPath);
   return { ...source, passedQc: verdict };
+}
+
+/** QC must have judged the source and spec snapshot the master was rendered from, not whatever the edit points at now. */
+async function assertJudgedAsRendered(
+  database: StudioDatabase,
+  projectRoot: string,
+  request: ExportRequest,
+  source: DeliverableSource,
+  verdict: QcVerdict,
+): Promise<void> {
+  const render = await findRenderOf(database, projectRoot, request, source.sourceRelPath);
+  if (render === undefined) throw new Error(`${source.gateVideoId}: no finished render_master produced ${source.sourceRelPath}; re-render it`);
+  if (render.source.relPath !== verdict.source.relPath || render.specsSnapshot !== verdict.specsSnapshot) {
+    throw new Error(`${source.gateVideoId}: QC judged ${source.sourceRelPath} against other inputs than its render; rerun qc_master`);
+  }
+}
+
+/** The folder exports land in, refused when it is a link: following one would write deliverables outside the project. */
+async function realDeliverablesDir(projectRoot: string): Promise<string> {
+  const deliverablesDir = join(projectRoot, "deliverables");
+  await mkdir(deliverablesDir, { recursive: true, mode: 0o700 });
+  const [stats, rootRealPath, dirRealPath] = await Promise.all([lstat(deliverablesDir), realpath(projectRoot), realpath(deliverablesDir)]);
+  const expectedRealPath = join(rootRealPath, "deliverables");
+  if (stats.isSymbolicLink() || !stats.isDirectory() || dirRealPath !== expectedRealPath) {
+    throw new Error("deliverables/ must be a real folder inside the project; remove the link and export again");
+  }
+  return expectedRealPath;
+}
+
+function changedAfterQcError(source: DeliverableSource): Error {
+  return new Error(`${source.gateVideoId}: ${source.sourceRelPath} changed after QC passed it; rerun qc_master`);
 }
 
 function newerMasterError(gateVideoId: string, newestRelPath: string): Error {
@@ -184,9 +207,7 @@ async function assertStillPassedQc(projectRoot: string, source: DeliverableSourc
   const { passedQc } = source;
   if (passedQc === undefined) return;
   const stats = await handle.stat({ bigint: true });
-  if (stats.size !== BigInt(passedQc.bytes) || String(stats.mtimeNs) !== passedQc.mtimeNs) {
-    throw new Error(`${source.gateVideoId}: ${source.sourceRelPath} changed after QC passed it; rerun qc_master`);
-  }
+  if (stats.size !== BigInt(passedQc.master.size) || String(stats.mtimeNs) !== passedQc.master.mtimeNs) throw changedAfterQcError(source);
   const newest = await findLatestMaster(projectRoot, source.gateVideoId);
   if (newest !== undefined && newest.relPath !== source.sourceRelPath) throw newerMasterError(source.gateVideoId, newest.relPath);
 }
@@ -204,8 +225,8 @@ export function toDeliverableDto(row: DeliverableRow): Deliverable {
   return { id: row.id, kind: row.kind, name: basename(row.relPath), bytes: row.bytes, sha256: row.sha256, createdAt: row.createdAt.toISOString() };
 }
 
-/** Hashes while copying into a .part file, so a reader never sees a half-written deliverable. A master is read from one
- * open handle, checked against its QC verdict before and after the read, so the bytes shipped are the bytes QC passed. */
+/** Hashes while copying into a .part file, so a reader never sees a half-written deliverable. Every source is opened
+ * confined to the project; a master's digest must equal the one QC passed before the .part file is renamed into place. */
 async function copyWithSha256(projectRoot: string, source: DeliverableSource, targetPath: string): Promise<{ sha256: string; bytes: number }> {
   const hash = createHash("sha256");
   let bytes = 0;
@@ -218,11 +239,14 @@ async function copyWithSha256(projectRoot: string, source: DeliverableSource, ta
   });
   const partPath = `${targetPath}.${randomUUID()}.part`;
   let handle: FileHandle | undefined;
+  let sha256: string;
   try {
-    handle = await open(join(projectRoot, source.sourceRelPath));
+    ({ handle } = await openConfined(projectRoot, source.sourceRelPath));
     await assertStillPassedQc(projectRoot, source, handle);
-    await pipeline(handle.createReadStream({ autoClose: false }), hashingStream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE }));
+    await pipeline(handle.createReadStream({ autoClose: false }), hashingStream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE, flags: "wx" }));
     await assertStillPassedQc(projectRoot, source, handle);
+    sha256 = hash.digest("hex");
+    if (source.passedQc !== undefined && sha256 !== source.passedQc.master.sha256) throw changedAfterQcError(source);
     await rename(partPath, targetPath);
   } catch (error) {
     await rm(partPath, { force: true });
@@ -230,7 +254,7 @@ async function copyWithSha256(projectRoot: string, source: DeliverableSource, ta
   } finally {
     await handle?.close();
   }
-  return { sha256: hash.digest("hex"), bytes };
+  return { sha256, bytes };
 }
 
 async function replaceDeliverableRow(database: StudioDatabase, row: typeof deliverables.$inferInsert): Promise<void> {

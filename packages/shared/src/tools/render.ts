@@ -51,12 +51,19 @@ export const makeCovers = defineTool({
   isReadOnly: false,
 });
 
+/** A spec snapshot under work/, named by the SHA-256 of the spec set it holds. */
+export const SpecsSnapshotRefSchema = z.string().regex(/^snapshots\/[0-9a-f]{64}$/);
+
+/** source and specsSnapshot are what the master was cut from; QC and export are held to the same pair. relPath is an
+ * in-place clip's realpath. */
 export const MasterRenderResultSchema = z.strictObject({
   path: ProjectPathSchema,
   frames: z.int().positive(),
   lufs: z.number(),
   truePeak: z.number(),
   bytes: z.int().positive(),
+  source: z.strictObject({ assetId: IdSchema, relPath: z.string().min(1) }),
+  specsSnapshot: SpecsSnapshotRefSchema,
 });
 
 export const renderMaster = defineTool({

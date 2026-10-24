@@ -4,10 +4,11 @@ import { describe, expect, it } from "vitest";
 import { DecisionBroker } from "../../src/agent/decisions.ts";
 import { createToolDecider } from "../../src/agent/policy.ts";
 import type { NewStudioEvent } from "../../src/events/event-bus.ts";
+import { stubGateFacts } from "./sdk-fixtures.ts";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 
-function setup(describeGate?: Parameters<typeof createToolDecider>[0]["describeGate"]) {
+function setup(describeGate: Parameters<typeof createToolDecider>[0]["describeGate"] = stubGateFacts) {
   const published: NewStudioEvent[] = [];
   const broker = new DecisionBroker({
     publish: (event) => {
@@ -15,7 +16,7 @@ function setup(describeGate?: Parameters<typeof createToolDecider>[0]["describeG
       return Promise.resolve({ ...event, at: new Date().toISOString() } as StudioEvent);
     },
   });
-  const canUseTool = createToolDecider({ projectId: PROJECT_ID, broker, ...(describeGate === undefined ? {} : { describeGate }) });
+  const canUseTool = createToolDecider({ projectId: PROJECT_ID, broker, describeGate });
   const signal = new AbortController().signal;
   const call = (toolName: string, input: Record<string, unknown>) => canUseTool(toolName, input, { signal, toolUseID: "tu1", requestId: "r1" });
   const nextRequestId = async () => {
@@ -51,7 +52,7 @@ describe("tool decider", () => {
     expect(published.at(-1)).toMatchObject({
       type: "approval.requested",
       tool: "render_master",
-      facts: { action: "Render the 1080p master", target: "full", quality: "final" },
+      facts: { action: "Run render_master", outputPaths: [], filesToDelete: [] },
     });
     expect(broker.settle(PROJECT_ID, { kind: "approval", requestId, decision: "deny", message: "not yet" })).toBe(true);
     expect(await pending).toEqual({ behavior: "deny", message: "not yet" });

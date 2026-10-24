@@ -1,21 +1,28 @@
 // Created by The Angelo Umali.
 // render_master, qc_master, check_motion, make_covers and export_deliverable (plan §6.8, §7.6), each run as a job on its lane.
 // render_master answers with the jobId; the others wait for their job and return its report.
+import { constants } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { jobs } from "@zks/db/schema";
-import { CutSpecSchema, IdSchema, MasterRenderResultSchema, STUDIO_TOOLS } from "@zks/shared";
+import { CutSpecSchema, IdSchema, MasterRenderResultSchema, SpecsSnapshotRefSchema, STUDIO_TOOLS } from "@zks/shared";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { JobRow } from "../dto.ts";
 import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
 import type { JobRunner, NewJob } from "../jobs/job-runner.ts";
+import { findLatestMaster } from "../jobs/master-files.ts";
+import { assertNoRenderInFlight, findRenderOf } from "../jobs/render-provenance.ts";
+import { activeSpecSnapshotDir, postCaptionRelPath, readSnapshotSpec, snapshotFilePath } from "../jobs/spec-snapshot.ts";
 import type { ToolContext } from "./context.ts";
 import { implementTool } from "./define-tool.ts";
 import { prepareWorkDir, projectAsset, projectRootOfJob, workRelativePath, type EngineJobDeps } from "./engine-jobs.ts";
+import { fenceJobError } from "./job-error-fence.ts";
 import { readJobResult, writeJobResult } from "./job-results.ts";
 import { assetFilePath, findProjectAsset, loadProject, projectRootOf } from "./project-files.ts";
 import { ToolError } from "./result.ts";
+import { confinePath } from "../security/confine-path.ts";
+import { specRelPath } from "../specs/spec-files.ts";
 import { readCurrentSpec, writeAgentSpec } from "./spec-store.ts";
 import { readLatestWords } from "./transcript-store.ts";
 
@@ -24,8 +31,14 @@ type RenderTarget = z.infer<typeof RenderTargetSchema>;
 const RegionSchema = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
 const ClipJoinSchema = z.object({ assetId: IdSchema, at: z.number().nonnegative() });
 
-const RenderParamsSchema = z.object({ target: RenderTargetSchema, quality: STUDIO_TOOLS.render_master.input.shape.quality, sourceAssetId: IdSchema });
-const QcParamsSchema = z.object({ target: RenderTargetSchema, sourceAssetId: IdSchema, wordsRelPath: z.string().min(1) });
+const RenderParamsSchema = z.object({ target: RenderTargetSchema, quality: STUDIO_TOOLS.render_master.input.shape.quality });
+const QcParamsSchema = z.object({
+  target: RenderTargetSchema,
+  masterRelPath: z.string().startsWith("work/"),
+  sourceAssetId: IdSchema,
+  specsSnapshot: SpecsSnapshotRefSchema,
+  wordsRelPath: z.string().min(1),
+});
 const MotionParamsSchema = z.object({
   stage: z.enum(["source", "master"]),
   sourceAssetId: IdSchema,
@@ -39,8 +52,9 @@ const CoverParamsSchema = z.object({
   postCaptionRelPath: z.string().min(1).optional(),
 });
 
-const EngineMasterReportSchema = MasterRenderResultSchema.extend({ path: z.string().min(1) });
-const EngineQcReportSchema = STUDIO_TOOLS.qc_master.output.extend({ master: z.string() });
+const EngineMasterReportSchema = MasterRenderResultSchema.pick({ frames: true, lufs: true, truePeak: true, bytes: true }).extend({ path: z.string().min(1) });
+// The engine's report also carries the master's digest and the inputs it judged, which qc-status hands to export.
+const EngineQcReportSchema = z.object({ ok: z.boolean(), checks: STUDIO_TOOLS.qc_master.output.shape.checks, master: z.object({ relPath: z.string() }) });
 const EngineCoversReportSchema = z.object({ covers: z.array(z.object({ path: z.string().min(1) })), postCaption: z.string().min(1).optional() });
 const IngestResultSchema = z.object({ joins: z.array(ClipJoinSchema) });
 
@@ -58,14 +72,9 @@ const renderMaster = implementTool("render_master", {
     "Render the full edit or the Reels cut: overlays, SFX mix and the master (4K HEVC on NVIDIA, 1080 elsewhere), gated on the EDL's frame count and -14 LUFS. Returns a jobId; follow it with job_wait, then run qc_master.",
   handler: async (input, context) => {
     const project = await loadProject(context);
-    const sourceAssetId = await cutSourceAssetId(context, project.videoId);
-    const job = await context.jobs.enqueue({
-      projectId: context.projectId,
-      kind: "render_master",
-      videoId: project.videoId,
-      lane: "gpu",
-      params: { ...input, sourceAssetId },
-    });
+    // Fails fast here; the job itself renders the cut spec its snapshot froze.
+    await cutSourceAssetId(context, project.videoId);
+    const job = await context.jobs.enqueue({ projectId: context.projectId, kind: "render_master", videoId: project.videoId, lane: "gpu", params: input });
     return { output: { jobId: job.id } };
   },
 });
@@ -75,14 +84,21 @@ const qcMaster = implementTool("qc_master", {
     "QC the latest master: format, frames vs the EDL, loudness, frozen footage, words clipped or repeated at each cut (re-transcribed), caption contrast, nothing over the mouth in the first 2.5 s, and lip sync at each cut. Export stays blocked until every check passes.",
   handler: async (input, context, signal) => {
     const project = await loadProject(context);
-    const sourceAssetId = await cutSourceAssetId(context, project.videoId);
-    const wordsRelPath = `work/qc/${targetVideoId(project.videoId, input.target)}.words.json`;
-    await writeProjectFile(projectRootOf(context, project), wordsRelPath, JSON.stringify(await readLatestWords(context)));
-    const result = await runJobForResult(
-      context,
-      { kind: "qc_master", lane: "whisper", params: { target: input.target, sourceAssetId, wordsRelPath } },
-      signal,
-    );
+    const projectRoot = projectRootOf(context, project);
+    const video = { projectId: context.projectId, videoId: project.videoId };
+    await assertNoRenderInFlight(context.db, video, "run qc_master").catch(asToolError);
+    const renderedId = targetVideoId(project.videoId, input.target);
+    const { master, render } = await latestRenderedMaster(context, projectRoot, project.videoId, input.target);
+    const wordsRelPath = `work/qc/${renderedId}.words.json`;
+    await writeProjectFile(projectRoot, wordsRelPath, JSON.stringify(await readLatestWords(context, render.source.assetId)));
+    const params = {
+      target: input.target,
+      masterRelPath: master.relPath,
+      sourceAssetId: render.source.assetId,
+      specsSnapshot: render.specsSnapshot,
+      wordsRelPath,
+    };
+    const result = await runJobForResult(context, { kind: "qc_master", lane: "whisper", params }, signal);
     return { output: STUDIO_TOOLS.qc_master.output.parse(result) };
   },
 });
@@ -92,7 +108,11 @@ const checkMotion = implementTool("check_motion", {
     "Check that footage still moves: each shot of the master (stage master) or each joined clip of the source (stage source) against its original. A frozen shot FAILs and blocks export. regions are boxes on the 1080x1920 grid; the default is the subject's mid-frame.",
   handler: async (input, context, signal) => {
     const project = await loadProject(context);
-    const sourceAssetId = await cutSourceAssetId(context, project.videoId);
+    // A master is scored against the footage it was cut from, which set_cuts may since have changed.
+    const sourceAssetId =
+      input.stage === "master"
+        ? (await latestRenderedMaster(context, projectRootOf(context, project), project.videoId, "full")).render.source.assetId
+        : await cutSourceAssetId(context, project.videoId);
     const clips = input.stage === "source" ? await latestIngestJoins(context) : [];
     const params = { stage: input.stage, sourceAssetId, regions: input.regions ?? [], clips };
     return { output: STUDIO_TOOLS.check_motion.output.parse(await runJobForResult(context, { kind: "check_motion", lane: "cpu", params }, signal)) };
@@ -109,18 +129,18 @@ const makeCovers = implementTool("make_covers", {
     let coverSheetRelPath: string | undefined;
     if (coverCues.length > 0) {
       await writeAgentSpec(context, { videoId: project.videoId, kind: "cues_cover" }, coverCues);
-      coverSheetRelPath = `work/cues_cover/${project.videoId}.json`; // spec-store's path for that spec kind
+      coverSheetRelPath = specRelPath({ videoId: project.videoId, kind: "cues_cover" });
     }
-    let postCaptionRelPath: string | undefined;
+    let captionRelPath: string | undefined;
     if (input.postCaption !== undefined) {
-      postCaptionRelPath = `work/post/${project.videoId}.txt`;
-      await writeProjectFile(projectRootOf(context, project), postCaptionRelPath, input.postCaption);
+      captionRelPath = postCaptionRelPath(project.videoId);
+      await writeProjectFile(projectRootOf(context, project), captionRelPath, input.postCaption);
     }
     const params = {
       target,
       times: input.variants.map((variant) => variant.at),
       ...(coverSheetRelPath === undefined ? {} : { coverSheetRelPath }),
-      ...(postCaptionRelPath === undefined ? {} : { postCaptionRelPath }),
+      ...(captionRelPath === undefined ? {} : { postCaptionRelPath: captionRelPath }),
     };
     return { output: STUDIO_TOOLS.make_covers.output.parse(await runJobForResult(context, { kind: "make_covers", lane: "overlay", params }, signal)) };
   },
@@ -157,9 +177,27 @@ async function latestIngestJoins(context: ToolContext): Promise<z.infer<typeof C
   return ingestResult.data.joins;
 }
 
+function asToolError(error: unknown): never {
+  throw new ToolError(error instanceof Error ? error.message : String(error));
+}
+
+/** The newest master of a rendered video and the render_master that wrote it, whose source and snapshot QC must reuse. */
+async function latestRenderedMaster(context: ToolContext, projectRoot: string, videoId: string, target: RenderTarget) {
+  const renderedId = targetVideoId(videoId, target);
+  const master = await findLatestMaster(projectRoot, renderedId);
+  if (master === undefined) throw new ToolError(`${renderedId} has no master in work/out; run render_master first`);
+  const render = await findRenderOf(context.db, projectRoot, { projectId: context.projectId, videoId }, master.relPath);
+  if (render === undefined) throw new ToolError(`No finished render_master produced ${master.relPath}; re-render it`);
+  return { master, render };
+}
+
+// O_NOFOLLOW refuses a link planted as the file itself; the folder is confined separately.
+const WRITE_FLAGS = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
+
 async function writeProjectFile(projectRoot: string, relPath: string, text: string): Promise<void> {
-  await mkdir(join(projectRoot, relPath, ".."), { recursive: true });
-  await writeFile(join(projectRoot, relPath), text, { mode: 0o600 });
+  await mkdir(join(projectRoot, dirname(relPath)), { recursive: true });
+  const folder = await confinePath(projectRoot, dirname(relPath)).catch(asToolError);
+  await writeFile(join(folder, basename(relPath)), text, { mode: 0o600, flag: WRITE_FLAGS });
 }
 
 type ReportJob = Pick<NewJob, "kind" | "lane" | "params">;
@@ -183,8 +221,9 @@ async function runJobForResult(context: ToolContext, reportJob: ReportJob, signa
     });
     const [finished] = await context.db.select().from(jobs).where(eq(jobs.id, job.id));
     const projectRoot = projectRootOf(context, project);
+    // Engine text can quote the edit itself, so it reaches Claude fenced as data.
     if (finished?.status !== "succeeded")
-      throw new ToolError((finished?.error ?? `The ${reportJob.kind} job did not finish`).replaceAll(projectRoot, "<project>"));
+      throw new ToolError(fenceJobError((finished?.error ?? `The ${reportJob.kind} job did not finish`).replaceAll(projectRoot, "<project>")));
     return await readJobResult(projectRoot, job.id);
   } finally {
     unsubscribe();
@@ -198,46 +237,71 @@ export function registerRenderJobHandlers(jobRunner: JobRunner, deps: EngineJobD
   jobRunner.registerHandler("make_covers", (job, _reportProgress, signal) => runMakeCovers(deps, job, signal));
 }
 
-async function assetPath(deps: EngineJobDeps, job: JobRow, assetId: string): Promise<string> {
-  return assetFilePath(await projectRootOfJob(deps, job), await projectAsset(deps.db, { projectId: job.projectId, assetId }));
+/** An asset's file for --source, and the in-place registration the engine needs to accept a file outside the project. */
+async function assetInput(deps: EngineJobDeps, job: JobRow, assetId: string) {
+  const asset = await projectAsset(deps.db, { projectId: job.projectId, assetId });
+  return { asset, path: assetFilePath(await projectRootOfJob(deps, job), asset), inPlacePaths: asset.inPlacePath === null ? [] : [asset.inPlacePath] };
 }
 
+function requireSnapshotDir(job: JobRow): string {
+  const snapshotDir = activeSpecSnapshotDir();
+  if (snapshotDir === undefined) throw new Error(`${job.kind} ran without its spec snapshot`);
+  return snapshotDir;
+}
+
+/** Renders the cut spec the job's snapshot froze, and records that source and snapshot for QC and export to match. */
 async function runRenderMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
   const params = RenderParamsSchema.parse(job.params);
+  const cuts = CutSpecSchema.parse(await readSnapshotSpec(requireSnapshotDir(job), { videoId: job.videoId, kind: "cuts" }));
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "out");
-  const source = await assetPath(deps, job, params.sourceAssetId);
-  const args = ["--video", targetVideoId(job.videoId, params.target), "--quality", params.quality, "--source", source];
-  const report = EngineMasterReportSchema.parse(await deps.engine.run({ command: "render-master", args, workDir, signal }));
-  await writeJobResult(projectRoot, job.id, MasterRenderResultSchema.parse({ ...report, path: workRelativePath(workDir, report.path) }));
+  const source = await assetInput(deps, job, cuts.sourceAssetId);
+  const args = ["--video", targetVideoId(job.videoId, params.target), "--quality", params.quality, "--source", source.path];
+  const report = EngineMasterReportSchema.parse(await deps.engine.run({ command: "render-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
+  const result = MasterRenderResultSchema.parse({
+    ...report,
+    path: workRelativePath(workDir, report.path),
+    source: { assetId: source.asset.id, relPath: source.asset.relPath ?? source.asset.inPlacePath },
+    specsSnapshot: `snapshots/${job.specSnapshotSha256}`,
+  });
+  await writeJobResult(projectRoot, job.id, result);
 }
 
 async function runQcMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
   const params = QcParamsSchema.parse(job.params);
+  await assertNoRenderInFlight(deps.db, job, "run qc_master");
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "qc");
-  const source = await assetPath(deps, job, params.sourceAssetId);
-  const args = ["--video", targetVideoId(job.videoId, params.target), "--source", source, "--words", join(projectRoot, params.wordsRelPath)];
-  const { ok, checks } = EngineQcReportSchema.parse(await deps.engine.run({ command: "qc-master", args, workDir, signal }));
-  await writeJobResult(projectRoot, job.id, { ok, checks });
+  const source = await assetInput(deps, job, params.sourceAssetId);
+  const master = params.masterRelPath.slice("work/".length);
+  const args = ["--video", targetVideoId(job.videoId, params.target), "--master", master, "--source", source.path];
+  args.push("--specs", params.specsSnapshot, "--words", join(projectRoot, params.wordsRelPath));
+  const report = EngineQcReportSchema.parse(await deps.engine.run({ command: "qc-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
+  if (report.master.relPath !== master) throw new Error(`qc-master judged ${report.master.relPath}, not ${master}`);
+  await writeJobResult(projectRoot, job.id, { ok: report.ok, checks: report.checks });
 }
 
 async function runCheckMotion(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
   const params = MotionParamsSchema.parse(job.params);
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "qc");
-  const clipArgs = await Promise.all(params.clips.map(async (clip) => ["--clip", `${await assetPath(deps, job, clip.assetId)}@${clip.at}`]));
-  const source = await assetPath(deps, job, params.sourceAssetId);
-  const args = ["--video", job.videoId, "--stage", params.stage, "--source", source, ...regionArgs(params.regions), ...clipArgs.flat()];
-  await writeJobResult(projectRoot, job.id, STUDIO_TOOLS.check_motion.output.parse(await deps.engine.run({ command: "check-motion", args, workDir, signal })));
+  const clips = await Promise.all(params.clips.map(async (clip) => ({ input: await assetInput(deps, job, clip.assetId), at: clip.at })));
+  const source = await assetInput(deps, job, params.sourceAssetId);
+  const clipArgs = clips.flatMap((clip) => ["--clip", `${clip.input.path}@${clip.at}`]);
+  const args = ["--video", job.videoId, "--stage", params.stage, "--source", source.path, ...regionArgs(params.regions), ...clipArgs];
+  const inPlacePaths = [...source.inPlacePaths, ...clips.flatMap((clip) => clip.input.inPlacePaths)];
+  const report = await deps.engine.run({ command: "check-motion", args, workDir, inPlacePaths, signal });
+  await writeJobResult(projectRoot, job.id, STUDIO_TOOLS.check_motion.output.parse(report));
 }
 
 async function runMakeCovers(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
   const params = CoverParamsSchema.parse(job.params);
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "covers");
-  const sheetArgs = params.coverSheetRelPath === undefined ? [] : ["--cover-sheet", join(projectRoot, params.coverSheetRelPath)];
-  const captionArgs = params.postCaptionRelPath === undefined ? [] : ["--post-caption", join(projectRoot, params.postCaptionRelPath)];
+  // Both inputs come from the job's snapshot, so an edit after the job started cannot reach the covers.
+  const snapshotDir = requireSnapshotDir(job);
+  const sheetArgs = params.coverSheetRelPath === undefined ? [] : ["--cover-sheet", snapshotFilePath(snapshotDir, params.coverSheetRelPath)];
+  const captionArgs = params.postCaptionRelPath === undefined ? [] : ["--post-caption", snapshotFilePath(snapshotDir, params.postCaptionRelPath)];
   const timeArgs = params.times.flatMap((at) => ["--at", String(at)]);
   const args = ["--video", targetVideoId(job.videoId, params.target), ...timeArgs, ...sheetArgs, ...captionArgs];
   const report = EngineCoversReportSchema.parse(await deps.engine.run({ command: "make-covers", args, workDir, signal }));

@@ -26,7 +26,7 @@ export interface QueryOptionsInput {
   readonly broker: DecisionBroker;
   readonly limits: SessionLimits;
   readonly studioMcpServer: McpServerConfig | null;
-  readonly describeGate?: ToolDeciderOptions["describeGate"];
+  readonly describeGate: ToolDeciderOptions["describeGate"];
   /** The user's rules block; "" when they have none, undefined to leave the SDK default prompt. */
   readonly systemPromptAppend?: string;
 }
@@ -48,7 +48,7 @@ export function buildQueryOptions(input: QueryOptionsInput): Options {
     ...(input.studioMcpServer === null ? {} : { mcpServers: { studio: input.studioMcpServer } }),
     strictMcpConfig: true,
     permissionMode: "default",
-    canUseTool: createToolDecider({ projectId, broker: input.broker, ...(input.describeGate === undefined ? {} : { describeGate: input.describeGate }) }),
+    canUseTool: createToolDecider({ projectId, broker: input.broker, describeGate: input.describeGate }),
     hooks: { PreToolUse: [{ matcher: "Read", hooks: [createConfineReadsHook({ projectDir, pluginDir })] }] },
     includePartialMessages: true,
     maxTurns: limits.maxTurns,

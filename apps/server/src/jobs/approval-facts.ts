@@ -2,11 +2,13 @@
 // The render and export facts the Phase 2 gate cards left empty: what a render costs on the GPU and which files each job writes.
 import { CutSpecSchema, ReelSpecSchema, STUDIO_TOOLS, type ApprovalFacts } from "@zks/shared";
 import type { z } from "zod";
+import type { SpecAddress } from "../specs/spec-files.ts";
 import type { ToolContext } from "../tools/context.ts";
 import { loadProject, projectRootOf } from "../tools/project-files.ts";
 import { readCurrentSpec } from "../tools/spec-store.ts";
 import { plannedDeliverableNames } from "./deliverables.ts";
 import { describeRenderAction, predictMasterPaths, readRenderProfile, renderedVideoId } from "./master-files.ts";
+import { readSnapshotSpec, specSnapshotDir } from "./spec-snapshot.ts";
 
 type JobOutputFacts = Pick<ApprovalFacts, "estimatedGpuMinutes" | "outputPaths"> & { readonly action?: string };
 
@@ -16,11 +18,19 @@ const NTSC_FPS = 30000 / 1001;
 const SECONDS_PER_MINUTE = 60;
 const TENTHS = 10;
 
-/** Null for a tool that writes no job output, or input outside the tool's contract. */
-export async function describeJobOutputFacts(context: ToolContext, toolName: string, input: unknown): Promise<JobOutputFacts | null> {
+type SpecReader = (address: SpecAddress) => Promise<unknown>;
+
+/** Null for a tool that writes no job output, or input outside the tool's contract. A render is costed from the given
+ * spec snapshot, else from the current specs. */
+export async function describeJobOutputFacts(
+  context: ToolContext,
+  toolName: string,
+  input: unknown,
+  specSnapshotSha256?: string,
+): Promise<JobOutputFacts | null> {
   if (toolName === "render_master") {
     const parsed = STUDIO_TOOLS.render_master.input.safeParse(input);
-    return parsed.success ? describeRender(context, parsed.data) : null;
+    return parsed.success ? describeRender(context, parsed.data, await specReaderFor(context, specSnapshotSha256)) : null;
   }
   if (toolName === "export_deliverable") {
     const parsed = STUDIO_TOOLS.export_deliverable.input.safeParse(input);
@@ -35,21 +45,27 @@ export async function describeJobOutputFacts(context: ToolContext, toolName: str
 type RenderInput = z.output<typeof STUDIO_TOOLS.render_master.input>;
 type CutSpec = z.output<typeof CutSpecSchema>;
 
-async function describeRender(context: ToolContext, input: RenderInput): Promise<JobOutputFacts> {
+async function specReaderFor(context: ToolContext, specSnapshotSha256: string | undefined): Promise<SpecReader> {
+  if (specSnapshotSha256 === undefined) return (address) => readCurrentSpec(context, address);
+  const snapshotDir = specSnapshotDir(projectRootOf(context, await loadProject(context)), specSnapshotSha256);
+  return (address) => readSnapshotSpec(snapshotDir, address);
+}
+
+async function describeRender(context: ToolContext, input: RenderInput, readSpec: SpecReader): Promise<JobOutputFacts> {
   const { videoId } = await loadProject(context);
   const profile = await readRenderProfile(context.studioHome);
   const outputPaths = predictMasterPaths(renderedVideoId(videoId, input.target), input.quality, profile);
   const action = describeRenderAction(input.quality, profile);
-  const cuts = CutSpecSchema.safeParse(await readCurrentSpec(context, { videoId, kind: "cuts" }));
-  const keptSeconds = input.target === "reel" ? await measureReelSeconds(context, videoId) : cuts.success ? keptCutSeconds(cuts.data) : undefined;
+  const cuts = CutSpecSchema.safeParse(await readSpec({ videoId, kind: "cuts" }));
+  const keptSeconds = input.target === "reel" ? await measureReelSeconds(readSpec, videoId) : cuts.success ? keptCutSeconds(cuts.data) : undefined;
   if (keptSeconds === undefined) return { action, outputPaths };
   const footageFps = cuts.success ? cuts.data.fps.num / cuts.data.fps.den : NTSC_FPS;
   const gpuMinutes = (keptSeconds * footageFps) / MEASURED_4K_RENDER_FPS / SECONDS_PER_MINUTE;
   return { action, estimatedGpuMinutes: Math.ceil(gpuMinutes * TENTHS) / TENTHS, outputPaths };
 }
 
-async function measureReelSeconds(context: ToolContext, videoId: string): Promise<number | undefined> {
-  const reel = ReelSpecSchema.safeParse(await readCurrentSpec(context, { videoId, kind: "reels" }));
+async function measureReelSeconds(readSpec: SpecReader, videoId: string): Promise<number | undefined> {
+  const reel = ReelSpecSchema.safeParse(await readSpec({ videoId, kind: "reels" }));
   return reel.success ? reel.data.keep.reduce((total, keep) => total + (keep.end - keep.at), 0) : undefined;
 }
 

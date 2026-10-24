@@ -40,7 +40,7 @@ export interface AgentManagerDeps {
   readonly loadSessionSetup?: (project: ProjectRow) => Promise<SessionSetup>;
   /** null on the `-p` path, whose child reaches the studio tools through the HTTP twin instead. */
   readonly studioMcpServer: ((project: ProjectRow) => McpServerConfig) | null;
-  readonly describeGate?: (project: ProjectRow, tool: string, input: unknown) => Promise<ApprovalFacts | null>;
+  readonly describeGate: (project: ProjectRow, tool: string, input: unknown) => Promise<ApprovalFacts | null>;
   readonly cancelProjectJobs: (projectId: string) => Promise<void>;
   readonly initTimeoutMs?: number;
 }
@@ -192,7 +192,6 @@ export class AgentManager {
   }): AgentSessionOptions {
     const { project, credential } = start;
     const deps = this.#deps;
-    const { describeGate } = deps;
     return {
       projectId: project.id,
       query: deps.query,
@@ -206,7 +205,7 @@ export class AgentManager {
         limits: { ...deps.limits, ...start.setup?.limits },
         studioMcpServer: deps.studioMcpServer?.(project) ?? null,
         ...(start.setup === undefined ? {} : { systemPromptAppend: start.setup.systemPromptAppend }),
-        ...(describeGate === undefined ? {} : { describeGate: (tool: string, input: unknown) => describeGate(project, tool, input) }),
+        describeGate: (tool: string, input: unknown) => deps.describeGate(project, tool, input),
       }),
       publish: deps.broker.publish,
       broker: deps.broker,

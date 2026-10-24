@@ -21,7 +21,7 @@ import { registerRuleRoutes } from "../../src/rules/routes.ts";
 import { RULES_BLOCK_OPEN } from "../../src/rules/rules-prompt.ts";
 import { loadSessionSetup } from "../../src/rules/session-setup.ts";
 import { createFakeAgent, type FakeAgent } from "../agent-harness/fake-agent.ts";
-import { REQUIRED_SKILLS } from "../agent/sdk-fixtures.ts";
+import { REQUIRED_SKILLS, stubGateFacts } from "../agent/sdk-fixtures.ts";
 import { memoryKeyring } from "../auth/memory-keyring.ts";
 
 describe("rules reach the next replayed session", () => {
@@ -54,6 +54,7 @@ describe("rules reach the next replayed session", () => {
       limits: { maxTurns: 8, maxBudgetUsd: 2 },
       loadSessionSetup: (row) => loadSessionSetup(database.db, row.id),
       studioMcpServer: () => ({ type: "stdio", command: "studio-mcp" }),
+      describeGate: (_project, tool) => stubGateFacts(tool),
       cancelProjectJobs: () => Promise.resolve(),
     });
     app = new Hono();

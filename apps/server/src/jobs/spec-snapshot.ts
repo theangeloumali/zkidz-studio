@@ -2,15 +2,17 @@
 // Plan §7.6: a job renders the spec set as it stood when the job started, so an agent edit mid-render never reaches it.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { StudioDatabase } from "@zks/db";
+import { hasErrorCode, type StudioDatabase } from "@zks/db";
 import { editSpecs, editSpecVersions, jobs } from "@zks/db/schema";
 import { and, eq } from "drizzle-orm";
 import { projectDir } from "../config.ts";
 import type { JobRow } from "../dto.ts";
 import { isWithinDir } from "../fs/path-policy.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { openConfined, PathEscapeError } from "../security/confine-path.ts";
+import { specRelPath, type SpecAddress } from "../specs/spec-files.ts";
 import type { JobHandler, JobRunner } from "./job-runner.ts";
 
 const WORK_PREFIX = "work/";
@@ -60,8 +62,31 @@ export function activeSpecSnapshotDir(): string | undefined {
   return activeSnapshotDir.getStore();
 }
 
+/** Where a `work/...` file sits inside a snapshot. */
+export function snapshotFilePath(snapshotDir: string, workRelPath: string): string {
+  const filePath = join(snapshotDir, workRelPath.slice(WORK_PREFIX.length));
+  if (!workRelPath.startsWith(WORK_PREFIX) || !isWithinDir(filePath, snapshotDir)) throw new Error(`Spec path ${workRelPath} is outside work/`);
+  return filePath;
+}
+
+/** A spec as the snapshot holds it; undefined when the set had no such spec. */
+export async function readSnapshotSpec(snapshotDir: string, address: SpecAddress): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(snapshotFilePath(snapshotDir, specRelPath(address)), "utf8"));
+  } catch (error) {
+    if (hasErrorCode(error, "ENOENT")) return undefined;
+    throw error;
+  }
+}
+
+/** make_covers' post caption is no spec row, but the job must ship the text it was asked for, not a later one. */
+export const postCaptionRelPath = (videoId: string) => `work/post/${videoId}.txt`;
+
 async function takeSnapshot(deps: SpecSnapshotDeps, job: JobRow, projectRoot: string): Promise<JobRow> {
-  const specFiles = await readCurrentSpecFiles(deps.database, job.projectId);
+  const postCaption = await readPostCaption(projectRoot, job.videoId);
+  const specFiles = [...(await readCurrentSpecFiles(deps.database, job.projectId)), ...postCaption].sort((left, right) =>
+    left.relPath.localeCompare(right.relPath),
+  );
   const sha256 = hashSpecSet(specFiles);
   await writeSnapshot(specSnapshotDir(projectRoot, sha256), specFiles);
   const [updated] = await deps.database.update(jobs).set({ specSnapshotSha256: sha256 }).where(eq(jobs.id, job.id)).returning();
@@ -74,7 +99,22 @@ async function readCurrentSpecFiles(database: StudioDatabase, projectId: string)
     .from(editSpecs)
     .innerJoin(editSpecVersions, and(eq(editSpecVersions.specId, editSpecs.id), eq(editSpecVersions.version, editSpecs.currentVersion)))
     .where(eq(editSpecs.projectId, projectId));
-  return rows.sort((left, right) => left.relPath.localeCompare(right.relPath));
+  return rows;
+}
+
+// Read confined, so a link planted at that path cannot pull a file from outside the project into the snapshot.
+async function readPostCaption(projectRoot: string, videoId: string): Promise<SpecFile[]> {
+  const relPath = postCaptionRelPath(videoId);
+  const opened = await openConfined(projectRoot, relPath).catch((error: unknown) => {
+    if (error instanceof PathEscapeError && error.reason === "unresolvable") return undefined;
+    throw error;
+  });
+  if (opened === undefined) return [];
+  try {
+    return [{ relPath, content: await opened.handle.readFile("utf8") }];
+  } finally {
+    await opened.handle.close();
+  }
 }
 
 function hashSpecSet(specFiles: readonly SpecFile[]): string {
@@ -88,8 +128,7 @@ async function writeSnapshot(snapshotDir: string, specFiles: readonly SpecFile[]
   const partDir = `${snapshotDir}.${randomUUID()}.part`;
   try {
     for (const specFile of specFiles) {
-      const filePath = join(partDir, specFile.relPath.slice(WORK_PREFIX.length));
-      if (!specFile.relPath.startsWith(WORK_PREFIX) || !isWithinDir(filePath, partDir)) throw new Error(`Spec path ${specFile.relPath} is outside work/`);
+      const filePath = snapshotFilePath(partDir, specFile.relPath);
       await mkdir(dirname(filePath), { recursive: true, mode: OWNER_ONLY_DIR_MODE });
       await writeFile(filePath, specFile.content, { mode: OWNER_ONLY_FILE_MODE });
     }

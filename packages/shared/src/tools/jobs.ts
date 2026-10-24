@@ -32,7 +32,7 @@ export const jobWait = defineTool({
 
 export const jobCancel = defineTool({ input: JobInputSchema, output: z.strictObject({ ok: z.literal(true) }), approval: "auto", isReadOnly: false });
 
-/** Requeues an interrupted job with the params it was approved with, so it needs no second approval. */
+/** Requeues an interrupted job with the params and spec snapshot it started with; a gated job's resume raises that tool's card again. */
 export const jobResume = defineTool({ input: JobInputSchema, output: z.strictObject({ ok: z.literal(true) }), approval: "auto", isReadOnly: false });
 
 export const approve = defineTool({

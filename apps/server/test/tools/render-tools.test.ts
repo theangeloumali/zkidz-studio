@@ -12,7 +12,7 @@ import type { EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { writeJobResult } from "../../src/tools/job-results.ts";
 import { passingQcVerdict } from "../jobs/job-test-kit.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
-import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
+import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, JOINED_SOURCE_PROBE, type ToolFixture } from "./tool-fixtures.ts";
 
 const FAILING_QC_REPORT = {
   master: "out/v1-4k.mp4",
@@ -76,7 +76,12 @@ const fakeEngine = {
 
 beforeAll(async () => {
   server = await createTestServer();
-  registerRenderJobHandlers(server.jobRunner, { db: server.database.db, studioHome: server.studioHome, engine: fakeEngine });
+  registerRenderJobHandlers(server.jobRunner, {
+    db: server.database.db,
+    studioHome: server.studioHome,
+    engine: fakeEngine,
+    probeSource: () => Promise.resolve(JOINED_SOURCE_PROBE),
+  });
   registerExportHandler(server.jobRunner, { database: server.database.db, studioHome: server.studioHome, engine: fakeEngine });
 });
 afterAll(async () => {

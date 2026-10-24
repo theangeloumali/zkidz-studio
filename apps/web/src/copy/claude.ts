@@ -3,7 +3,9 @@
 export const CLAUDE_LINKS = {
   install: "https://code.claude.com/docs/en/setup",
   billing: "https://console.anthropic.com/settings/billing",
-  terms: "https://www.anthropic.com/legal/consumer-terms",
+  legal: "https://code.claude.com/docs/en/legal-and-compliance",
+  sdkOverview: "https://code.claude.com/docs/en/agent-sdk/overview",
+  planHelp: "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
 } as const;
 
 export const MIN_CLAUDE_VERSION = "2.1.295";

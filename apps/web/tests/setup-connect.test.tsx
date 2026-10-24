@@ -171,6 +171,18 @@ describe("SetupRoute", () => {
     expect(requestBody(fetchMock, "/api/connect/terminal")).toEqual({ hasAcceptedDisclosure: true });
   });
 
+  it("links the terminal disclosure to the legal page, the Agent SDK overview and the help article", async () => {
+    stubSetup(NOT_CONNECTED);
+    renderWithProviders(<SetupRoute />);
+    await userEvent.click(await screen.findByRole("radio", { name: /Use Claude Code in a terminal/ }));
+    expect(screen.getByRole("link", { name: /legal and compliance/ })).toHaveAttribute("href", "https://code.claude.com/docs/en/legal-and-compliance");
+    expect(screen.getByRole("link", { name: /Agent SDK overview/ })).toHaveAttribute("href", "https://code.claude.com/docs/en/agent-sdk/overview");
+    expect(screen.getByRole("link", { name: /with your Claude plan/ })).toHaveAttribute(
+      "href",
+      "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
+    );
+  });
+
   it("flags a Claude Code older than the minimum with the install link", async () => {
     stubSetup({ ...NOT_CONNECTED, claudeVersion: "2.1.12" });
     renderWithProviders(<SetupRoute />);

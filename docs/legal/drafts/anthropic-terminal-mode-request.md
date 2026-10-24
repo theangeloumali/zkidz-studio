@@ -36,8 +36,6 @@ Options 1 and 2 ship regardless of your answer.
 - The user turns it on after reading a disclosure: it runs the Claude Code they installed, unmodified; they sign in with Claude
   Code's own `/login`; ZKidz Studio never sees or stores the sign-in; usage counts against their own Claude plan's limits. The
   disclosure links to your legal page, the Agent SDK overview and the help center article on using the SDK with a Claude plan.
-  [Angelo: true only once the mode T card links all three pages; today it links the Consumer Terms only. See
-  `docs/release/policy-check.md`, F1.]
 - The app finds the `claude` binary the user installed and starts it in a pseudo-terminal on their machine, shown in a terminal pane
   in the browser tab. It passes the binary an argument list directly, with no shell.
 - The binary is never modified, patched or wrapped. It is never bundled or redistributed; release downloads do not include it.

@@ -6,6 +6,7 @@ import { JobStatusSchema, MAX_JOB_WAIT_S } from "@zks/shared";
 import { isJobActive } from "../../src/render/job-display.ts";
 import type { QueryFunction } from "../../../server/src/agent/query-function.ts";
 import { createFakeAgent, type AgentTranscriptName } from "../../../server/test/agent-harness/fake-agent.ts";
+import { RENDER_TIMEOUT_MS } from "../support/timeouts.ts";
 
 type QueryOptions = Parameters<QueryFunction>[0]["options"];
 type AgentMessage = ReturnType<QueryFunction> extends AsyncIterable<infer Message> ? Message : never;
@@ -14,7 +15,9 @@ type JsonRecord = Record<string, unknown>;
 const STUDIO_TOOL_PREFIX = "mcp__studio__";
 const JOB_WAIT_TOOL = `${STUDIO_TOOL_PREFIX}job_wait`;
 // The SDK's 60 s default rejects a job_wait still blocking toward its own limit, which a loaded machine's render reaches.
-const TOOL_CALL_TIMEOUT_MS = (MAX_JOB_WAIT_S + 30) * 1000;
+const JOB_WAIT_TIMEOUT_MS = (MAX_JOB_WAIT_S + 30) * 1000;
+// make_covers, render_master and the other job tools block until their job ends; repeating one would start a second job.
+const JOB_TOOL_TIMEOUT_MS = RENDER_TIMEOUT_MS;
 const connectedClients = new WeakMap<object, Promise<Client>>();
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -72,7 +75,8 @@ function isStillRunning(jobWaitText: string): boolean {
 
 async function callLiveTool(client: Client, qualifiedName: string, input: unknown) {
   const toolCall = { name: qualifiedName.slice(STUDIO_TOOL_PREFIX.length), arguments: isRecord(input) ? input : {} };
-  const result = await client.callTool(toolCall, undefined, { timeout: TOOL_CALL_TIMEOUT_MS });
+  const timeout = qualifiedName === JOB_WAIT_TOOL ? JOB_WAIT_TIMEOUT_MS : JOB_TOOL_TIMEOUT_MS;
+  const result = await client.callTool(toolCall, undefined, { timeout });
   const content = Array.isArray(result.content) ? result.content.filter(isRecord) : [];
   return { content, isError: result.isError === true, text: content.map((block) => (typeof block.text === "string" ? block.text : "")).join("") };
 }

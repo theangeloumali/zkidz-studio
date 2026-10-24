@@ -5,9 +5,10 @@ import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { z } from "zod";
 import { expect, FIXTURE_CLIP, type StudioServer } from "./studio-fixture.ts";
+import { RENDER_TIMEOUT_MS } from "./timeouts.ts";
 
-// Ingest, transcribe, a 4K master (1080 off NVIDIA) and its QC re-transcription of a 2 s clip; the agent waits on each job.
-export const RENDER_TIMEOUT_MS = 5 * 60_000;
+export { RENDER_TIMEOUT_MS };
+
 const GATED_TOOLS = ["render_master", "export_deliverable"];
 const QcReportSchema = z.object({ ok: z.boolean(), checks: z.array(z.object({ name: z.string(), ok: z.boolean() })) });
 

@@ -93,7 +93,8 @@ pnpm start
 ```
 
 `pnpm db:supabase:stop`, `db:supabase:studio` (the Supabase Studio UI, behind a generated password), `db:backup`, `db:restore`,
-`db:reset` and `db:rollback` manage it. These commands need Docker and land with Phase 7; they were not run for this README.
+`db:reset` and `db:rollback -- --to <NNNN>` manage it; every command that changes data writes a backup first. The
+`db:supabase:*` commands need Docker; the others run on whichever database `DATABASE_URL` selects.
 
 ## Hardware
 

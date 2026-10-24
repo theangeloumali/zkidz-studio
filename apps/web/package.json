@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p . && tsc -p tests/real-server && tsc -p e2e && tsc -p e2e/harness",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "vite build && playwright test"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.2.8",

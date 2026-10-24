@@ -25,8 +25,8 @@ process.env.ZKS_CHROME = pinnedToolPath("ZKS_CHROME", "chrome-headless-shell");
 const launchOptions = { executablePath: process.env.ZKS_CHROME };
 
 export default defineConfig({
+  // The servers serve apps/web/dist, built by the e2e script: Playwright starts webServer before any globalSetup.
   testDir: "e2e",
-  globalSetup: "./e2e/support/global-setup.ts",
   // One studio server and one GPU-free render at a time keeps the run deterministic.
   workers: 1,
   fullyParallel: false,

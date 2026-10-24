@@ -17,6 +17,13 @@ const GATE_LABELS: Readonly<Record<string, string>> = {
   hookMouth: "Hook clear of the mouth",
   lipSync: "Lip sync",
 };
+// The provenance checks qc_master appends; they label a report but are not gates a pending list promises.
+const CHECK_LABELS: Readonly<Record<string, string>> = {
+  ...GATE_LABELS,
+  renderSource: "Rendered from the approved source",
+  renderInputs: "Render inputs unchanged",
+  master: "Master unchanged during QC",
+};
 const PASS_DETAIL = "pass";
 const STALE_DETAIL = "The master changed after this check ran";
 
@@ -51,7 +58,7 @@ async function checksFor(projectRoot: string, videoId: string, idPrefix: string,
   if (!("report" in result)) return pendingChecks(result.stale ? STALE_DETAIL : null, idPrefix, labelPrefix);
   return result.report.checks.map(({ name, ok, detail }) => ({
     id: `${idPrefix}${name}`,
-    label: `${labelPrefix}${GATE_LABELS[name] ?? name}`,
+    label: `${labelPrefix}${CHECK_LABELS[name] ?? name}`,
     status: ok ? "pass" : "fail",
     detail: detail === PASS_DETAIL ? null : detail,
   }));

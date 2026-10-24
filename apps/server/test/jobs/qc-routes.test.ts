@@ -15,6 +15,8 @@ afterAll(async () => {
 });
 
 const GATES = ["format", "frames", "loudness", "motion", "cutWords", "captionContrast", "hookMouth", "lipSync"];
+// qc_master appends these provenance checks after the gates.
+const PROVENANCE_CHECKS = ["renderSource", "renderInputs", "master"];
 
 async function projectWithMaster() {
   const project = await insertProject(server);
@@ -29,7 +31,7 @@ async function projectWithMaster() {
 /** As qc_master writes it (qc/__init__.py master_record): the judged master's work-relative path, and mtimeNs as a string. */
 async function writeReport(workDir: string, videoId: string, masterPath: string, failing: string | null) {
   const { size, mtimeNs } = await stat(masterPath, { bigint: true });
-  const checks = GATES.map((name) => ({ name, ok: name !== failing, detail: name === failing ? "frozen 2.0–4.5 s" : "pass" }));
+  const checks = [...GATES, ...PROVENANCE_CHECKS].map((name) => ({ name, ok: name !== failing, detail: name === failing ? "frozen 2.0–4.5 s" : "pass" }));
   const master = { relPath: `out/${videoId}-4k.mp4`, size: Number(size), mtimeNs: String(mtimeNs), sha256: "0".repeat(64) };
   await writeFile(join(workDir, "qc", `${videoId}.json`), JSON.stringify({ master, ok: failing === null, checks }, null, 2));
 }
@@ -58,6 +60,11 @@ describe("QC checks route", () => {
 
     expect(checks.find((check) => check.id === "motion")).toMatchObject({ label: "Moving footage", status: "fail", detail: "frozen 2.0–4.5 s" });
     expect(checks.find((check) => check.id === "loudness")).toMatchObject({ status: "pass", detail: null });
+    expect(checks.slice(-3).map((check) => check.label)).toEqual([
+      "Rendered from the approved source",
+      "Render inputs unchanged",
+      "Master unchanged during QC",
+    ]);
   });
 
   it("goes back to pending once a newer master replaces the one QC judged", async () => {

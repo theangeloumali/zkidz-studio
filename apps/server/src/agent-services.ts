@@ -115,13 +115,14 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     cancelProjectJobs,
     logger: deps.logger,
   });
-  registerEngineJobHandlers(deps.jobRunner, {
+  const engineJobDeps = {
     db: deps.database,
     studioHome: deps.studioHome,
     engine: deps.engine,
-    probeSource: (filePath) => probeMedia(deps.ffprobePath, filePath),
-  });
-  registerRenderJobHandlers(deps.jobRunner, { db: deps.database, studioHome: deps.studioHome, engine: deps.engine });
+    probeSource: (filePath: string) => probeMedia(deps.ffprobePath, filePath),
+  };
+  registerEngineJobHandlers(deps.jobRunner, engineJobDeps);
+  registerRenderJobHandlers(deps.jobRunner, engineJobDeps);
   snapshotRenderJobSpecs(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome });
   registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine });
 

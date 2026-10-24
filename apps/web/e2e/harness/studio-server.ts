@@ -70,6 +70,7 @@ async function startStudioServer(): Promise<void> {
       query: createLiveToolsQuery(frozenMaster ? "render-frozen" : "render-flow"),
       hasSdkBinary: () => true,
       engine: frozenMaster ? withFrozenMasters(engine, ffmpegPath) : engine,
+      ffprobePath: join(dirname(ffmpegPath), "ffprobe"),
     });
     shutdownAgent = agent.shutdown;
     return { security, agent, ffprobePath: join(dirname(ffmpegPath), "ffprobe"), webDistDir: repoPath("apps/web/dist") };

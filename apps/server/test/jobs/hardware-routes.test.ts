@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { API_ROUTES } from "@zks/shared";
+import { API_ROUTES, HardwareSchema } from "@zks/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { describeHardware } from "../../src/jobs/hardware.ts";
 import { createTestServer, getRequest, type TestServer } from "../support/test-server.ts";
@@ -31,17 +31,17 @@ describe("hardware route", () => {
     const response = await getRequest(server, "/api/hardware");
 
     expect(response.status).toBe(200);
-    const hardware = API_ROUTES.getHardware.response.parse(await response.json());
+    const hardware = HardwareSchema.parse(await response.json());
     expect(hardware).toMatchObject({ profile: "cpu", encoder: "libx265", meters: [{ label: "CPU" }, { label: "GPU", pct: null }] });
     expect(hardware.chunks).toBeGreaterThanOrEqual(1);
     expect(hardware.meters[0]?.pct).toEqual(expect.any(Number));
   });
 
-  it("answers 404 until the hardware is probed", async () => {
+  it("answers null until the hardware is probed, since an unprobed machine is not an error", async () => {
     const response = await getRequest(server, "/api/hardware");
 
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "The hardware has not been probed yet. Run: pnpm zks doctor" });
+    expect(response.status).toBe(200);
+    expect(API_ROUTES.getHardware.response.parse(await response.json())).toBeNull();
   });
 });
 

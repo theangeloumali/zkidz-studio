@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
-// The studio server as main.ts builds it, on a scratch ZKS_HOME, with FakeAgent driving real tools. Run with `node`.
+// The studio server as main.ts builds it (onboarding, preview service and preview origin included), on a scratch ZKS_HOME,
+// with FakeAgent driving real tools. Run with `node`.
 import { rm, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,6 +11,12 @@ import { createAgentServices } from "../../../server/src/agent-services.ts";
 import { writeConnection } from "../../../server/src/auth/connection-store.ts";
 import { createSecretStore } from "../../../server/src/auth/secret-store.ts";
 import { createEngineProcessRunner, pinnedEngineTools } from "../../../server/src/jobs/engine-process.ts";
+import { DEFAULT_UPLOAD_LIMITS } from "../../../server/src/media-io/store.ts";
+import { createDemoRunner } from "../../../server/src/onboarding/demo-runner.ts";
+import { createOnboardingServices } from "../../../server/src/onboarding/onboarding-services.ts";
+import { createCompositionBuilder, type CompositionBuilder } from "../../../server/src/preview/composition-builder.ts";
+import { createPreviewOrigin } from "../../../server/src/preview/preview-origin.ts";
+import { createPreviewService } from "../../../server/src/preview/preview-service.ts";
 import { createSecurity } from "../../../server/src/security/index.ts";
 import { memoryKeyring } from "../../../server/test/auth/memory-keyring.ts";
 import { createTestServer } from "../../../server/test/support/test-server.ts";
@@ -37,10 +44,13 @@ async function linkInstalledTools(studioHome: string): Promise<void> {
 
 async function startStudioServer(): Promise<void> {
   const port = Number(requiredEnv("ZKS_E2E_PORT"));
+  const previewPort = Number(requiredEnv("ZKS_E2E_PREVIEW_PORT"));
   const ffmpegPath = requiredEnv("ZKS_FFMPEG");
+  const ffprobePath = join(dirname(ffmpegPath), "ffprobe");
   const frozenMaster = process.env.ZKS_E2E_FROZEN_MASTER === "1";
-  const security = createSecurity({ appPort: port, previewPort: port + 1, container: false });
+  const security = createSecurity({ appPort: port, previewPort, container: false });
   let shutdownAgent: (() => void) | undefined;
+  let previewBuilder: CompositionBuilder | undefined;
   const server = await createTestServer((base) => {
     const engine = createEngineProcessRunner({
       executable: "uv",
@@ -70,19 +80,42 @@ async function startStudioServer(): Promise<void> {
       query: createLiveToolsQuery(frozenMaster ? "render-frozen" : "render-flow"),
       hasSdkBinary: () => true,
       engine: frozenMaster ? withFrozenMasters(engine, ffmpegPath) : engine,
-      ffprobePath: join(dirname(ffmpegPath), "ffprobe"),
+      ffprobePath,
     });
     shutdownAgent = agent.shutdown;
-    return { security, agent, ffprobePath: join(dirname(ffmpegPath), "ffprobe"), webDistDir: repoPath("apps/web/dist") };
+    const onboarding = createOnboardingServices({
+      database: base.database.db,
+      studioHome: base.studioHome,
+      eventBus: base.eventBus,
+      jobRunner: base.jobRunner,
+      engine,
+      demoRunner: createDemoRunner({ engineDir: repoPath("packages/engine"), demoScript: repoPath("examples/demo/make_demo.py"), studioHome: base.studioHome }),
+      ffprobePath,
+      uploadLimits: DEFAULT_UPLOAD_LIMITS,
+    });
+    previewBuilder = createCompositionBuilder({ workerScriptPath: repoPath("packages/engine/hf/preview/worker.js"), studioHome: base.studioHome });
+    const previewService = createPreviewService({
+      database: base.database.db,
+      studioHome: base.studioHome,
+      eventBus: base.eventBus,
+      logger: base.logger,
+      previewPort,
+      buildComposition: previewBuilder,
+    });
+    return { security, agent, onboarding, previewService, ffprobePath, webDistDir: repoPath("apps/web/dist") };
   });
   await linkInstalledTools(server.studioHome);
   await writeConnection(server.database.db, { mode: "api_key", keyLast4: "abcd" });
 
+  const previewOrigin = createPreviewOrigin({ database: server.database.db, studioHome: server.studioHome, appPort: port, previewPort });
+  const previewServer = serve({ fetch: previewOrigin.fetch, hostname: BIND_HOST, port: previewPort });
   const httpServer = serve({ fetch: server.app.fetch, hostname: BIND_HOST, port }, () => {
     process.stdout.write(`${SERVER_READY_PREFIX}${JSON.stringify({ studioHome: server.studioHome })}\n`);
   });
   process.once("SIGTERM", () => {
     shutdownAgent?.();
+    previewBuilder?.close();
+    previewServer.close();
     httpServer.close(() => void server.close().finally(() => process.exit(0)));
   });
 }

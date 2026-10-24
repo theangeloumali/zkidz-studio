@@ -4,7 +4,6 @@ import type { StudioDatabase } from "@zks/db";
 import { API_ROUTES } from "@zks/shared";
 import type { Hono } from "hono";
 import { projectDir } from "../config.ts";
-import { HttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
 import { describeHardware, SYSTEM_METER_READERS, type HardwareMeterReaders } from "./hardware.ts";
 import { readRenderProfile } from "./master-files.ts";
@@ -19,7 +18,7 @@ export interface RenderStatusRouteDeps {
 export function registerRenderStatusRoutes(app: Hono, deps: RenderStatusRouteDeps): void {
   app.get(API_ROUTES.getHardware.path, async (c) => {
     const profile = await readRenderProfile(deps.studioHome);
-    if (profile === undefined) throw new HttpError(404, "The hardware has not been probed yet. Run: pnpm zks doctor");
+    if (profile === undefined) return c.json(null);
     return c.json(await describeHardware(profile, deps.meterReaders ?? SYSTEM_METER_READERS));
   });
 

@@ -11,6 +11,22 @@ export const RENDER_TIMEOUT_MS = 5 * 60_000;
 const GATED_TOOLS = ["render_master", "export_deliverable"];
 const QcReportSchema = z.object({ ok: z.boolean(), checks: z.array(z.object({ name: z.string(), ok: z.boolean() })) });
 
+/** Every console error and uncaught exception the page logs, 404s from missing routes included. */
+export function collectConsoleErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`${message.text()} (${message.location().url})`);
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  return errors;
+}
+
+/** In-app navigation keeps the query cache, so the Render page must learn about new jobs from events, not a reload. */
+export async function openRenderFromNav(page: Page): Promise<void> {
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Render" }).click();
+  await expect(page).toHaveURL(/\/render$/);
+}
+
 /** Drops the clip, starts the edit and approves the render and the export; returns the project id. */
 export async function editAndApprove(page: Page): Promise<string> {
   await page.goto("/");

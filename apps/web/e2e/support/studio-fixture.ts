@@ -12,7 +12,8 @@ export { expect };
 
 export const FIXTURE_CLIP = fileURLToPath(new URL("../../../../fixtures/parity/clip-2997.mp4", import.meta.url));
 const SERVER_ENTRY = fileURLToPath(new URL("../harness/studio-server.ts", import.meta.url));
-const SERVER_START_TIMEOUT_MS = 60_000;
+// Cold TS imports of the full server graph take minutes on a 9p (WSL /mnt/c) checkout.
+const SERVER_START_TIMEOUT_MS = 240_000;
 const ReadyLineSchema = z.object({ studioHome: z.string() });
 
 export interface StudioServer {
@@ -58,7 +59,9 @@ export const test = base.extend<object, { studio: StudioServer; frozenMaster: bo
   studio: [
     async ({ frozenMaster }, provide) => {
       const port = await freePort();
-      const env = { ...process.env, ZKS_E2E_PORT: String(port), ZKS_E2E_FROZEN_MASTER: frozenMaster ? "1" : "0" };
+      let previewPort = await freePort();
+      while (previewPort === port) previewPort = await freePort();
+      const env = { ...process.env, ZKS_E2E_PORT: String(port), ZKS_E2E_PREVIEW_PORT: String(previewPort), ZKS_E2E_FROZEN_MASTER: frozenMaster ? "1" : "0" };
       const child = spawn(process.execPath, [SERVER_ENTRY], { env, stdio: ["ignore", "pipe", "pipe"] });
       const exited = new Promise((resolve) => child.once("exit", resolve));
       try {

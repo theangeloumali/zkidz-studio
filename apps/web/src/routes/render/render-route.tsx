@@ -48,7 +48,7 @@ export function RenderRoute() {
       {isFinished && project.data && <RenderFinishedBanner projectId={projectId} projectSlug={project.data.slug} fileCount={fileCount} />}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <QueuePanel projectId={projectId} jobs={jobs.data} hardware={hardware.data} loadError={jobs.error}>
+          <QueuePanel projectId={projectId} jobs={jobs.data} hardware={hardware.data ?? undefined} loadError={jobs.error}>
             {hardware.data?.profile === "cpu" && <CpuNotice isSending={renderRequest.isPending} onRender1080={() => renderRequest.mutate("final")} />}
           </QueuePanel>
         </div>

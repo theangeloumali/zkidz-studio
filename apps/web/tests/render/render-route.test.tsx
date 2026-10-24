@@ -83,6 +83,14 @@ describe("Render & export screen", () => {
     expect(screen.getByText("not used")).toBeInTheDocument();
   });
 
+  it("says the hardware is not probed yet, rather than unavailable, before the first probe", async () => {
+    stubServer({ hardware: jsonResponse(null) });
+    renderScreen();
+
+    expect(await screen.findByText("The hardware has not been probed yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Hardware stats are unavailable.")).not.toBeInTheDocument();
+  });
+
   it("keeps the screen working when the hardware probe is unavailable", async () => {
     stubServer({ hardware: jsonResponse({ error: "Not found" }, 404) });
     renderScreen();

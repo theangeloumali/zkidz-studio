@@ -3,7 +3,8 @@ import type { Hardware } from "@zks/shared";
 import { PanelSection } from "./panel-section.tsx";
 
 interface HardwarePanelProps {
-  readonly hardware: Hardware | undefined;
+  /** null when the server has not probed the hardware yet; undefined while loading. */
+  readonly hardware: Hardware | null | undefined;
   readonly isUnavailable: boolean;
 }
 
@@ -11,6 +12,7 @@ export function HardwarePanel({ hardware, isUnavailable }: HardwarePanelProps) {
   return (
     <PanelSection id="render-hardware" title="Hardware">
       {isUnavailable && <p className="text-ui text-copy-muted">Hardware stats are unavailable.</p>}
+      {hardware === null && <p className="text-ui text-copy-muted">The hardware has not been probed yet.</p>}
       {hardware && (
         <ul className="flex flex-col gap-2">
           {hardware.meters.map((meter) => (

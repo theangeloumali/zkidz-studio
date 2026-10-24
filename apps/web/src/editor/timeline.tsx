@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { createContext, useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { formatTimecode } from "../lib/format.ts";
-import { editedDuration, editedToSource, type TimeSpan } from "./edl.ts";
+import { editedDuration, editedToSource, sourceToEdited, type TimeSpan } from "./edl.ts";
 import type { PlaybackClock } from "./playback-clock.ts";
 import { mergeDensityRuns } from "./timeline-density.ts";
 import { TimelineHead } from "./timeline-head.tsx";
@@ -10,6 +10,7 @@ import { TimelineLane, TRACK_META } from "./timeline-lane.tsx";
 import { TimelineRuler } from "./timeline-ruler.tsx";
 import { followScrollLeft, LABEL_WIDTH_PX, MAX_PIXELS_PER_SECOND, rulerTicks } from "./timeline-scale.ts";
 import { indexTimelineItems, visibleItems } from "./timeline-window.ts";
+import { usePointerSeek } from "./use-pointer-seek.ts";
 import { useTimelineView, viewportOf } from "./use-timeline-view.ts";
 
 /** The lane scale, for things drawn over a lane (the cut chips). */
@@ -96,6 +97,15 @@ export function Timeline({ tracks, sourceDurationS, keptSpans, clock, meta, vide
     event.preventDefault();
   };
 
+  const onPointerDown = usePointerSeek({
+    originRef: sliderRef,
+    disabled: noMedia,
+    seekToOffset: (offsetPx) => {
+      const sourceS = Math.min(sourceDurationS, Math.max(0, offsetPx / pixelsPerSecond));
+      clock.seek(Math.min(editedLengthS, sourceToEdited(keptSpans, sourceS)));
+    },
+  });
+
   const nowS = clock.now();
   return (
     <>
@@ -108,7 +118,7 @@ export function Timeline({ tracks, sourceDurationS, keptSpans, clock, meta, vide
         onFit={() => zoomAround(fitPps, LABEL_WIDTH_PX)}
       />
       <div ref={scrollerRef} className="timeline-scroll">
-        <div className="timeline" style={{ width: LABEL_WIDTH_PX + sourceDurationS * pixelsPerSecond, minWidth: "100%" }}>
+        <div className="timeline" style={{ width: LABEL_WIDTH_PX + sourceDurationS * pixelsPerSecond, minWidth: "100%" }} onPointerDown={onPointerDown}>
           <TimelineRuler
             sliderRef={sliderRef}
             ticks={rulerTicks(visibleWindow, pixelsPerSecond, sourceDurationS)}

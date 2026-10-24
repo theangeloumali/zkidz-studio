@@ -162,6 +162,8 @@
 .timeline {
   --label-w: 6.5rem;
   position: relative;
+  /* A scrub drag would otherwise select tick and block labels. */
+  user-select: none;
   display: grid;
   gap: var(--space-1);
 }

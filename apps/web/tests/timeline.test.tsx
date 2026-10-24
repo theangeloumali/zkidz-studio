@@ -3,7 +3,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import type { Cue } from "@zks/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { editedDuration, type TimeSpan } from "../src/editor/edl.ts";
 import { createPlaybackClock } from "../src/editor/playback-clock.ts";
 import { Timeline } from "../src/editor/timeline.tsx";
 import { buildTimelineTracks } from "../src/editor/timeline-items.ts";
@@ -17,10 +18,10 @@ const bulkCues = Array.from({ length: 2000 }, (_, index): Cue => {
   return { kind: "keyword", at, end: at + 0.24, text: `Cue ${index}` };
 });
 
-function renderTimeline(cueSheet: readonly Cue[], durationS: number) {
-  const clock = createPlaybackClock({ durationS });
+function renderTimeline(cueSheet: readonly Cue[], durationS: number, keptSpans: readonly TimeSpan[] = [{ at: 0, end: durationS }]) {
+  const clock = createPlaybackClock({ durationS: editedDuration(keptSpans) });
   const view = renderWithProviders(
-    <Timeline tracks={buildTimelineTracks(null, [...cueSheet])} sourceDurationS={durationS} keptSpans={[{ at: 0, end: durationS }]} clock={clock} />,
+    <Timeline tracks={buildTimelineTracks(null, [...cueSheet])} sourceDurationS={durationS} keptSpans={keptSpans} clock={clock} />,
   );
   const scroller = view.container.querySelector<HTMLElement>(".timeline-scroll");
   if (scroller === null) throw new Error("no timeline scroller");
@@ -211,5 +212,71 @@ describe("Timeline keyboard seek", () => {
     renderTimeline(bulkCues, BULK_DURATION_S);
 
     expect(within(screen.getByTestId("lane-cues")).getAllByRole("listitem")[0]).not.toHaveAttribute("tabindex");
+  });
+});
+
+describe("Timeline click-to-seek", () => {
+  /** jsdom lays nothing out: the ruler (source 0 s) sits after the 104 px label column. */
+  const RULER_LEFT_PX = 104;
+  const PPS = 40;
+  const atSourceS = (sourceS: number) => ({ clientX: RULER_LEFT_PX + sourceS * PPS, button: 0, pointerId: 1 });
+
+  function renderWithRuler(keptSpans?: readonly TimeSpan[]) {
+    const rendered = renderTimeline([{ kind: "keyword", at: 2, end: 4, text: "Block" }], 30, keptSpans);
+    const slider = screen.getByRole("slider", { name: "Playhead" });
+    vi.spyOn(slider, "getBoundingClientRect").mockReturnValue(new DOMRect(RULER_LEFT_PX, 0, 30 * PPS, 20));
+    return { ...rendered, slider };
+  }
+
+  it("moves the playhead to the clicked ruler time, in edited seconds, and updates the slider", () => {
+    const { clock, slider } = renderWithRuler([
+      { at: 0, end: 5 },
+      { at: 8, end: 30 },
+    ]);
+
+    fireEvent.pointerDown(slider, atSourceS(10));
+    fireEvent.pointerUp(window, atSourceS(10));
+
+    expect(clock.now()).toBe(7);
+    expect(slider).toHaveAttribute("aria-valuenow", "7");
+  });
+
+  it("seeks from a press on the empty lane area, but not from a block or the label column", () => {
+    const { clock } = renderWithRuler();
+    const lane = screen.getByTestId("lane-video");
+
+    fireEvent.pointerDown(within(screen.getByTestId("lane-cues")).getByRole("listitem"), atSourceS(3));
+    fireEvent.pointerUp(window, atSourceS(3));
+    expect(clock.now()).toBe(0);
+    fireEvent.pointerDown(screen.getByText("Video"), atSourceS(5));
+    fireEvent.pointerUp(window, atSourceS(5));
+    expect(clock.now()).toBe(0);
+
+    fireEvent.pointerDown(lane, atSourceS(12.5));
+    fireEvent.pointerUp(window, atSourceS(12.5));
+    expect(clock.now()).toBe(12.5);
+  });
+
+  it("scrubs while dragged, seeking at most once per animation frame", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    const { clock, slider } = renderWithRuler();
+    const seek = vi.spyOn(clock, "seek");
+
+    fireEvent.pointerDown(slider, atSourceS(1));
+    fireEvent.pointerMove(window, atSourceS(2));
+    fireEvent.pointerMove(window, atSourceS(3));
+    fireEvent.pointerMove(window, atSourceS(4));
+    expect(seek).toHaveBeenCalledTimes(1);
+
+    for (const frame of frames.splice(0)) frame(0);
+    expect(seek).toHaveBeenCalledTimes(2);
+    expect(clock.now()).toBe(4);
+
+    fireEvent.pointerUp(window, atSourceS(6));
+    expect(clock.now()).toBe(6);
+    fireEvent.pointerMove(window, atSourceS(9));
+    for (const frame of frames.splice(0)) frame(0);
+    expect(clock.now()).toBe(6);
   });
 });

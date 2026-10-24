@@ -32,6 +32,14 @@ async function openEditor(page: Page, request: APIRequestContext, pickProject = 
 const overlay = (page: Page) => page.getByTitle("Overlay preview");
 const overlayFrame = (page: Page) => page.frameLocator('iframe[title="Overlay preview"]');
 
+/** Adds the hostile cue, then one replay cue; that cue is in the last build only, so once it shows the frame stops navigating. */
+async function hostileCueBuilt(page: Page, request: APIRequestContext, replayStep: number) {
+  await control(request, "hostile-cue");
+  await control(request, `replay?step=${replayStep}`);
+  await expect(overlayFrame(page).getByText(`${CUE_CALL_TEXT} ${replayStep}`)).toBeAttached({ timeout: BUILD_WAIT_MS });
+  return overlayFrame(page).getByText(HOSTILE_CUE_TEXT);
+}
+
 test("the preview catches up within 3 s of each of 40 replayed set_cuts/add_cue calls", async ({ page, request }) => {
   const { replayCallCount } = await openEditor(page, request);
   await expect(overlay(page)).toBeAttached({ timeout: BUILD_WAIT_MS });
@@ -79,10 +87,8 @@ async function nearWhiteShare(page: Page, element: Locator): Promise<number> {
 
 test("playing seeks the overlay so a cue shows over its words, inside the player", async ({ page, request }) => {
   await openEditor(page, request);
-  await control(request, "hostile-cue");
-  await control(request, "replay?step=101");
-  const cueText = overlayFrame(page).getByText(HOSTILE_CUE_TEXT);
-  await expect(cueText).toBeAttached({ timeout: BUILD_WAIT_MS });
+  const cueText = await hostileCueBuilt(page, request, 101);
+  await expect(cueText).toBeAttached();
   await expect(cueText).toBeHidden();
   await page.getByRole("button", { name: "Play" }).click();
   await expect(cueText).toBeVisible({ timeout: CATCH_UP_MS });
@@ -95,6 +101,86 @@ test("playing seeks the overlay so a cue shows over its words, inside the player
   expect(cue.y).toBeGreaterThanOrEqual(player.y);
   expect(cue.x + cue.width).toBeLessThanOrEqual(player.x + player.width);
   expect(cue.y + cue.height).toBeLessThanOrEqual(player.y + player.height);
+});
+
+interface Box {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+/** The comment cue's text, its bubble body and its pen-reveal window, all in the frame's viewport pixels. */
+async function commentBoxes(page: Page): Promise<{ text: Box; bubble: Box; reveal: Box }> {
+  const frame = page.frame({ url: /\/compositions\// });
+  if (frame === null) throw new Error("no overlay frame");
+  return frame.evaluate((text) => {
+    const boxOf = (element: Element): Box => {
+      const { left, top, right, bottom } = element.getBoundingClientRect();
+      return { left, top, right, bottom };
+    };
+    // Replayed cues are comments too, so start from this cue's own text.
+    const textElement = [...document.querySelectorAll(".comment text")].find((element) => element.textContent === text);
+    const comment = textElement?.closest(".comment");
+    const words = comment?.querySelector<HTMLElement>(".words");
+    if (textElement === undefined || comment === null || comment === undefined || words === null || words === undefined) throw new Error("no comment cue");
+    // The bubble's body is its largest drawn path; the rest are its tail and outline strokes.
+    const area = (box: Box) => (box.right - box.left) * (box.bottom - box.top);
+    const bubble = [...comment.querySelectorAll(".bubble path")].map(boxOf).reduce((largest, box) => (area(box) > area(largest) ? box : largest));
+    // The clip polygon is in the words layer's own pixels; a probe placed on it takes every transform above (cue, #root scale).
+    const [left = 0, top = 0, right = 0, bottom = 0] = [...getComputedStyle(words).clipPath.matchAll(/(-?[\d.]+)px/g)]
+      .map((match) => Number(match[1]))
+      .filter((_, index) => [0, 1, 4, 5].includes(index));
+    const probe = document.createElement("div");
+    probe.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px`;
+    words.append(probe);
+    const reveal = boxOf(probe);
+    probe.remove();
+    return { text: boxOf(textElement), bubble, reveal };
+  }, HOSTILE_CUE_TEXT);
+}
+
+const contains = (outer: Box, inner: Box) => inner.left >= outer.left && inner.top >= outer.top && inner.right <= outer.right && inner.bottom <= outer.bottom;
+
+test("a long comment cue writes on in full, inside its bubble", async ({ page, request }) => {
+  await openEditor(page, request);
+  await expect(await hostileCueBuilt(page, request, 105)).toBeAttached();
+  await page.getByRole("button", { name: "Play" }).click();
+
+  // The pen window grows until the reveal ends; with fallback type the text outgrew it and was cropped.
+  await expect
+    .poll(
+      async () => {
+        const { reveal, text } = await commentBoxes(page);
+        return contains(reveal, text);
+      },
+      { timeout: CATCH_UP_MS },
+    )
+    .toBe(true);
+  const { text, bubble } = await commentBoxes(page);
+  expect(contains(bubble, text), `text ${JSON.stringify(text)} in bubble ${JSON.stringify(bubble)}`).toBe(true);
+});
+
+test("clicking the ruler moves the playhead and the preview to that time", async ({ page, request }) => {
+  await openEditor(page, request);
+  await expect(overlay(page)).toBeAttached({ timeout: BUILD_WAIT_MS });
+  const slider = page.getByRole("slider", { name: "Playhead" });
+  await slider.scrollIntoViewIfNeeded();
+  // A tick's left border sits exactly on its second; 0:04 is before the harness's first cut, so source and edited agree.
+  const tick = await slider.getByText("0:04", { exact: true }).boundingBox();
+  const ruler = await slider.boundingBox();
+  if (tick === null || ruler === null) throw new Error("no ruler tick");
+
+  await page.mouse.click(tick.x + 0.5, ruler.y + ruler.height / 2);
+
+  await expect.poll(async () => Number(await slider.getAttribute("aria-valuenow"))).toBeCloseTo(4, 1);
+  const playheadX = await page.locator(".playhead").evaluate((playhead) => {
+    const { left, right } = playhead.getBoundingClientRect();
+    return (left + right) / 2;
+  });
+  expect(Math.abs(playheadX - tick.x)).toBeLessThanOrEqual(1.5);
+  const footage = page.locator('video.footage[data-active="true"]');
+  await expect.poll(() => footage.evaluate((video: HTMLVideoElement) => video.currentTime), { timeout: CATCH_UP_MS }).toBeCloseTo(4, 1);
 });
 
 test("the overlay frame is see-through in the dark theme and loads every brand font", async ({ page, request }) => {
@@ -126,9 +212,7 @@ test("hostile cue text renders as text, and the frame can neither reach the API 
     if (sent.method() === "POST") posts.push(sent.url());
   });
   await openEditor(page, request);
-  await control(request, "hostile-cue");
-  await control(request, "replay?step=103");
-  await expect(overlayFrame(page).getByText(HOSTILE_CUE_TEXT)).toBeAttached({ timeout: BUILD_WAIT_MS });
+  await expect(await hostileCueBuilt(page, request, 103)).toBeAttached();
   await expect(overlayFrame(page).locator('img[src="x"]')).toHaveCount(0);
 
   const frame = page.frame({ url: /\/compositions\// });

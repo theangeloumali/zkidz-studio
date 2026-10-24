@@ -34,6 +34,19 @@ describe("readEngineProgress", () => {
     expect(await readEngineProgress(recordPath, RUN_STARTED_S)).toEqual({ stage: "audio", pct: 100 });
   });
 
+  // progress_eta.py is the one ETA formula: the server reports the record's etaS and derives none from its pace.
+  it("reports the etaS the engine wrote, and no ETA when the record has none", async () => {
+    await writeRecord({ stage: "frames", state: "running", done: 12, total: 48, updated: RUN_STARTED_S + 6, etaS: 40 });
+    expect(await readEngineProgress(recordPath, RUN_STARTED_S)).toEqual({ stage: "frames", pct: 25, etaS: 40 });
+    await writeRecord({ stage: "frames", state: "running", done: 12, total: 48, updated: RUN_STARTED_S + 6 });
+    expect(await readEngineProgress(recordPath, RUN_STARTED_S)).toEqual({ stage: "frames", pct: 25 });
+  });
+
+  it("reports a unitless stage's etaS, which the engine times from past runs", async () => {
+    await writeRecord({ stage: "join", state: "running", done: 0, total: null, etaS: 300 });
+    expect(await readEngineProgress(recordPath, RUN_STARTED_S)).toEqual({ stage: "join", pct: 0, etaS: 300 });
+  });
+
   it("gives no ETA for a stage waiting on another session's slot", async () => {
     await writeRecord({ stage: "master", state: "waiting", done: 0, total: 48 });
     expect(await readEngineProgress(recordPath, RUN_STARTED_S)).toEqual({ stage: "master", pct: 0 });

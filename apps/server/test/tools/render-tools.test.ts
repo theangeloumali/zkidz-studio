@@ -300,9 +300,25 @@ describe("render_master", () => {
     const { promise: encodeSeen, resolve: finishEncode } = Promise.withResolvers<void>();
     beforeNextRender = async (request) => {
       const startedS = Date.now() / 1000;
-      await writeEngineProgress(request.workDir, "v1", { stage: "frames", state: "running", done: 12, total: 48, started: startedS, updated: startedS + 6 });
+      await writeEngineProgress(request.workDir, "v1", {
+        stage: "frames",
+        state: "running",
+        done: 12,
+        total: 48,
+        started: startedS,
+        updated: startedS + 6,
+        etaS: 18,
+      });
       await encodeReached;
-      await writeEngineProgress(request.workDir, "v1", { stage: "master", state: "running", done: 24, total: 48, started: startedS, updated: startedS + 2 });
+      await writeEngineProgress(request.workDir, "v1", {
+        stage: "master",
+        state: "running",
+        done: 24,
+        total: 48,
+        started: startedS,
+        updated: startedS + 2,
+        etaS: 2,
+      });
       await encodeSeen;
       await writeEngineProgress(request.workDir, "v1", { stage: "master", state: "done", done: 48, total: 48, started: startedS, updated: startedS + 4 });
     };

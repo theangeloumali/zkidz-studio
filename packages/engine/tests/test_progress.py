@@ -2,6 +2,7 @@
 # Render progress: each stage's record, the line the status line reads, the ETA model and the one-time toasts.
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -335,12 +336,70 @@ class TimedStageTests(unittest.TestCase):
         self.assertEqual(progress_eta.stage_left(record, history, NOW), 300)
 
 
+class EtaSecondsTests(unittest.TestCase):
+    def test_a_counted_stage_reports_whole_seconds_from_its_pace(self):
+        record = {"stage": "master", "state": "running", "done": 0, "total": 670, "started": NOW}
+        self.assertEqual(progress_eta.eta_seconds(record, [], NOW), 10)  # 670 frames at the 67 fps seed
+
+    def test_a_stage_without_units_uses_its_history(self):
+        history = [{"stage": "join", "units": 0, "seconds": 330}]
+        record = {"stage": "join", "state": "running", "done": 0, "total": None, "started": NOW - 30}
+        self.assertEqual(progress_eta.eta_seconds(record, history, NOW), 300)
+
+    def test_unknown_or_not_running_has_no_eta(self):
+        self.assertIsNone(progress_eta.eta_seconds({"stage": "join", "state": "running", "total": None, "started": NOW}, [], NOW))
+        self.assertIsNone(progress_eta.eta_seconds({"stage": "probe", "state": "running", "done": 0, "total": 9, "started": NOW}, [], NOW))
+        self.assertIsNone(progress_eta.eta_seconds({"stage": "master", "state": "done", "done": 670, "total": 670, "started": NOW}, [], NOW))
+
+
+class RecordEtaTests(ProgressCase):
+    def test_a_python_stage_writes_its_eta_into_the_record_until_it_ends(self):
+        with progress.job("v1", "master", total=670, frames=670):
+            self.assertEqual(self.records()["v1"]["etaS"], 10)
+        self.assertNotIn("etaS", self.records()["v1"])
+
+    def test_refresh_leaves_each_running_record_its_eta_for_the_node_writer(self):
+        record = {"video": "v1", "stage": "frames", "state": "running", "done": 0, "total": 150, "unit": "frames", "frames": 150,
+                  "started": NOW, "updated": NOW, "pid": os.getpid(), "work": progress.work_name()}
+        progress.write_record(record)
+        progress.refresh(NOW)
+        eta = json.loads(progress_store.eta_path(progress.record_path("v1").name).read_text(encoding="utf-8"))
+        self.assertEqual(eta, {"stage": "frames", "started": NOW, "etaS": 10})  # 150 frames at the 15 fps seed
+        progress.write_record({**record, "state": "done", "done": 150})
+        progress.refresh(NOW)
+        self.assertFalse(progress_store.eta_path(progress.record_path("v1").name).exists())
+
+
 class JsTwinTests(ProgressCase):
     def test_python_and_node_name_an_edit_alike(self):
         script = f"process.stdout.write(require({json.dumps(str(ENGINE / 'hf' / 'progress.js'))}).recordPath('v1'))"
         env = {**os.environ, "ZKS_PROGRESS": str(self.dir), "ZKS_WORK": str(progress_store.WORK).replace("\\", "/")}
         named = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True, env=env).stdout
         self.assertEqual(Path(named).name, progress.record_path("v1").name)
+
+    def test_node_copies_the_eta_refresh_left_for_its_running_stage(self):
+        # PATH without uv: the detached refresh child cannot start and rewrite the eta under the test.
+        node = shutil.which("node")
+        env = {**os.environ, "ZKS_PROGRESS": str(self.dir), "ZKS_WORK": str(progress_store.WORK).replace("\\", "/"), "PATH": str(Path(node).parent)}
+        script = """const fs = require("fs"); const path = require("path"); const p = require(process.argv[1]); const etaFile = process.argv[2];
+const read = () => JSON.parse(fs.readFileSync(p.recordPath("v1"), "utf8"));
+const leave = (eta) => { fs.mkdirSync(path.dirname(etaFile), { recursive: true }); fs.writeFileSync(etaFile, JSON.stringify(eta)); };
+const pause = () => new Promise((resolve) => setTimeout(resolve, 2100));
+const seen = [];
+p.track("v1", "frames", async (stage) => {
+  stage.begin(150, 150);
+  const { started } = read();
+  leave({ stage: "frames", started: started - 1, etaS: 99 });
+  await pause(); stage.update(10); seen.push(read());
+  leave({ stage: "frames", started, etaS: 9 });
+  await pause(); stage.update(20); seen.push(read());
+}).then(() => { seen.push(read()); process.stdout.write(JSON.stringify(seen)); });"""
+        eta = progress_store.eta_path(progress.record_path("v1").name)
+        result = subprocess.run([node, "-e", script, str(ENGINE / "hf" / "progress.js"), str(eta)], capture_output=True, text=True, check=True, env=env)
+        other_run, running, done = json.loads(result.stdout)
+        self.assertNotIn("etaS", other_run)
+        self.assertEqual(running["etaS"], 9)
+        self.assertNotIn("etaS", done)
 
 
 class ToastTests(unittest.TestCase):

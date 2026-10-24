@@ -35,6 +35,16 @@ function writeAtomic(file, text) {
   fs.rmSync(tmp, { force: true });
 }
 
+// progress.py's refresh leaves each running record's etaS in eta/<record>; it counts only for the run it was computed for.
+function refreshedEta(file, record) {
+  try {
+    const eta = JSON.parse(fs.readFileSync(path.join(PROGRESS, "eta", path.basename(file)), "utf8"));
+    return record.state === "running" && eta.stage === record.stage && eta.started === record.started ? eta.etaS : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 let refreshed = 0;
 function refresh(force) {
   if (!force && Date.now() - refreshed < REFRESH_MS) return;
@@ -59,6 +69,9 @@ function job(video, stage) {
   const record = { ...before, video, stage, state: "running", done: 0, total: null, unit: "frames", started: now(), pid: process.pid, work: WORK };
   let written = 0;
   const save = (force) => {
+    const etaS = refreshedEta(file, record);
+    if (etaS === undefined) delete record.etaS;
+    else record.etaS = etaS;
     record.updated = written = now();
     writeAtomic(file, JSON.stringify(record));
     refresh(force);

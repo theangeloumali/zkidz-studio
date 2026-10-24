@@ -17,6 +17,8 @@ const EngineProgressRecordSchema = z.object({
   total: z.number().nonnegative().nullish(),
   started: z.number(),
   updated: z.number(),
+  /** progress_eta.eta_seconds: absent until the engine knows a pace, a seed or a past run. */
+  etaS: z.number().nonnegative().optional(),
 });
 type EngineProgressRecord = z.infer<typeof EngineProgressRecordSchema>;
 
@@ -44,16 +46,12 @@ export async function readEngineProgress(recordPath: string, runStartedS: number
   return progressOf(parsed.data);
 }
 
-/** ETA from the stage's live pace; progress_eta.py's history blend reaches only the status line text, never the record. */
+/** The engine's own etaS: progress_eta.py is the one ETA formula, for the status line and the job alike. */
 function progressOf(record: EngineProgressRecord): JobProgress {
-  const { stage, state, done, total } = record;
-  if (total === undefined || total === null || total <= 0 || done === undefined || done === null) {
-    return { stage, pct: state === "done" ? FULL_PCT : 0 };
-  }
-  const pct = Math.min(FULL_PCT, (FULL_PCT * done) / total);
-  const elapsedS = record.updated - record.started;
-  if (state !== "running" || done <= 0 || elapsedS <= 0) return { stage, pct };
-  return { stage, pct, etaS: (Math.max(0, total - done) * elapsedS) / done };
+  const { stage, state, done, total, etaS } = record;
+  const hasUnits = total !== undefined && total !== null && total > 0 && done !== undefined && done !== null;
+  const pct = hasUnits ? Math.min(FULL_PCT, (FULL_PCT * done) / total) : state === "done" ? FULL_PCT : 0;
+  return etaS === undefined ? { stage, pct } : { stage, pct, etaS };
 }
 
 function parseJsonOrUndefined(text: string): unknown {

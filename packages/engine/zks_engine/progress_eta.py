@@ -44,6 +44,15 @@ def stage_left(record, history, now):
     return trust * live + (1 - trust) * planned
 
 
+def eta_seconds(record, history, now):
+    """Whole seconds left in a running stage, the record's etaS; None until a pace, seed or past run says anything."""
+    if record.get("state") != "running":
+        return None
+    stage, total = record["stage"], record.get("total")
+    known = (record.get("done") or rate(stage, history)) if total else stage_seconds(stage, record.get("frames"), history)
+    return round(stage_left(record, history, now)) if known else None
+
+
 def ahead(edit, history, now):
     """(seconds before its master, seconds of its master) still ahead of an edit."""
     frames, stage = edit.get("frames") or 0, edit["stage"]

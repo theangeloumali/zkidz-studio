@@ -9,7 +9,7 @@ import type { EventBus } from "../events/event-bus.ts";
 import type { Logger } from "../logging/logger.ts";
 import { assertSameProjectDependencies, cancelBlockedDependents, hasDependenciesMet } from "./job-dependencies.ts";
 
-interface JobProgress {
+export interface JobProgress {
   readonly stage: string;
   readonly pct: number;
   readonly etaS?: number;

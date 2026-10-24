@@ -1,9 +1,9 @@
 // Created by The Angelo Umali.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { jobs, mediaAssets } from "@zks/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { registerExportHandler } from "../../src/jobs/deliverables.ts";
 import { snapshotRenderJobSpecs } from "../../src/jobs/spec-snapshot.ts";
@@ -34,6 +34,7 @@ let failNextQc: string | undefined;
 let failNextQcStatus = false;
 let passNextQc = false;
 let hangNextRender: (() => void) | undefined;
+let beforeNextRender: ((request: EngineRequest) => Promise<void>) | undefined;
 let renderCount = 0;
 
 /** Publishes the master, then runs until the request's signal aborts: render_final lands the file before its frame and loudness gates. */
@@ -113,6 +114,11 @@ function engineReport(request: EngineRequest): unknown {
         hangNextRender = undefined;
         return renderUntilAborted(request, markStarted);
       }
+      if (beforeNextRender !== undefined) {
+        const runStages = beforeNextRender;
+        beforeNextRender = undefined;
+        return runStages(request).then(() => renderReport(request));
+      }
       return renderReport(request);
     case "qc-master":
       return qcReport(request);
@@ -163,6 +169,29 @@ async function callTool(fixture: ToolFixture, name: string, input: unknown) {
 function argumentAfter(request: EngineRequest | undefined, flag: string): string {
   const args = request?.args ?? [];
   return args[args.indexOf(flag) + 1] ?? "";
+}
+
+/** Writes the edit's progress record where the engine's progress_store.record_path puts it (sha1 of the work dir). */
+async function writeEngineProgress(workDir: string, videoId: string, record: Record<string, unknown>): Promise<void> {
+  const workKey = process.platform === "win32" ? resolve(workDir).toLowerCase() : resolve(workDir);
+  const recordName = `${createHash("sha1").update(workKey).digest("hex").slice(0, 8)}-${videoId}.json`;
+  await mkdir(join(server.studioHome, "progress"), { recursive: true });
+  await writeFile(join(server.studioHome, "progress", recordName), JSON.stringify({ video: videoId, unit: "frames", pid: 1, ...record }));
+}
+
+async function jobProgress(jobId: string) {
+  const [row] = await server.database.db.select({ stage: jobs.stage, pct: jobs.pct, etaS: jobs.etaS }).from(jobs).where(eq(jobs.id, jobId));
+  return row;
+}
+
+async function latestJobProgress(fixture: ToolFixture, kind: string) {
+  const [row] = await server.database.db
+    .select({ stage: jobs.stage, pct: jobs.pct, etaS: jobs.etaS })
+    .from(jobs)
+    .where(and(eq(jobs.projectId, fixture.context.projectId), eq(jobs.kind, kind)))
+    .orderBy(desc(jobs.queuedAt))
+    .limit(1);
+  return row;
 }
 
 /** A project with a camera clip, its cut spec and transcript, ready for render tools. Approval cards are denied unless `decide` says otherwise. */
@@ -265,6 +294,34 @@ describe("render_master", () => {
     expect(JSON.stringify(result.content)).toContain("succeeded");
   });
 
+  it("mirrors the engine's progress record into the job row's stage, percent and ETA while the master renders", async () => {
+    const { fixture } = await editedProject();
+    const { promise: encodeReached, resolve: reachEncode } = Promise.withResolvers<void>();
+    const { promise: encodeSeen, resolve: finishEncode } = Promise.withResolvers<void>();
+    beforeNextRender = async (request) => {
+      const startedS = Date.now() / 1000;
+      await writeEngineProgress(request.workDir, "v1", { stage: "frames", state: "running", done: 12, total: 48, started: startedS, updated: startedS + 6 });
+      await encodeReached;
+      await writeEngineProgress(request.workDir, "v1", { stage: "master", state: "running", done: 24, total: 48, started: startedS, updated: startedS + 2 });
+      await encodeSeen;
+      await writeEngineProgress(request.workDir, "v1", { stage: "master", state: "done", done: 48, total: 48, started: startedS, updated: startedS + 4 });
+    };
+    const queued = await callTool(fixture, "render_master", { target: "full", quality: "4k" });
+    const jobId = String(queued.structuredContent?.jobId);
+    try {
+      // 12 of 48 frames in 6 s leaves 36 at 0.5 s each.
+      await expect.poll(() => jobProgress(jobId), { timeout: 4000 }).toEqual({ stage: "frames", pct: 25, etaS: 18 });
+      reachEncode();
+      await expect.poll(() => jobProgress(jobId), { timeout: 4000 }).toEqual({ stage: "master", pct: 50, etaS: 2 });
+    } finally {
+      // A failed poll must not leave the gpu lane hung for the tests after it.
+      reachEncode();
+      finishEncode();
+    }
+    expect((await callTool(fixture, "job_wait", { jobId, timeoutS: 10 })).structuredContent).toMatchObject({ status: "succeeded" });
+    expect(await jobProgress(jobId)).toEqual({ stage: "master", pct: 100, etaS: null });
+  }, 20_000);
+
   it("renders the Reels cut as the reel video id", async () => {
     const { fixture } = await editedProject();
     const queued = await callTool(fixture, "render_master", { target: "reel", quality: "draft" });
@@ -289,6 +346,7 @@ describe("qc_master", () => {
     const result = await callTool(fixture, "qc_master", { target: "full" });
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toEqual({ ok: false, checks: FAILING_QC_CHECKS });
+    expect(await latestJobProgress(fixture, "qc_master")).toEqual({ stage: "checks", pct: 100, etaS: null });
 
     const request = engineRequests.at(-1);
     expect(request?.command).toBe("qc-master");
@@ -359,6 +417,7 @@ describe("check_motion", () => {
     await renderAndWait(fixture, { target: "full", quality: "4k" });
     const result = await callTool(fixture, "check_motion", { stage: "master", regions: [{ x: 240, y: 880, w: 600, h: 380 }] });
     expect(result.structuredContent).toEqual(MOTION_REPORT);
+    expect(await latestJobProgress(fixture, "check_motion")).toEqual({ stage: "checks", pct: 100, etaS: null });
     const request = engineRequests.at(-1);
     expect(request?.args).toEqual(expect.arrayContaining(["--stage", "master", "--region", "240,880,600,380"]));
   });
@@ -407,6 +466,7 @@ describe("make_covers", () => {
       ],
     });
     expect(result.structuredContent).toEqual({ covers: [{ path: "work/covers/v1-cover-0.png" }, { path: "work/covers/v1-cover-1.png" }] });
+    expect(await latestJobProgress(fixture, "make_covers")).toEqual({ stage: "covers", pct: 100, etaS: null });
 
     const request = engineRequests.at(-1);
     expect(request?.args).toEqual(expect.arrayContaining(["--at", "2.3", "--at", "8"]));
@@ -526,7 +586,7 @@ describe("export_deliverable", () => {
       .select()
       .from(jobs)
       .where(and(eq(jobs.projectId, fixture.context.projectId), eq(jobs.kind, "export_deliverable")));
-    expect(exportJob).toMatchObject({ lane: "cpu", status: "succeeded" });
+    expect(exportJob).toMatchObject({ lane: "cpu", status: "succeeded", stage: "copying", pct: 100 });
     expect(engineRequests.at(-1)).toMatchObject({ command: "qc-status", args: ["--video", "v1"] });
   });
 

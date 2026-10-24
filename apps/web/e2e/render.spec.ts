@@ -29,6 +29,9 @@ test("a dropped clip is cut, approved, rendered, QC'd and delivered with matchin
   await openRenderFromNav(page);
   const deliverableRows = page.getByRole("region", { name: "Deliverables" }).getByRole("listitem");
   await expect(deliverableRows).toHaveCount(DELIVERED_KINDS, { timeout: RENDER_TIMEOUT_MS });
+  // A job with no stage draws no bars, so a full bar on the finished master proves the engine's progress reached its row.
+  const fullMaster = page.getByRole("listitem", { name: "Full edit · render master" }).first();
+  await expect(fullMaster.getByRole("progressbar").first()).toHaveAttribute("aria-valuenow", "100");
 
   const qcReport = await readQcReport(studio, projectId);
   expect(qcReport.checks.filter((check) => !check.ok)).toEqual([]);

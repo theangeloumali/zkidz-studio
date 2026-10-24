@@ -112,6 +112,23 @@ describe("export deliverables", () => {
     );
   });
 
+  it("reports each file's copy as progress, ending at 100%", async () => {
+    const { project, deps } = await projectWithMasters();
+    const reported: unknown[] = [];
+    const reportProgress = (progress: unknown) => {
+      reported.push(progress);
+      return Promise.resolve();
+    };
+
+    await exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full", "cover_a"], jobId: null, reportProgress });
+
+    expect(reported).toEqual([
+      { stage: "copying", pct: 0 },
+      { stage: "copying", pct: 50 },
+      { stage: "copying", pct: 100 },
+    ]);
+  });
+
   it("exports a CPU render's 1080 master as <v>.mp4, named by its resolution", async () => {
     const project = await insertProject(server);
     await createProjectDirs(server.studioHome, project.slug);

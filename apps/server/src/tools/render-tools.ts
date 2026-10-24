@@ -10,7 +10,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { JobRow } from "../dto.ts";
 import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
-import type { JobRunner, NewJob } from "../jobs/job-runner.ts";
+import { followEngineProgress, reportStage } from "../jobs/engine-progress.ts";
+import type { JobRunner, NewJob, ReportProgress } from "../jobs/job-runner.ts";
 import { findLatestMaster } from "../jobs/master-files.ts";
 import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "../jobs/render-provenance.ts";
 import { activeSpecSnapshotDir, postCaptionRelPath, readSnapshotSpec, snapshotFilePath } from "../jobs/spec-snapshot.ts";
@@ -238,11 +239,12 @@ async function runJobForResult(context: ToolContext, reportJob: ReportJob, signa
   }
 }
 
+// "checks" and "covers" match the Render screen's stage ids; those engine commands write no progress record.
 export function registerRenderJobHandlers(jobRunner: JobRunner, deps: EngineJobDeps): void {
-  jobRunner.registerHandler("render_master", (job, _reportProgress, signal) => runRenderMaster(deps, job, signal));
-  jobRunner.registerHandler("qc_master", (job, _reportProgress, signal) => runQcMaster(deps, job, signal));
-  jobRunner.registerHandler("check_motion", (job, _reportProgress, signal) => runCheckMotion(deps, job, signal));
-  jobRunner.registerHandler("make_covers", (job, _reportProgress, signal) => runMakeCovers(deps, job, signal));
+  jobRunner.registerHandler("render_master", (job, reportProgress, signal) => runRenderMaster(deps, job, reportProgress, signal));
+  jobRunner.registerHandler("qc_master", (job, reportProgress, signal) => reportStage(reportProgress, "checks", () => runQcMaster(deps, job, signal)));
+  jobRunner.registerHandler("check_motion", (job, reportProgress, signal) => reportStage(reportProgress, "checks", () => runCheckMotion(deps, job, signal)));
+  jobRunner.registerHandler("make_covers", (job, reportProgress, signal) => reportStage(reportProgress, "covers", () => runMakeCovers(deps, job, signal)));
 }
 
 /** An asset's file for --source, and the in-place registration the engine needs to accept a file outside the project. */
@@ -258,16 +260,18 @@ function requireSnapshotDir(job: JobRow): string {
 }
 
 /** Renders the cut spec the job's snapshot froze, and records that source and snapshot for QC and export to match. */
-async function runRenderMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
+async function runRenderMaster(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress, signal: AbortSignal): Promise<void> {
   const params = RenderParamsSchema.parse(job.params);
   const cuts = CutSpecSchema.parse(await readSnapshotSpec(requireSnapshotDir(job), { videoId: job.videoId, kind: "cuts" }));
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "out");
   const source = await assetInput(deps, job, cuts.sourceAssetId);
-  const args = ["--video", targetVideoId(job.videoId, params.target), "--quality", params.quality, "--source", source.path];
-  const { master, ...report } = EngineMasterReportSchema.parse(
-    await deps.engine.run({ command: "render-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }),
+  const videoId = targetVideoId(job.videoId, params.target);
+  const args = ["--video", videoId, "--quality", params.quality, "--source", source.path];
+  const engineReport = await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId }, reportProgress, () =>
+    deps.engine.run({ command: "render-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }),
   );
+  const { master, ...report } = EngineMasterReportSchema.parse(engineReport);
   if (master.relPath !== report.path) throw new Error(`render-master hashed ${master.relPath}, not the master it wrote at ${report.path}`);
   const result = MasterRenderResultSchema.parse({
     ...report,

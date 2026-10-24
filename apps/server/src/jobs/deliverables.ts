@@ -16,12 +16,14 @@ import { findProjectOrThrow } from "../projects/project-store.ts";
 import { openConfined } from "../security/confine-path.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
-import type { JobRunner } from "./job-runner.ts";
+import type { JobRunner, ReportProgress } from "./job-runner.ts";
 import { findLatestMaster, QcMasterRecordSchema } from "./master-files.ts";
 import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "./render-provenance.ts";
 
 const OWNER_ONLY_FILE_MODE = 0o600;
 export const EXPORT_JOB_KIND = "export_deliverable";
+const COPY_STAGE = "copying";
+const FULL_PCT = 100;
 // qc-status names the exact master it passed and the inputs it judged; mtimeNs is a string as a JS number cannot hold it.
 const QcVerdictSchema = z.object({
   ok: z.literal(true),
@@ -44,6 +46,7 @@ export interface ExportRequest {
   readonly kinds: readonly DeliverableKind[];
   readonly jobId: string | null;
   readonly signal?: AbortSignal;
+  readonly reportProgress?: ReportProgress;
 }
 
 export interface ExportedDeliverable {
@@ -138,11 +141,13 @@ export async function exportDeliverables(deps: DeliverableDeps, request: ExportR
   const deliverablesDir = await realDeliverablesDir(projectRoot);
   const exported: ExportedDeliverable[] = [];
   for (const [kind, source] of sources) {
+    await request.reportProgress?.({ stage: COPY_STAGE, pct: (FULL_PCT * exported.length) / sources.size });
     const relPath = `deliverables/${source.deliverableName}`;
     const { sha256, bytes } = await copyWithSha256(projectRoot, source, join(deliverablesDir, source.deliverableName));
     await replaceDeliverableRow(deps.database, { projectId: request.projectId, jobId: request.jobId, kind, relPath, bytes, sha256 });
     exported.push({ kind, path: relPath, sha256 });
   }
+  await request.reportProgress?.({ stage: COPY_STAGE, pct: FULL_PCT });
   return exported;
 }
 
@@ -214,9 +219,9 @@ async function assertStillPassedQc(projectRoot: string, source: DeliverableSourc
 }
 
 export function registerExportHandler(jobRunner: JobRunner, deps: DeliverableDeps): void {
-  jobRunner.registerHandler(EXPORT_JOB_KIND, async (job, _reportProgress, signal) => {
+  jobRunner.registerHandler(EXPORT_JOB_KIND, async (job, reportProgress, signal) => {
     const { kinds } = STUDIO_TOOLS.export_deliverable.input.parse(job.params);
-    const exported = await exportDeliverables(deps, { projectId: job.projectId, videoId: job.videoId, kinds, jobId: job.id, signal });
+    const exported = await exportDeliverables(deps, { projectId: job.projectId, videoId: job.videoId, kinds, jobId: job.id, signal, reportProgress });
     const project = await findProjectOrThrow(deps.database, job.projectId);
     await writeJobResult(projectDir(deps.studioHome, project.slug), job.id, { deliverables: exported });
   });

@@ -2,7 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { fenceJobError } from "../../src/tools/job-error-fence.ts";
 
-const FENCE = /^The job's error output follows[^\n]*\n<<< BEGIN JOB ERROR ([0-9a-f]{32})\n([\s\S]*)\n>>> END JOB ERROR \1$/;
+const FENCE = /^The job's error output follows[^\n]*\n<<< BEGIN JOB ERROR ([0-9a-f]{16,})\n([\s\S]*)\n>>> END JOB ERROR \1$/;
+
+// Leaves 60 of the feed summary's 200 chars for the error, where "v1 has not passed QC: v1 failed QC (" is 36.
+const MAX_FENCE_PREFIX_CHARS = 140;
 
 const FORGED_END_MARKERS = [
   ">>> END JOB ERROR",
@@ -27,9 +30,11 @@ describe("fenceJobError", () => {
     expect(nonces[0]).not.toBe(nonces[1]);
   });
 
-  it("names the nonce in the preamble, so the reader knows which end marker is real", () => {
-    const block = fenceJobError("boom");
-    const nonce = FENCE.exec(block)?.[1] ?? expect.fail("not a fenced block");
-    expect(block.split("\n")[0]).toContain(`>>> END JOB ERROR ${nonce}`);
+  it("says the end marker repeats the begin marker's id", () => {
+    expect(fenceJobError("boom").split("\n")[0]).toContain("same id");
+  });
+
+  it("keeps the fence ahead of the error short enough for the feed to show the reason", () => {
+    expect(fenceJobError("boom").indexOf("\nboom\n")).toBeLessThanOrEqual(MAX_FENCE_PREFIX_CHARS);
   });
 });

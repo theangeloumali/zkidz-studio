@@ -13,10 +13,17 @@ export function StageBar({ stage }: { readonly stage: StageRow }) {
   const roundedPct = Math.round(stage.pct);
   return (
     <div className="grid grid-cols-[8rem_1fr_3rem] items-center gap-3 text-ui-sm">
-      <span className={stage.state === "waiting" ? "text-copy-dim" : "text-copy-muted"}>{stage.label}</span>
+      <span className={stage.state === "waiting" ? "text-copy-dim" : "text-copy-muted"}>
+        {stage.label}
+        {stage.etaText !== null && (
+          <span aria-hidden="true" className="block text-copy-dim">
+            {stage.etaText}
+          </span>
+        )}
+      </span>
       <div
         role="progressbar"
-        aria-label={stage.label}
+        aria-label={stage.etaText === null ? stage.label : `${stage.label}, ${stage.etaText}`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={roundedPct}

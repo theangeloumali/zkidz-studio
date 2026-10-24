@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // How one render job reads on the Render & export screen (plan §9.1).
 import type { Hardware, Job, JobStatus } from "@zks/shared";
+import { formatEta } from "../agent/feed-notes.ts";
 
 export type StageState = "done" | "running" | "failed" | "waiting";
 
@@ -9,6 +10,8 @@ export interface StageRow {
   readonly label: string;
   readonly state: StageState;
   readonly pct: number;
+  /** Set only on the running stage, and only when the engine reports an ETA. */
+  readonly etaText: string | null;
 }
 
 /** The engine's master pipeline, in order; "events" is the SFX picker's own stage word. */
@@ -21,7 +24,6 @@ const PIPELINE_STAGES = [
 ] as const;
 const STAGE_ALIASES: Readonly<Record<string, string>> = { events: "sfx" };
 
-const SECONDS_PER_MINUTE = 60;
 const FULL_PCT = 100;
 
 const FINISHED_STATUS_TEXT: Readonly<Record<Exclude<JobStatus, "running">, string>> = {
@@ -36,23 +38,23 @@ export function stageRowsFor(job: Job): readonly StageRow[] {
   if (job.stage === null) return [];
   const currentState: StageState = job.status === "running" ? "running" : "failed";
   const currentPct = job.pct ?? 0;
+  const currentEta = job.status === "running" && job.etaS !== null ? formatEta(job.etaS) : null;
   const stageId = STAGE_ALIASES[job.stage] ?? job.stage;
   const currentIndex = PIPELINE_STAGES.findIndex((stage) => stage.id === stageId);
-  if (currentIndex === -1) return [{ id: job.stage, label: job.stage, state: job.status === "succeeded" ? "done" : currentState, pct: currentPct }];
+  if (currentIndex === -1)
+    return [{ id: job.stage, label: job.stage, state: job.status === "succeeded" ? "done" : currentState, pct: currentPct, etaText: currentEta }];
 
   return PIPELINE_STAGES.map((stage, index): StageRow => {
-    if (job.status === "succeeded" || index < currentIndex) return { ...stage, state: "done", pct: FULL_PCT };
-    if (index === currentIndex) return { ...stage, state: currentState, pct: currentPct };
-    return { ...stage, state: "waiting", pct: 0 };
+    if (job.status === "succeeded" || index < currentIndex) return { ...stage, state: "done", pct: FULL_PCT, etaText: null };
+    if (index === currentIndex) return { ...stage, state: currentState, pct: currentPct, etaText: currentEta };
+    return { ...stage, state: "waiting", pct: 0, etaText: null };
   });
 }
 
 export function jobStatusText(job: Job): string {
   if (job.status !== "running") return FINISHED_STATUS_TEXT[job.status];
   const pctText = `${Math.round(job.pct ?? 0)}%`;
-  if (job.etaS === null) return pctText;
-  const minutesLeft = Math.round(job.etaS / SECONDS_PER_MINUTE);
-  return `${pctText} · ${minutesLeft < 1 ? "under 1 min" : `${minutesLeft} min`} left`;
+  return job.etaS === null ? pctText : `${pctText} · ${formatEta(job.etaS)}`;
 }
 
 export function jobTitle(job: Job): string {

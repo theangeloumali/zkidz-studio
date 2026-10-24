@@ -34,8 +34,24 @@ describe("stageRowsFor", () => {
     expect(rows.every((row) => row.state === "done" && row.pct === 100)).toBe(true);
   });
 
+  it("gives only the running stage the humanized ETA", () => {
+    const rows = stageRowsFor(makeJob({ stage: "master", pct: 30, etaS: 40 }));
+
+    expect(rows.map((row) => row.etaText)).toEqual([null, null, null, "about 40 s left", null]);
+  });
+
+  it("gives no stage an ETA when the engine has none", () => {
+    expect(stageRowsFor(makeJob({ stage: "master", pct: 30, etaS: null })).every((row) => row.etaText === null)).toBe(true);
+  });
+
+  it("drops the ETA once the job stops running", () => {
+    expect(stageRowsFor(makeJob({ stage: "master", status: "failed", pct: 61, etaS: 40 })).every((row) => row.etaText === null)).toBe(true);
+  });
+
   it("shows an unknown stage as one row under its own name", () => {
-    expect(stageRowsFor(makeJob({ stage: "covers", pct: 50 }))).toEqual([{ id: "covers", label: "covers", state: "running", pct: 50 }]);
+    expect(stageRowsFor(makeJob({ stage: "covers", pct: 50 }))).toEqual([
+      { id: "covers", label: "covers", state: "running", pct: 50, etaText: "about 3 min left" },
+    ]);
   });
 
   it("shows no rows before a job reports a stage", () => {
@@ -45,11 +61,15 @@ describe("stageRowsFor", () => {
 
 describe("jobStatusText", () => {
   it("gives a running job its percent and minutes left", () => {
-    expect(jobStatusText(makeJob({ pct: 42.4, etaS: 180 }))).toBe("42% · 3 min left");
+    expect(jobStatusText(makeJob({ pct: 42.4, etaS: 180 }))).toBe("42% · about 3 min left");
   });
 
-  it("says under a minute when the ETA is short", () => {
-    expect(jobStatusText(makeJob({ pct: 98, etaS: 20 }))).toBe("98% · under 1 min left");
+  it("counts seconds when the ETA is under a minute", () => {
+    expect(jobStatusText(makeJob({ pct: 98, etaS: 20 }))).toBe("98% · about 20 s left");
+  });
+
+  it("shows the percent alone when the ETA is unknown", () => {
+    expect(jobStatusText(makeJob({ pct: 42, etaS: null }))).toBe("42%");
   });
 
   it("names the finished states", () => {

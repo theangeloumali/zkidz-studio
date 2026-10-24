@@ -26,7 +26,8 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
       untested on hardware, videotoolbox frame 0 at SSIM 0.993 pending a manual macOS run, OpenCL composite pending a native NVIDIA host)
 - [x] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions) (done 2026-10-24; the preview clock
       follows the playing proxy until Phase 5 renders the edit audio)
-- [ ] Phase 5: Render, covers, export and QC gates
+- [x] Phase 5: Render, covers, export and QC gates (done 2026-10-24; 4K HEVC master proven on nvidia, other backends by CI;
+      render jobs report stage, percent and ETA from the engine's progress record)
 - [x] Phase 6: Bundled skills, rules panel, style onboarding, demo project (done 2026-10-24, PR #14; also added the engine
       `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
 - [ ] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker

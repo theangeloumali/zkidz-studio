@@ -6,6 +6,7 @@ import { mediaAssets } from "@zks/db/schema";
 import { STUDIO_TOOLS } from "@zks/shared";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { hasErrorCode } from "@zks/db";
+import { CAPABILITIES_FILE } from "../../jobs/master-files.ts";
 import { readEnabledRuleTexts } from "../../rules/rule-reader.ts";
 import { implementTool } from "../define-tool.ts";
 import type { MediaAssetRow } from "../../dto.ts";
@@ -17,7 +18,6 @@ const CLIP_KINDS = ["camera", "screen_recording", "film"] as const;
 const QUARTER_TURNS = [0, 90, 180, 270] as const;
 const WORDS_PER_PAGE = 400;
 const WORDS_PER_READABLE_LINE = 12;
-const CAPABILITIES_FILE = "capabilities.json";
 
 const projectInfo = implementTool("project_info", {
   description: "The project's video id, its clips by assetId (duration, fps, rotation, HDR), the theme and the user's style rules.",

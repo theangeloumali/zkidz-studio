@@ -21,7 +21,8 @@ const MASTER_VARIANTS: readonly { readonly resolution: MasterResolution; readonl
 ];
 // The engine's UHD_BACKEND: only NVENC renders a true 4K master; every other backend's "4k" is a 1080 master.
 const UHD_PROFILE: RenderProfile = "nvidia";
-const CAPABILITIES_FILE = "capabilities.json";
+/** Written into ZKS_HOME by `zks-engine capabilities` (pnpm zks doctor). */
+export const CAPABILITIES_FILE = "capabilities.json";
 
 export interface MasterFile {
   readonly relPath: string;

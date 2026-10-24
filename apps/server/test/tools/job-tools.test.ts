@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { jobs, mediaAssets, transcripts } from "@zks/db/schema";
 import { STUDIO_TOOLS } from "@zks/shared";
@@ -140,5 +140,19 @@ describe("get_capabilities", () => {
     const result = await callTool(fixture, "get_capabilities", {});
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("doctor");
+  });
+
+  // The file `zks-engine capabilities` wrote on the RTX 5090 under WSL (no Vulkan GPU, no NVIDIA OpenCL there).
+  it("returns the capabilities.json the engine probe wrote", async () => {
+    const probed = { profile: "nvidia", features: { uhd: true, intro: true, zoomExpr: false, matte: false }, transcribe: "whisper.cpp" };
+    const capabilitiesPath = join(server.studioHome, "capabilities.json");
+    await writeFile(capabilitiesPath, JSON.stringify(probed, null, 2));
+    try {
+      const result = await callTool(await createToolFixture(server), "get_capabilities", {});
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toEqual(probed);
+    } finally {
+      await rm(capabilitiesPath);
+    }
   });
 });

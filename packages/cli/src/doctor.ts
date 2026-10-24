@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import { redactReport, redactText, type PathRoots } from "@zks/shared";
+import { checkCapabilities } from "./capabilities.ts";
 import type { ZksContext } from "./context.ts";
 import {
   checkBootstrapTool,
@@ -23,12 +24,15 @@ export type { CheckResult } from "./checks.ts";
 const STATUS_MARK = { ok: "ok  ", warn: "WARN", fail: "FAIL" } as const;
 
 export async function runDoctor(context: ZksContext): Promise<CheckResult[]> {
+  const ffmpegCheck = await checkFfmpeg(context);
+  const ffmpegPath = ffmpegCheck.data?.path;
   const checks: (CheckResult | undefined)[] = [
     checkNode(),
     checkBootstrapTool(context, "pnpm"),
     checkBootstrapTool(context, "uv"),
     checkPython(context),
-    ...(await checkFfmpeg(context)),
+    ffmpegCheck,
+    typeof ffmpegPath === "string" ? checkCapabilities(context, ffmpegPath) : undefined,
     checkWhisper(context),
     checkChromeRender(context),
     checkModels(context),

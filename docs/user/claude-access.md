@@ -2,7 +2,7 @@
 
 # Connecting Claude to ZKidz Studio
 
-For anyone setting up ZKidz Studio for the first time, or changing how it reaches Claude. Last reviewed 2026-10-23.
+For anyone setting up ZKidz Studio for the first time, or changing how it reaches Claude. Last reviewed 2026-10-24.
 
 ZKidz Studio needs Claude to plan and build your edits. You connect it in one of three ways on the Connect Claude screen. Mode A,
 your own API key, is the default and the one we recommend.
@@ -68,7 +68,7 @@ meaning.
 ```
 
 There is no cost meter in mode T. Type `/usage` in the pane to see your plan usage. Stop interrupts the current turn and keeps the
-session; Kill closes the terminal. Reopening a project resumes its session.
+session. If the terminal closes, Restart opens it again. Reopening a project resumes its session.
 
 What the app never does in mode T:
 

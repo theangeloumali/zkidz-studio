@@ -1,7 +1,6 @@
 # Created by The Angelo Umali.
 # qc_master (plan §7.6): every gate runs on the finished master and reports; none stops at the first failure.
 # The report lands in work/qc/<video>.json, and export refuses a video whose last report failed.
-import hashlib
 import json
 import os
 import tempfile
@@ -16,7 +15,6 @@ __all__ = ["assert_exportable", "check_motion_master", "check_motion_source", "l
 
 MASTER_SUFFIXES = ("-4k", "", "-draft")
 MASTER_CHANGED = "master changed during QC"
-HASH_BLOCK = 1 << 20
 
 
 def latest_master(video):
@@ -26,19 +24,15 @@ def latest_master(video):
     return max(found, key=lambda path: path.stat().st_mtime)
 
 
-def master_record(master):
+def master_record(master, work_dir=None):
     """The exact file a report judged, by its bytes: size and mtime alone can be set back over other content."""
     path = Path(master).resolve()
     stat = path.stat()
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(HASH_BLOCK), b""):
-            digest.update(block)
-    return {"relPath": work_relative(path), "size": stat.st_size, "mtimeNs": str(stat.st_mtime_ns), "sha256": digest.hexdigest()}
+    return {"relPath": work_relative(path, work_dir), "size": stat.st_size, "mtimeNs": str(stat.st_mtime_ns), "sha256": inputs.file_sha256(path)}
 
 
-def work_relative(path):
-    return Path(os.path.relpath(Path(path).resolve(), inputs.work().resolve())).as_posix()
+def work_relative(path, work_dir=None):
+    return Path(os.path.relpath(Path(path).resolve(), Path(work_dir or inputs.work()).resolve())).as_posix()
 
 
 def project_relative(path):
@@ -69,10 +63,12 @@ def whisper_transcriber(language="auto", model=None):
     return transcribe
 
 
-def qc_master(video, master, source, transcript_words, transcribe, specs_snapshot=None):
+def qc_master(video, master, source, transcript_words, transcribe, specs_snapshot=None, recorded_inputs=None):
     """transcript_words: [{at, end, text}] in source seconds; transcribe(master, start_s, end_s) -> words heard there.
-    The master is fingerprinted before the gates and again after: a render landing mid-QC must not inherit the PASS."""
+    The master is fingerprinted before the gates and again after: a render landing mid-QC must not inherit the PASS.
+    recorded_inputs: the render's render_inputs; None (no render to compare with) leaves the renderInputs check out."""
     judged = master_record(master)
+    live_inputs = inputs.render_inputs(video)
     edl, spec, intro = inputs.load_edl(video), inputs.load_spec(video), inputs.intro_of(video)
     gates_to_run = {
         "format": lambda: master_gates.format_problems(master),
@@ -84,6 +80,10 @@ def qc_master(video, master, source, transcript_words, transcribe, specs_snapsho
         "hookMouth": lambda: master_gates.mouth_problems(video, edl, intro, spec),
         "lipSync": lambda: master_gates.lip_sync_problems(master, source, edl, intro),
         "renderSource": lambda: render_source_problems(video, source),
+        # Last, so it also sees a rewrite while the gates above read those files.
+        **({} if recorded_inputs is None else {
+            "renderInputs": lambda: inputs.render_input_problems(recorded_inputs, live_inputs) or
+            inputs.render_input_problems(recorded_inputs, inputs.render_inputs(video))}),
     }
     checks = []
     for name, run_gate in gates_to_run.items():
@@ -92,7 +92,8 @@ def qc_master(video, master, source, transcript_words, transcribe, specs_snapsho
     unchanged = Path(master).exists() and master_record(master) == judged
     checks.append({"name": "master", "ok": unchanged, "detail": "pass" if unchanged else MASTER_CHANGED})
     report = {"ok": all(check["ok"] for check in checks), **({} if unchanged else {"reason": MASTER_CHANGED}), "checks": checks,
-              "master": judged, "source": {"relPath": project_relative(source)}, "specsSnapshot": specs_snapshot}
+              "master": judged, "source": {"relPath": project_relative(source)}, "specsSnapshot": specs_snapshot,
+              **({} if recorded_inputs is None else {"renderInputs": live_inputs})}
     (inputs.work() / "qc").mkdir(exist_ok=True)
     (inputs.work() / "qc" / f"{video}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report

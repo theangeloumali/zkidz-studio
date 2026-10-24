@@ -65,10 +65,11 @@ class QcProvenanceTests(unittest.TestCase):
         (folder / "cuts" / "v1.json").write_text(json.dumps({"source": "media/source.mkv", "facecam": []}), encoding="utf-8")
         return folder
 
-    def run_cli_qc(self, source, specs="snapshots/abc123"):
+    def run_cli_qc(self, source, specs="snapshots/abc123", render_inputs=None, transcriber=None):
+        recorded = qc.inputs.render_inputs("v1") if render_inputs is None else render_inputs
         args = cli.parser().parse_args(["qc-master", "--video", "v1", "--master", "out/v1.mp4", "--source", os.path.relpath(source, self.work),
-                                        "--specs", specs, "--words", str(self.words_file()), "--json"])
-        with mock.patch.object(qc, "whisper_transcriber", return_value=fixtures.fake_transcriber(HEARD)), mock.patch.dict(os.environ):
+                                        "--specs", specs, "--words", str(self.words_file()), "--render-inputs", json.dumps(recorded), "--json"])
+        with mock.patch.object(qc, "whisper_transcriber", return_value=transcriber or fixtures.fake_transcriber(HEARD)), mock.patch.dict(os.environ):
             os.environ.pop("ZKS_SPECS", None)
             return commands.qc_master_payload(args)
 
@@ -137,6 +138,44 @@ class QcProvenanceTests(unittest.TestCase):
         verdict = qc.assert_exportable("v1")
         self.assertEqual(verdict, {"master": report["master"], "source": report["source"], "specsSnapshot": "snapshots/abc123"})
         self.assertEqual(verdict["master"]["sha256"], sha256_of(delivered))
+
+    # Kai edl_live.py (N1): a later render's edit stage rewrote the EDL, then was cancelled before its encode.
+    def test_qc_against_an_edl_rewritten_after_its_render_fails(self):
+        self.put_master()
+        self.snapshot([fixtures.CAPTION])
+        recorded = qc.inputs.render_inputs("v1")
+        (self.work / "edl" / "v1.json").write_text(json.dumps({**fixtures.EDL, "frames": fixtures.EDL["frames"] + 1}), encoding="utf-8")
+        report = self.run_cli_qc(self.source, render_inputs=recorded)
+        self.assertFalse(report["ok"])
+        self.assertIn("renderInputs", self.failed(report))
+        self.assertIn("edl/v1.json", next(check["detail"] for check in report["checks"] if check["name"] == "renderInputs"))
+
+    def test_a_derived_sheet_that_appeared_after_the_render_fails(self):
+        self.put_master()
+        self.snapshot([fixtures.CAPTION])
+        recorded = qc.inputs.render_inputs("v1")
+        (self.work / "derived" / "cues").mkdir(parents=True)
+        (self.work / "derived" / "cues" / "v1-cc.json").write_text("[]", encoding="utf-8")
+        self.assertIn("renderInputs", self.failed(self.run_cli_qc(self.source, render_inputs=recorded)))
+
+    def test_an_input_rewritten_while_the_gates_run_fails(self):
+        self.put_master()
+        self.snapshot([fixtures.CAPTION])
+
+        def transcribe_while_an_edit_stage_writes(master, start_s, end_s):
+            (self.work / "derived" / "cues").mkdir(parents=True, exist_ok=True)
+            (self.work / "derived" / "cues" / "v1-cc.json").write_text("[]", encoding="utf-8")
+            return [{"text": f" {word}"} for word in HEARD]
+
+        report = self.run_cli_qc(self.source, transcriber=transcribe_while_an_edit_stage_writes)
+        self.assertIn("renderInputs", self.failed(report))
+
+    def test_qc_with_the_inputs_its_render_recorded_passes(self):
+        self.put_master()
+        self.snapshot([fixtures.CAPTION])
+        report = self.run_cli_qc(self.source)
+        self.assertTrue(report["ok"], report)
+        self.assertEqual(report["renderInputs"], qc.inputs.render_inputs("v1"))
 
     # Kai mtime_forge.py: other bytes at the same size, with the mtime set back, rode the old PASS.
     def test_a_master_forged_to_the_judged_size_and_mtime_is_blocked(self):

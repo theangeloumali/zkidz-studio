@@ -3,7 +3,7 @@
 # 4K is HEVC on the NVIDIA composite; every other backend delivers a 1080 master (plan §14 Phase 5).
 import subprocess
 
-from .. import backends, pipeline, render_final, sfx
+from .. import backends, pipeline, qc, render_final, sfx
 from ..pipeline import HF_DIR, loudness
 from ..qc import inputs
 from ..specs import gates
@@ -38,7 +38,7 @@ def draw_overlays(video):
 
 
 def render_master(video, quality, source, backend=None, edit=edit_stage, overlays=draw_overlays, encode=render_final.main, work=None):
-    """-> {path (relative to the work dir), frames, lufs, truePeak, bytes}; GateFailed when the master misses the EDL or -14 LUFS.
+    """-> {path (relative to the work dir), frames, lufs, truePeak, bytes, master, inputs}; GateFailed when the master misses the EDL or -14 LUFS.
     The edit stage runs first, so the master's frame and loudness gates judge the current cut spec."""
     work = work or pipeline.WORK
     draft, uhd = master_flags((backend or backends.active()).name, quality)
@@ -46,7 +46,7 @@ def render_master(video, quality, source, backend=None, edit=edit_stage, overlay
     overlays(video)
     encode(video, draft, uhd)
     path = master_path(work, video, draft, uhd)
-    size = path.stat().st_size
+    master = qc.master_record(path, work)
     intro = inputs.intro_of(video, work)
     expected = inputs.read_json(work / "edl" / f"{video}.json")["frames"] + (intro["frames"] if intro else 0)
     frames = render_final.count_frames(path)
@@ -54,4 +54,5 @@ def render_master(video, quality, source, backend=None, edit=edit_stage, overlay
         raise GateFailed(f"{path.name} has {frames} frames; the EDL needs {expected}")
     lufs, true_peak = loudness(path)
     gates.check_loudness(lufs, true_peak)
-    return {"path": path.relative_to(work).as_posix(), "frames": frames, "lufs": lufs, "truePeak": true_peak, "bytes": size}
+    return {"path": master["relPath"], "frames": frames, "lufs": lufs, "truePeak": true_peak, "bytes": master["size"], "master": master,
+            "inputs": inputs.render_inputs(video, work)}

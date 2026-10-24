@@ -53,6 +53,17 @@ def specs_snapshot(value):
     return folder
 
 
+def render_inputs_arg(value):
+    """The render report's inputs, passed back verbatim: {work-relative path: sha256}."""
+    try:
+        recorded = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise GateFailed(f"--render-inputs is not JSON: {error}") from error
+    if not isinstance(recorded, dict) or not all(isinstance(key, str) and isinstance(digest, str) for key, digest in recorded.items()):
+        raise GateFailed("--render-inputs must be a JSON object of path -> sha256")
+    return recorded
+
+
 @contextlib.contextmanager
 def reading_specs(folder):
     saved = os.environ.get("ZKS_SPECS")
@@ -72,8 +83,9 @@ def qc_master_payload(args):
     if not master.is_file():
         raise GateFailed(f"{args.master} does not exist")
     words = json.loads(command_input(args.words).read_text(encoding="utf-8"))
+    recorded = render_inputs_arg(args.render_inputs)
     with reading_specs(snapshot):
-        return qc.qc_master(args.video, master, source, words, qc.whisper_transcriber(args.language, args.model), qc.work_relative(snapshot))
+        return qc.qc_master(args.video, master, source, words, qc.whisper_transcriber(args.language, args.model), qc.work_relative(snapshot), recorded)
 
 
 def check_motion_payload(args):
@@ -110,6 +122,7 @@ def register(commands):
     check.add_argument("--master", required=True, help="the master to judge, under work/out (work-relative)")
     check.add_argument("--source", required=True, help="the source the render job cut that master from")
     check.add_argument("--specs", required=True, help="the render job's spec snapshot, under work/snapshots (work-relative)")
+    check.add_argument("--render-inputs", required=True, help="the render-master report's inputs object, as JSON")
     check.add_argument("--words", required=True, help="the kept transcript as JSON [{at, end, text}] in source seconds")
     check.add_argument("--language", default="auto")
     check.add_argument("--model", help="whisper model for the re-transcription (default: the best installed)")

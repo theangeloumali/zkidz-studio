@@ -145,6 +145,13 @@ class CpuMasterTests(unittest.TestCase):
         self.assertLessEqual(report["truePeak"], -1)
         self.assertGreater(report["bytes"], 0)
 
+    def test_the_render_reports_the_masters_hash_and_every_input_qc_will_read(self):
+        report = self.render()
+        self.assertEqual(report["master"]["relPath"], report["path"])
+        self.assertEqual((report["master"]["size"], len(report["master"]["sha256"])), (report["bytes"], 64))
+        self.assertIn("edl/v1.json", report["inputs"])
+        self.assertTrue(all(len(digest) == 64 for digest in report["inputs"].values()), report["inputs"])
+
     def test_a_quiet_master_fails_the_loudness_gate(self):
         with self.assertRaisesRegex(GateFailed, "LUFS"):
             self.render(loudness_target=-20)

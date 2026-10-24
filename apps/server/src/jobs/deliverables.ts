@@ -8,7 +8,7 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { StudioDatabase } from "@zks/db";
 import { deliverables } from "@zks/db/schema";
-import { SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
+import { Sha256Schema, SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
@@ -18,14 +18,14 @@ import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
 import type { JobRunner } from "./job-runner.ts";
 import { findLatestMaster } from "./master-files.ts";
-import { assertNoRenderInFlight, findRenderOf } from "./render-provenance.ts";
+import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "./render-provenance.ts";
 
 const OWNER_ONLY_FILE_MODE = 0o600;
 export const EXPORT_JOB_KIND = "export_deliverable";
 // qc-status names the exact master it passed and the inputs it judged; mtimeNs is a string as a JS number cannot hold it.
 const QcVerdictSchema = z.object({
   ok: z.literal(true),
-  master: z.object({ relPath: z.string(), size: z.int().nonnegative(), mtimeNs: z.string().regex(/^\d+$/), sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
+  master: z.object({ relPath: z.string(), size: z.int().nonnegative(), mtimeNs: z.string().regex(/^\d+$/), sha256: Sha256Schema }),
   source: z.object({ relPath: z.string() }),
   specsSnapshot: SpecsSnapshotRefSchema,
 });
@@ -180,6 +180,7 @@ async function assertJudgedAsRendered(
   if (render.source.relPath !== verdict.source.relPath || render.specsSnapshot !== verdict.specsSnapshot) {
     throw new Error(`${source.gateVideoId}: QC judged ${source.sourceRelPath} against other inputs than its render; rerun qc_master`);
   }
+  assertRenderedBytes(source.sourceRelPath, render, verdict.master.sha256);
 }
 
 /** The folder exports land in, refused when it is a link: following one would write deliverables outside the project. */

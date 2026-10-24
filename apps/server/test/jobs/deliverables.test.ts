@@ -69,7 +69,17 @@ async function recordRender(projectId: string, projectRoot: string, masterRelPat
     .insert(jobs)
     .values({ projectId, kind: "render_master", videoId: baseVideoId, lane: "gpu", status: "succeeded", finishedAt: new Date() })
     .returning();
-  const result = { path: masterRelPath, frames: 1798, lufs: -14, truePeak: -1.5, bytes: 1, source: { assetId: randomUUID(), ...RENDER_PROVENANCE.source } };
+  const sha256 = sha256Of(await readFile(join(projectRoot, masterRelPath), "utf8"));
+  const result = {
+    path: masterRelPath,
+    frames: 1798,
+    lufs: -14,
+    truePeak: -1.5,
+    bytes: 1,
+    sha256,
+    inputs: {},
+    source: { assetId: randomUUID(), ...RENDER_PROVENANCE.source },
+  };
   await writeJobResult(projectRoot, job?.id ?? expect.fail("no render job row"), { ...result, specsSnapshot: RENDER_PROVENANCE.specsSnapshot });
 }
 
@@ -133,7 +143,7 @@ describe("export deliverables", () => {
     );
 
     await expect(exportDeliverables(deps, { projectId: project.id, videoId: "v1", kinds: ["full"], jobId: null })).rejects.toThrow(
-      /v1: work\/out\/v1-4k\.mp4 changed after QC passed it/,
+      /work\/out\/v1-4k\.mp4: the bytes judged are not the ones its last finished render produced/,
     );
     expect(await readdir(join(projectRoot, "deliverables"))).toEqual([]);
     expect(await server.database.db.select().from(deliverables).where(eq(deliverables.projectId, project.id))).toEqual([]);

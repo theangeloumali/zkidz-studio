@@ -5,14 +5,14 @@ import { constants } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { jobs } from "@zks/db/schema";
-import { CutSpecSchema, IdSchema, MasterRenderResultSchema, SpecsSnapshotRefSchema, STUDIO_TOOLS } from "@zks/shared";
+import { CutSpecSchema, IdSchema, MasterRenderResultSchema, Sha256Schema, SpecsSnapshotRefSchema, STUDIO_TOOLS } from "@zks/shared";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { JobRow } from "../dto.ts";
 import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
 import type { JobRunner, NewJob } from "../jobs/job-runner.ts";
 import { findLatestMaster } from "../jobs/master-files.ts";
-import { assertNoRenderInFlight, findRenderOf } from "../jobs/render-provenance.ts";
+import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "../jobs/render-provenance.ts";
 import { activeSpecSnapshotDir, postCaptionRelPath, readSnapshotSpec, snapshotFilePath } from "../jobs/spec-snapshot.ts";
 import type { ToolContext } from "./context.ts";
 import { implementTool } from "./define-tool.ts";
@@ -37,6 +37,8 @@ const QcParamsSchema = z.object({
   masterRelPath: z.string().startsWith("work/"),
   sourceAssetId: IdSchema,
   specsSnapshot: SpecsSnapshotRefSchema,
+  masterSha256: Sha256Schema,
+  renderInputs: MasterRenderResultSchema.shape.inputs,
   wordsRelPath: z.string().min(1),
 });
 const MotionParamsSchema = z.object({
@@ -52,9 +54,13 @@ const CoverParamsSchema = z.object({
   postCaptionRelPath: z.string().min(1).optional(),
 });
 
-const EngineMasterReportSchema = MasterRenderResultSchema.pick({ frames: true, lufs: true, truePeak: true, bytes: true }).extend({ path: z.string().min(1) });
-// The engine's report also carries the master's digest and the inputs it judged, which qc-status hands to export.
-const EngineQcReportSchema = z.object({ ok: z.boolean(), checks: STUDIO_TOOLS.qc_master.output.shape.checks, master: z.object({ relPath: z.string() }) });
+const EngineMasterDigestSchema = z.object({ relPath: z.string().min(1), sha256: Sha256Schema });
+const EngineMasterReportSchema = MasterRenderResultSchema.pick({ frames: true, lufs: true, truePeak: true, bytes: true, inputs: true }).extend({
+  path: z.string().min(1),
+  master: EngineMasterDigestSchema,
+});
+// The engine's report also carries the inputs it judged, which qc-status hands to export.
+const EngineQcReportSchema = z.object({ ok: z.boolean(), checks: STUDIO_TOOLS.qc_master.output.shape.checks, master: EngineMasterDigestSchema });
 const EngineCoversReportSchema = z.object({ covers: z.array(z.object({ path: z.string().min(1) })), postCaption: z.string().min(1).optional() });
 const IngestResultSchema = z.object({ joins: z.array(ClipJoinSchema) });
 
@@ -96,6 +102,8 @@ const qcMaster = implementTool("qc_master", {
       masterRelPath: master.relPath,
       sourceAssetId: render.source.assetId,
       specsSnapshot: render.specsSnapshot,
+      masterSha256: render.sha256,
+      renderInputs: render.inputs,
       wordsRelPath,
     };
     const result = await runJobForResult(context, { kind: "qc_master", lane: "whisper", params }, signal);
@@ -257,10 +265,14 @@ async function runRenderMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSi
   const workDir = await prepareWorkDir(projectRoot, "out");
   const source = await assetInput(deps, job, cuts.sourceAssetId);
   const args = ["--video", targetVideoId(job.videoId, params.target), "--quality", params.quality, "--source", source.path];
-  const report = EngineMasterReportSchema.parse(await deps.engine.run({ command: "render-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
+  const { master, ...report } = EngineMasterReportSchema.parse(
+    await deps.engine.run({ command: "render-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }),
+  );
+  if (master.relPath !== report.path) throw new Error(`render-master hashed ${master.relPath}, not the master it wrote at ${report.path}`);
   const result = MasterRenderResultSchema.parse({
     ...report,
     path: workRelativePath(workDir, report.path),
+    sha256: master.sha256,
     source: { assetId: source.asset.id, relPath: source.asset.relPath ?? source.asset.inPlacePath },
     specsSnapshot: `snapshots/${job.specSnapshotSha256}`,
   });
@@ -275,9 +287,10 @@ async function runQcMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal
   const source = await assetInput(deps, job, params.sourceAssetId);
   const master = params.masterRelPath.slice("work/".length);
   const args = ["--video", targetVideoId(job.videoId, params.target), "--master", master, "--source", source.path];
-  args.push("--specs", params.specsSnapshot, "--words", join(projectRoot, params.wordsRelPath));
+  args.push("--specs", params.specsSnapshot, "--words", join(projectRoot, params.wordsRelPath), "--render-inputs", JSON.stringify(params.renderInputs));
   const report = EngineQcReportSchema.parse(await deps.engine.run({ command: "qc-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
   if (report.master.relPath !== master) throw new Error(`qc-master judged ${report.master.relPath}, not ${master}`);
+  assertRenderedBytes(params.masterRelPath, { sha256: params.masterSha256 }, report.master.sha256);
   await writeJobResult(projectRoot, job.id, { ok: report.ok, checks: report.checks });
 }
 

@@ -22,6 +22,9 @@ const PASSING_QC_CHECKS = [{ name: "motion", ok: true, detail: "pass" }];
 const MOTION_REPORT = { verdict: "PASS", shots: [{ at: 0, end: 3, score: 0.4, originalScore: 0.42, isFrozen: false }] };
 const MASTER_SUFFIX: Record<string, string> = { "4k": "-4k", final: "", draft: "-draft" };
 const SNAPSHOT_REF = /^snapshots\/[0-9a-f]{64}$/;
+// The engine-written files render-master hashed after its encode, which qc-master re-checks.
+const RENDER_INPUTS = { "edl/v1.json": "1".repeat(64), "frames/v1/": "2".repeat(64) };
+const sha256Of = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
 
 let server: TestServer;
 const engineRequests: EngineRequest[] = [];
@@ -31,21 +34,38 @@ let failNextQc: string | undefined;
 let failNextQcStatus = false;
 let passNextQc = false;
 let hangNextRender: (() => void) | undefined;
+let renderCount = 0;
 
-/** A render that runs until the request's signal aborts, as the engine does once its process tree is killed. */
-function renderUntilAborted(request: EngineRequest, markStarted: () => void): Promise<never> {
+/** Publishes the master, then runs until the request's signal aborts: render_final lands the file before its frame and loudness gates. */
+async function renderUntilAborted(request: EngineRequest, markStarted: () => void): Promise<never> {
+  await publishMaster(request);
   return new Promise((_resolve, reject) => {
     request.signal?.addEventListener("abort", () => reject(new Error("zks-engine render-master cancelled")), { once: true });
     markStarted();
   });
 }
 
-/** Writes the master where the engine would, so QC and export find it. */
-async function renderReport(request: EngineRequest): Promise<unknown> {
-  const masterRelPath = `out/${argumentAfter(request, "--video")}${MASTER_SUFFIX[argumentAfter(request, "--quality")] ?? ""}.mp4`;
+/** Writes this render's own bytes where the engine would, so QC and export find it. */
+async function publishMaster(request: EngineRequest): Promise<{ relPath: string; sha256: string }> {
+  const relPath = `out/${argumentAfter(request, "--video")}${MASTER_SUFFIX[argumentAfter(request, "--quality")] ?? ""}.mp4`;
   await mkdir(join(request.workDir, "out"), { recursive: true });
-  await writeFile(join(request.workDir, masterRelPath), `master of ${argumentAfter(request, "--source")}`);
-  return { path: masterRelPath, frames: 1798, lufs: -14.1, truePeak: -1.4, bytes: 52_000_000 };
+  renderCount += 1;
+  const masterBytes = `master ${renderCount} of ${argumentAfter(request, "--source")}`;
+  await writeFile(join(request.workDir, relPath), masterBytes);
+  return { relPath, sha256: sha256Of(masterBytes) };
+}
+
+async function renderReport(request: EngineRequest): Promise<unknown> {
+  const master = await publishMaster(request);
+  return {
+    path: master.relPath,
+    frames: 1798,
+    lufs: -14.1,
+    truePeak: -1.4,
+    bytes: 52_000_000,
+    master: { ...master, size: 1, mtimeNs: "1" },
+    inputs: RENDER_INPUTS,
+  };
 }
 
 /** The engine's qc-master report: the master it judged (with its digest), the source and the spec snapshot it was given. */
@@ -67,7 +87,7 @@ async function qcReport(request: EngineRequest): Promise<unknown> {
       relPath: masterRelPath,
       size: Number(masterStats.size),
       mtimeNs: String(masterStats.mtimeNs),
-      sha256: createHash("sha256").update(masterBytes).digest("hex"),
+      sha256: sha256Of(masterBytes),
     },
     source: { relPath: relative(dirname(request.workDir), argumentAfter(request, "--source")).split("\\").join("/") },
     specsSnapshot: argumentAfter(request, "--specs"),
@@ -164,9 +184,18 @@ describe("render_master", () => {
     expect(row).toMatchObject({ kind: "render_master", lane: "gpu" });
 
     const waited = await callTool(fixture, "job_wait", { jobId, timeoutS: 10 });
+    const masterBytes = await readFile(join(fixture.projectRoot, "work", "out", "v1-4k.mp4"));
     expect(waited.structuredContent).toMatchObject({
       status: "succeeded",
-      result: { path: "work/out/v1-4k.mp4", frames: 1798, lufs: -14.1, truePeak: -1.4, bytes: 52_000_000 },
+      result: {
+        path: "work/out/v1-4k.mp4",
+        frames: 1798,
+        lufs: -14.1,
+        truePeak: -1.4,
+        bytes: 52_000_000,
+        sha256: sha256Of(masterBytes),
+        inputs: RENDER_INPUTS,
+      },
     });
     const request = engineRequests.at(-1);
     expect(request).toMatchObject({ command: "render-master", args: ["--video", "v1", "--quality", "4k", "--source", expect.any(String)] });
@@ -268,6 +297,7 @@ describe("qc_master", () => {
     expect(isAbsolute(sourcePath) && sourcePath.startsWith(fixture.projectRoot)).toBe(true);
     expect(argumentAfter(request, "--specs")).toMatch(SNAPSHOT_REF);
     expect(render.result).toMatchObject({ specsSnapshot: argumentAfter(request, "--specs") });
+    expect(JSON.parse(argumentAfter(request, "--render-inputs"))).toEqual(RENDER_INPUTS);
     const words: unknown = JSON.parse(await readFile(argumentAfter(request, "--words"), "utf8"));
     expect(words).toEqual([{ at: 0.2, end: 0.6, text: " hello" }]);
   });
@@ -441,11 +471,11 @@ async function renderAndPassQc(fixture: ToolFixture): Promise<void> {
   expect(qc.structuredContent).toEqual({ ok: true, checks: PASSING_QC_CHECKS });
 }
 
-/** A draft render cancelled mid-run, as job_cancel leaves it. */
-async function interruptedRender(fixture: ToolFixture): Promise<string> {
+/** A render cancelled after it published its master, as job_cancel leaves it. */
+async function interruptedRender(fixture: ToolFixture, quality: "draft" | "4k" = "draft"): Promise<string> {
   const { promise: renderStarted, resolve: markStarted } = Promise.withResolvers<void>();
   hangNextRender = markStarted;
-  const queued = await callTool(fixture, "render_master", { target: "full", quality: "draft" });
+  const queued = await callTool(fixture, "render_master", { target: "full", quality });
   const jobId = String(queued.structuredContent?.jobId);
   await renderStarted;
   await callTool(fixture, "job_cancel", { jobId });
@@ -486,12 +516,11 @@ describe("export_deliverable", () => {
 
     const result = await callTool(fixture, "export_deliverable", { kinds: ["full", "cover_a"] });
     expect(result.isError).toBeUndefined();
-    const sha256 = (content: string | Buffer) => createHash("sha256").update(content).digest("hex");
     const masterBytes = await readFile(join(fixture.projectRoot, "work", "out", "v1-4k.mp4"));
     expect(result.structuredContent).toEqual({
       deliverables: [
-        { kind: "full", path: `deliverables/${basename(fixture.projectRoot)}-4k.mp4`, sha256: sha256(masterBytes) },
-        { kind: "cover_a", path: "deliverables/cover-A.png", sha256: sha256("cover bytes") },
+        { kind: "full", path: `deliverables/${basename(fixture.projectRoot)}-4k.mp4`, sha256: sha256Of(masterBytes) },
+        { kind: "cover_a", path: "deliverables/cover-A.png", sha256: sha256Of("cover bytes") },
       ],
     });
     const [exportJob] = await server.database.db
@@ -522,6 +551,24 @@ describe("export_deliverable", () => {
     const result = await callTool(fixture, "export_deliverable", { kinds: ["full"] });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("QC judged work/out/v1-4k.mp4 against other inputs than its render");
+    expect(await readdir(join(fixture.projectRoot, "deliverables")).catch(() => [])).toEqual([]);
+  });
+
+  it("refuses QC and export of a master a cancelled render wrote over the last good render's", async () => {
+    const { fixture, assetId } = await editedProject(() => Promise.resolve("allow"));
+    await renderAndPassQc(fixture);
+    expect((await callTool(fixture, "set_cuts", { cuts: cutSpecFor(assetId, [{ at: 0, end: 25, reason: "tangent" }]) })).isError).toBeUndefined();
+    await interruptedRender(fixture, "4k");
+
+    passNextQc = true;
+    const qc = await callTool(fixture, "qc_master", { target: "full" });
+    expect(qc.isError).toBe(true);
+    expect(JSON.stringify(qc.content)).toContain("work/out/v1-4k.mp4: the bytes judged are not the ones its last finished render produced");
+
+    // The engine's own QC report passed those bytes, so only the render's digest can stop the export.
+    const exported = await callTool(fixture, "export_deliverable", { kinds: ["full"] });
+    expect(exported.isError).toBe(true);
+    expect(JSON.stringify(exported.content)).toContain("work/out/v1-4k.mp4: the bytes judged are not the ones its last finished render produced");
     expect(await readdir(join(fixture.projectRoot, "deliverables")).catch(() => [])).toEqual([]);
   });
 

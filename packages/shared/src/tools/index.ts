@@ -10,7 +10,7 @@ export * from "./define.ts";
 export { CUE_SHEETS, CUE_TIERS } from "./edit.ts";
 export { JobSnapshotSchema, MAX_JOB_WAIT_S } from "./jobs.ts";
 export { IngestResultSchema, RENDER_PROFILES, TranscribeResultSchema, WHISPER_MODELS } from "./media.ts";
-export { MasterRenderResultSchema, RENDER_QUALITIES, RENDER_TARGETS, SpecsSnapshotRefSchema } from "./render.ts";
+export { MasterRenderResultSchema, RENDER_QUALITIES, RENDER_TARGETS, Sha256Schema, SpecsSnapshotRefSchema } from "./render.ts";
 
 export const STUDIO_TOOLS = {
   project_info: projectInfo,

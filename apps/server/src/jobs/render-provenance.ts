@@ -30,6 +30,13 @@ export async function assertNoRenderInFlight(database: StudioDatabase, video: Vi
   if (render !== undefined) throw new Error(`${video.videoId} is still rendering; ${nextStep} once render_master finishes`);
 }
 
+/** Engine publishes the master before its gates, so a render cancelled after that leaves its bytes at the last good one's path. */
+export function assertRenderedBytes(masterRelPath: string, render: Pick<MasterRender, "sha256">, judgedSha256: string): void {
+  if (judgedSha256 !== render.sha256) {
+    throw new Error(`${masterRelPath}: the bytes judged are not the ones its last finished render produced; re-render it and rerun qc_master`);
+  }
+}
+
 /** The newest finished render that wrote this master; undefined when none did, or it predates recorded provenance. */
 export async function findRenderOf(
   database: StudioDatabase,

@@ -74,9 +74,10 @@ describe("findAttributionProblems", () => {
     expect(findAttributionProblems(repoDir)).toEqual([{ path: "skills/late/SKILL.md", expected: `<!-- ${ATTRIBUTION} -->` }]);
   });
 
-  it("exempts generated files: tool logs and drizzle-kit migrations", () => {
+  it("exempts generated files: tool logs, drizzle-kit migrations and pnpm patches", () => {
     writeRepoFile("results/run.log", "output\n");
     writeRepoFile("packages/db/migrations/0000_sticky_cobalt_man.sql", 'CREATE SCHEMA "studio";\n');
+    writeRepoFile("patches/vitest@5.0.5.patch", "diff --git a/index.js b/index.js\n");
 
     expect(findAttributionProblems(repoDir)).toEqual([]);
   });

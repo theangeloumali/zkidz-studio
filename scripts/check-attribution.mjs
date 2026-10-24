@@ -73,6 +73,8 @@ const EXEMPT_EXTENSIONS = new Set([
   ".m4a",
   ".pdf",
   ".log",
+  // pnpm patch-commit writes these and pins their hash in the lockfile.
+  ".patch",
 ]);
 const EXEMPT_FILENAMES = new Set([".prettierrc", "pnpm-lock.yaml", "LICENSE", "NOTICE"]);
 

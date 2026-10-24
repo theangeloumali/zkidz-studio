@@ -26,3 +26,8 @@ minimumReleaseAgeExclude:
   - "@anthropic-ai/claude-agent-sdk-linux-x64@0.3.308"
   - "@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.308"
   - "@anthropic-ai/claude-agent-sdk-win32-x64@0.3.308"
+
+# vitest reused a fork whose start had failed and crashed on its SIGTERM; its fixed 60 s start limit also undercut jsdom's
+# measured 61 s cold load under ci:local. tests/vitest-worker-reuse.test.ts in apps/web guards the reuse fix.
+patchedDependencies:
+  vitest@5.0.5: patches/vitest@5.0.5.patch

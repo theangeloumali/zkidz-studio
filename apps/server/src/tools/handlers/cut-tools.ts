@@ -1,11 +1,18 @@
 // Created by The Angelo Umali.
 // propose_cuts, set_cuts and validate_spec (plan §6.8).
 import { randomUUID } from "node:crypto";
-import { CutSpecSchema, type CutSpec } from "@zks/shared";
+import { CutSpecSchema, keptSpansOf, type CutSpec } from "@zks/shared";
 import { implementTool } from "../define-tool.ts";
 import type { ToolContext } from "../context.ts";
 import { findCutCandidates } from "../cut-candidates.ts";
-import { awaitCutReview, isApprovedCandidate } from "../cut-review.ts";
+import {
+  approvedCandidateSpan,
+  assertRoomForRejections,
+  awaitCutReview,
+  findRejectedCandidates,
+  reachesOutsideCandidate,
+  recordRejectedCandidates,
+} from "../cut-review.ts";
 import { findProjectAsset, loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 import { readCurrentSpec, writeAgentSpec } from "../spec-store.ts";
@@ -23,9 +30,15 @@ const proposeCuts = implementTool("propose_cuts", {
       idPrefix: requestId.slice(0, 8),
     });
     if (candidates.length === 0) return { output: { candidates, approved: [], rejected: [] } };
-    const review = awaitCutReview({ projectId: context.projectId, requestId, candidateIds: candidates.map((candidate) => candidate.id) }, signal);
+    await assertRoomForRejections(context, candidates);
+    const review = awaitCutReview({ projectId: context.projectId, requestId, candidates }, signal);
     await context.events.publish({ type: "cuts.proposed", projectId: context.projectId, requestId, candidates });
     const decision = await review;
+    const rejectedIds = new Set(decision.rejected);
+    await recordRejectedCandidates(
+      context,
+      candidates.filter((candidate) => rejectedIds.has(candidate.id)),
+    );
     return { output: { candidates, approved: [...decision.approved], rejected: [...decision.rejected] } };
   },
 });
@@ -61,24 +74,17 @@ async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<s
   await findProjectAsset(context, cuts.sourceAssetId).catch((error: unknown) => errors.push(error instanceof Error ? error.message : String(error)));
   cuts.removals.forEach((removal, removalIndex) => {
     if (removal.end > cuts.durationS) errors.push(`removal ${removalIndex} ends after the source (${cuts.durationS} s)`);
-    if (removal.fromCandidate !== undefined && !isApprovedCandidate(context.projectId, removal.fromCandidate)) {
-      errors.push(`removal ${removalIndex} names candidate ${removal.fromCandidate}, which the user has not approved`);
-    }
+    if (removal.fromCandidate === undefined) return;
+    const approvedSpan = approvedCandidateSpan(context.projectId, removal.fromCandidate);
+    if (approvedSpan === undefined) errors.push(`removal ${removalIndex} names candidate ${removal.fromCandidate}, which the user has not approved`);
+    else if (reachesOutsideCandidate(removal, approvedSpan)) errors.push(`removal ${removalIndex} reaches outside candidate ${removal.fromCandidate}`);
   });
-  return errors;
-}
-
-/** The source minus the merged removals; the engine's EDL adds pause trimming and frame snapping on top. */
-function keptSpansOf(cuts: CutSpec): { at: number; end: number }[] {
-  const removals = [...cuts.removals].sort((first, second) => first.at - second.at);
-  const keptSpans: { at: number; end: number }[] = [];
-  let cursorS = 0;
-  for (const removal of removals) {
-    if (removal.at > cursorS) keptSpans.push({ at: cursorS, end: removal.at });
-    cursorS = Math.max(cursorS, removal.end);
+  // Approved candidates are the user's own cuts, so only untagged removals can re-apply a rejected one.
+  const untaggedRemovals = cuts.removals.filter((removal) => removal.fromCandidate === undefined);
+  for (const rejectedId of await findRejectedCandidates(context, untaggedRemovals)) {
+    errors.push(`the removals cover candidate ${rejectedId}, which the user rejected`);
   }
-  if (cuts.durationS > cursorS) keptSpans.push({ at: cursorS, end: cuts.durationS });
-  return keptSpans;
+  return errors;
 }
 
 export const cutTools = [proposeCuts, setCuts, validateSpec];

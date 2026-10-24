@@ -47,3 +47,11 @@ export function formatMediaMeta(asset: MediaAsset): string {
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+/** Playback position as m:ss.t, the transport's precision. */
+export function formatTimecode(totalSeconds: number): string {
+  const tenths = Math.floor(Math.max(0, totalSeconds) * 10);
+  const minutes = Math.floor(tenths / 600);
+  const seconds = (tenths % 600) / 10;
+  return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
+}

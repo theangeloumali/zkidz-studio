@@ -18,3 +18,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
 export function buttonClass(variant: ButtonVariant, extra = ""): string {
   return `${BASE} ${VARIANTS[variant]} ${extra}`.trim();
 }
+
+/** A square 44 px icon button; its name lives in `aria-label`. */
+export const ICON_BUTTON_CLASS =
+  "grid size-(--target-min) place-items-center rounded-control border border-line-strong text-copy hover:bg-surface active:scale-[0.97] disabled:opacity-50";

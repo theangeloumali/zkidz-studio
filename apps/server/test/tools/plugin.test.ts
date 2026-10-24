@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../plugin", import.meta.url));
-const BUNDLED_SKILLS = ["cut-spec", "edit-director", "style-rules"];
+const BUNDLED_SKILLS = ["captions", "cues", "cut-spec", "edit-director", "reels", "style-rules"];
+// Names and places from the source edits that must never ship in a public skill.
+const PRIVATE_NAMES = /zkidz-films|tailscale|\bnas\b|ep\d+\b/i;
 
 describe("studio plugin", () => {
   it("declares no hooks and no MCP servers", async () => {
@@ -16,7 +18,8 @@ describe("studio plugin", () => {
   });
 
   it("ships each skill with frontmatter on line 1 and the attribution right after it", async () => {
-    expect((await readdir(join(PLUGIN_DIR, "skills"))).sort()).toEqual(BUNDLED_SKILLS);
+    // Inclusion, not equality: later phases add skills beside these.
+    expect(await readdir(join(PLUGIN_DIR, "skills"))).toEqual(expect.arrayContaining(BUNDLED_SKILLS));
     for (const skillName of BUNDLED_SKILLS) {
       const lines = (await readFile(join(PLUGIN_DIR, "skills", skillName, "SKILL.md"), "utf8")).split("\n");
       expect(lines[0]).toBe("---");
@@ -31,6 +34,7 @@ describe("studio plugin", () => {
       const skillText = await readFile(join(PLUGIN_DIR, "skills", skillName, "SKILL.md"), "utf8");
       expect(skillText).not.toMatch(/\/mnt\/|\/home\/|[A-Z]:\\/);
       expect(skillText).toMatch(/Hands to next:/);
+      expect(skillText).not.toMatch(PRIVATE_NAMES);
     }
   });
 });

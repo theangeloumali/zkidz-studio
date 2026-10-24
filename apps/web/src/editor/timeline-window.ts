@@ -1,0 +1,58 @@
+// Created by The Angelo Umali.
+import type { TimeSpan } from "./edl.ts";
+
+export interface TimelineIndex<Item extends TimeSpan> {
+  readonly items: readonly Item[];
+  /** prefixMaxEnd[n] is the latest end among items[0..n]; it lets a long early item stay findable. */
+  readonly prefixMaxEnd: readonly number[];
+}
+
+export function indexTimelineItems<Item extends TimeSpan>(items: readonly Item[]): TimelineIndex<Item> {
+  const sortedItems = [...items].sort((left, right) => left.at - right.at);
+  const prefixMaxEnd: number[] = [];
+  let latestEnd = Number.NEGATIVE_INFINITY;
+  for (const item of sortedItems) {
+    latestEnd = Math.max(latestEnd, item.end);
+    prefixMaxEnd.push(latestEnd);
+  }
+  return { items: sortedItems, prefixMaxEnd };
+}
+
+/** First index whose predicate holds, for a predicate that flips false → true once. */
+function lowerBound(length: number, isAtOrPast: (position: number) => boolean): number {
+  let low = 0;
+  let high = length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (isAtOrPast(middle)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
+/** The items overlapping [windowStart, windowEnd], found in O(log n + visible). */
+export function visibleItems<Item extends TimeSpan>(index: TimelineIndex<Item>, windowStart: number, windowEnd: number): Item[] {
+  const { items, prefixMaxEnd } = index;
+  const first = lowerBound(items.length, (position) => (prefixMaxEnd[position] ?? 0) >= windowStart);
+  const afterLast = lowerBound(items.length, (position) => (items[position]?.at ?? 0) > windowEnd);
+  return items.slice(first, afterLast).filter((item) => item.end >= windowStart);
+}
+
+export interface SecondsWindow {
+  readonly startS: number;
+  readonly endS: number;
+}
+
+/** Edges snap outward to a quarter viewport, so a scroll re-renders the lanes once per step, not once per frame, at any zoom. */
+const WINDOW_STEPS_PER_VIEWPORT = 4;
+
+/** The mounted window (spec §6.1): one viewport width past each edge, snapped outward to the step. */
+export function mountedWindow(viewStartS: number, viewEndS: number): SecondsWindow {
+  const viewportS = viewEndS - viewStartS;
+  if (viewportS <= 0) return { startS: viewStartS, endS: viewEndS };
+  const stepS = viewportS / WINDOW_STEPS_PER_VIEWPORT;
+  return {
+    startS: Math.floor((viewStartS - viewportS) / stepS) * stepS,
+    endS: Math.ceil((viewEndS + viewportS) / stepS) * stepS,
+  };
+}

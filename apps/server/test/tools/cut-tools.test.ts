@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { resolveCutReview } from "../../src/tools/cut-review.ts";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { findRejectedCandidates, MAX_REJECTED_SPANS, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
@@ -91,6 +91,135 @@ describe("propose_cuts", () => {
     expect(setResult.isError).toBeUndefined();
   });
 
+  it("keeps a rejected candidate out of the cut spec, named or copied by its span", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    await insertTranscript(fixture, asset.id, STUTTER_WORDS);
+    const pending = callTool(fixture, "propose_cuts", {});
+    await expect.poll(() => fixture.events.find((event) => event.type === "cuts.proposed")).toBeDefined();
+    const proposal = fixture.events.find((event) => event.type === "cuts.proposed");
+    if (proposal?.type !== "cuts.proposed") throw new Error("no proposal");
+    const [rejected] = proposal.candidates;
+    if (rejected === undefined) throw new Error("no candidates");
+    resolveCutReview(fixture.context.projectId, proposal.requestId, { approved: [], rejected: proposal.candidates.map((candidate) => candidate.id) });
+    await pending;
+
+    const named = await callTool(fixture, "set_cuts", {
+      cuts: cutSpecFor(asset.id, [{ at: rejected.at, end: rejected.end, reason: "cut", fromCandidate: rejected.id }]),
+    });
+    expect(named.isError).toBe(true);
+    const copied = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [{ at: rejected.at, end: rejected.end, reason: "cut" }]) });
+    expect(copied.isError).toBe(true);
+    expect(JSON.stringify(copied.content)).toMatch(/the user rejected/);
+  });
+
+  it("refuses untagged removals that shift, swallow or split a rejected candidate", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const rejected = longestCandidate(await reviewEveryCandidate(fixture, asset.id, "reject"));
+    const twoFrames = 2 / 30;
+    const middle = (rejected.at + rejected.end) / 2;
+    const attempts = {
+      shifted: [{ at: rejected.at + twoFrames, end: rejected.end + twoFrames }],
+      superset: [{ at: Math.max(0, rejected.at - 1), end: rejected.end + 1 }],
+      split: [
+        { at: rejected.at, end: middle },
+        { at: middle, end: rejected.end },
+      ],
+    };
+    for (const [attempt, removals] of Object.entries(attempts)) {
+      const result = await callTool(fixture, "set_cuts", {
+        cuts: cutSpecFor(
+          asset.id,
+          removals.map((removal) => ({ ...removal, reason: "cut" })),
+        ),
+      });
+      expect(result.isError, attempt).toBe(true);
+      expect(JSON.stringify(result.content), attempt).toContain(rejected.id);
+    }
+  });
+
+  it("allows a removal that only grazes a rejected candidate's edge", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const rejected = longestCandidate(await reviewEveryCandidate(fixture, asset.id, "reject"));
+    const oneFrame = 1 / 30;
+    const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [{ at: rejected.end - oneFrame, end: rejected.end, reason: "breath" }]) });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it("still refuses a rejected candidate after a restart", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const rejected = longestCandidate(await reviewEveryCandidate(fixture, asset.id, "reject"));
+    vi.resetModules();
+    const { STUDIO_TOOLS_BY_NAME: restartedTools } = await import("../../src/tools/catalog.ts");
+    const restartedSetCuts = restartedTools.get("set_cuts");
+    if (restartedSetCuts === undefined) throw new Error("no set_cuts");
+    const result = await restartedSetCuts.run({ cuts: cutSpecFor(asset.id, [{ at: rejected.at, end: rejected.end, reason: "cut" }]) }, fixture.context);
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/the user rejected/);
+  });
+
+  // Dropping the oldest rejections once the record filled let a long-rejected cut back in (security review: fail-open).
+  it("never forgets a rejection: duplicates collapse, and a full record refuses new ones", async () => {
+    const fixture = await createToolFixture(server);
+    const spans = Array.from({ length: MAX_REJECTED_SPANS }, (_, index) => ({ id: `r${index}`, at: index, end: index + 0.5 }));
+    await recordRejectedCandidates(fixture.context, spans);
+    // The same span under a new id is the same rejection, so it takes no room.
+    await recordRejectedCandidates(fixture.context, [{ id: "renamed", at: 0, end: 0.5 }]);
+
+    await expect(recordRejectedCandidates(fixture.context, [{ id: "one-more", at: -2, end: -1 }])).rejects.toThrow(/record of rejected cuts is full/);
+    expect(await findRejectedCandidates(fixture.context, [{ at: 0, end: 0.5 }])).toEqual(["r0"]);
+  });
+
+  // Writes run one at a time per project; one refused write must not fail the writes queued behind it.
+  it("lets a write queued behind a refused one go through", async () => {
+    const fixture = await createToolFixture(server);
+    const spans = Array.from({ length: MAX_REJECTED_SPANS }, (_, index) => ({ id: `q${index}`, at: index, end: index + 0.5 }));
+    await recordRejectedCandidates(fixture.context, spans);
+
+    const refused = recordRejectedCandidates(fixture.context, [{ id: "over", at: -2, end: -1 }]);
+    const queued = recordRejectedCandidates(fixture.context, [{ id: "same-span", at: 0, end: 0.5 }]);
+    await expect(refused).rejects.toThrow(/record of rejected cuts is full/);
+    await expect(queued).resolves.toBeUndefined();
+  });
+
+  // Refusing only when the rejections were written left the approvals remembered and the rejections lost.
+  it("refuses a cut review before it starts when the record has no room for every candidate", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    await insertTranscript(fixture, asset.id, STUTTER_WORDS);
+    const filler = Array.from({ length: MAX_REJECTED_SPANS - 1 }, (_, index) => ({ id: `old${index}`, at: 100 + index, end: 100.5 + index }));
+    await recordRejectedCandidates(fixture.context, filler);
+
+    const result = await callTool(fixture, "propose_cuts", {});
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/record of rejected cuts is full/);
+    expect(fixture.events.some((event) => event.type === "cuts.proposed")).toBe(false);
+  });
+
+  it("refuses an approved candidate id stretched past its own span", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const approved = longestCandidate(await reviewEveryCandidate(fixture, asset.id, "approve"));
+    const stretched = { at: approved.at, end: approved.end + 2, reason: "cut", fromCandidate: approved.id };
+    const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [stretched]) });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/outside candidate/);
+  });
+
+  it("lets a later approval cut a span the user rejected before", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    await reviewEveryCandidate(fixture, asset.id, "reject");
+    fixture.events.length = 0;
+    const approved = longestCandidate(await reviewEveryCandidate(fixture, asset.id, "approve"));
+    const removal = { at: approved.at, end: approved.end, reason: "cut", fromCandidate: approved.id };
+    const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [removal]) });
+    expect(result.isError).toBeUndefined();
+  });
+
   it("does not resolve a review from another project", async () => {
     const fixture = await createToolFixture(server);
     const asset = await insertCameraAsset(fixture);
@@ -110,6 +239,26 @@ describe("propose_cuts", () => {
     expect(JSON.stringify(result.content)).toMatch(/transcribe/i);
   });
 });
+
+/** Runs propose_cuts and answers the review with every candidate approved or rejected. */
+async function reviewEveryCandidate(fixture: ToolFixture, assetId: string, verdict: "approve" | "reject") {
+  await insertTranscript(fixture, assetId, STUTTER_WORDS);
+  const pending = callTool(fixture, "propose_cuts", {});
+  await expect.poll(() => fixture.events.find((event) => event.type === "cuts.proposed")).toBeDefined();
+  const proposal = fixture.events.find((event) => event.type === "cuts.proposed");
+  if (proposal?.type !== "cuts.proposed") throw new Error("no proposal");
+  const candidateIds = proposal.candidates.map((candidate) => candidate.id);
+  const decision = verdict === "approve" ? { approved: candidateIds, rejected: [] } : { approved: [], rejected: candidateIds };
+  resolveCutReview(fixture.context.projectId, proposal.requestId, decision);
+  await pending;
+  return proposal.candidates;
+}
+
+function longestCandidate<Candidate extends { at: number; end: number }>(candidates: readonly Candidate[]): Candidate {
+  const [longest] = [...candidates].sort((first, second) => second.end - second.at - (first.end - first.at));
+  if (longest === undefined) throw new Error("no candidates");
+  return longest;
+}
 
 describe("validate_spec", () => {
   it("reports a missing cut spec and passes a stored one", async () => {

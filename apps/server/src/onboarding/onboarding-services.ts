@@ -18,6 +18,7 @@ import type { UploadLimits } from "../media-io/store.ts";
 import { createProject, findProjectOrThrow } from "../projects/project-store.ts";
 import { commitStagedUpload, storedProjectBytes, withStagedUpload } from "../routes/media-ingest.ts";
 import type { ToolContext } from "../tools/context.ts";
+import type { EngineRunner } from "../tools/engine-jobs.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { DemoRunner } from "./demo-runner.ts";
 import { DEFAULT_PRESETS_DIR, loadPresets, type Presets } from "./presets.ts";
@@ -36,6 +37,7 @@ export interface OnboardingDeps {
   readonly studioHome: string;
   readonly eventBus: EventBus;
   readonly jobRunner: JobRunner;
+  readonly engine: EngineRunner;
   readonly demoRunner: DemoRunner;
   /** The demo clip is registered through the upload path, so it is probed and capped like any upload. */
   readonly ffprobePath: string;
@@ -92,6 +94,7 @@ function toolContextFor(deps: OnboardingDeps, projectId: string): ToolContext {
     db: deps.database,
     events: deps.eventBus,
     jobs: deps.jobRunner,
+    engine: deps.engine,
     requestApproval: () => Promise.resolve("deny"),
     askQuestions: () => Promise.resolve(null),
   };

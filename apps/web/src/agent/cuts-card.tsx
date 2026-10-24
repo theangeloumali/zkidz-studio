@@ -1,14 +1,18 @@
 // Created by The Angelo Umali.
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { decideCutCandidates } from "../api/client.ts";
 import { buttonClass } from "../components/button-class.ts";
-import { formatDuration } from "../lib/format.ts";
+import { formatTimecode } from "../lib/format.ts";
 import { CardShell } from "./card-shell.tsx";
 import { DecisionFooter } from "./decision-footer.tsx";
 import type { EventOf } from "./feed-notes.ts";
-import { useDecision } from "./use-decision.ts";
 
 export function CutsCard({ projectId, event }: { readonly projectId: string; readonly event: EventOf<"cuts.proposed"> }) {
-  const decision = useDecision(projectId);
+  // The cut reviewer waits on this route, not on /decisions.
+  const decision = useMutation({
+    mutationFn: (approved: string[]) => decideCutCandidates(projectId, event.requestId, { approved, rejected: [...rejected] }),
+  });
   const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set());
   const toggle = (id: string, isKept: boolean) =>
     setRejected((current) => {
@@ -33,7 +37,7 @@ export function CutsCard({ projectId, event }: { readonly projectId: string; rea
               />
               <span className="min-w-0 break-words">
                 <span className="font-mono text-ui-sm text-copy-muted tabular-nums">
-                  {formatDuration(candidate.at)}–{formatDuration(candidate.end)}
+                  {formatTimecode(candidate.at)}–{formatTimecode(candidate.end)}
                 </span>{" "}
                 <q>{candidate.context}</q>
                 <span className="block text-ui-sm text-copy-muted">{candidate.reason}</span>
@@ -47,9 +51,7 @@ export function CutsCard({ projectId, event }: { readonly projectId: string; rea
           type="button"
           className={buttonClass("primary")}
           disabled={decision.isPending}
-          onClick={() =>
-            decision.mutate({ kind: "cuts", requestId: event.requestId, approved: ids.filter((id) => !rejected.has(id)), rejected: [...rejected] })
-          }
+          onClick={() => decision.mutate(ids.filter((id) => !rejected.has(id)))}
         >
           Apply cuts
         </button>

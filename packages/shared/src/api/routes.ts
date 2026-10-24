@@ -16,9 +16,11 @@ import {
   RuleSchema,
   SettingsSchema,
   SettingsUpdateSchema,
+  PlayerEdlSchema,
   SpecSummarySchema,
   SpecVersionSchema,
   StyleChoiceSchema,
+  SpecVersionSummarySchema,
 } from "./dto.ts";
 import { HomeTemplatesSchema, StartTemplateRequestSchema, StartTemplateResponseSchema, StyleCardsSchema } from "./onboarding.ts";
 import { EventsQuerySchema } from "./sse.ts";
@@ -51,8 +53,10 @@ const OkSchema = z.strictObject({ ok: z.literal(true) });
 export const DecisionRequestSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("approval"), requestId: z.string().min(1), decision: z.enum(["allow", "deny"]), message: z.string().optional() }),
   z.strictObject({ kind: z.literal("question"), requestId: z.string().min(1), answers: z.record(z.string(), z.string()) }),
-  z.strictObject({ kind: z.literal("cuts"), requestId: z.string().min(1), approved: z.array(z.string()), rejected: z.array(z.string()) }),
 ]);
+
+/** The user's verdict on propose_cuts candidates (decideCutCandidates); ids not approved count as rejected. */
+export const CutReviewDecisionSchema = z.strictObject({ approved: z.array(z.string()), rejected: z.array(z.string()) });
 
 const RuleTextSchema = z.string().trim().min(1).max(RULE_TEXT_MAX_CHARS);
 export const ProjectTitleSchema = z.string().trim().min(1).max(PROJECT_TITLE_MAX_CHARS);
@@ -104,6 +108,13 @@ export const API_ROUTES = {
     body: z.strictObject({ version: z.int().positive() }),
     response: SpecSummarySchema,
   },
+  listSpecVersions: {
+    method: "GET",
+    path: "/api/projects/:projectId/specs/:videoId/:kind/versions",
+    response: z.strictObject({ versions: z.array(SpecVersionSummarySchema) }),
+  },
+  decideCutCandidates: { method: "POST", path: "/api/projects/:projectId/cut-candidates/:requestId", body: CutReviewDecisionSchema, response: OkSchema },
+  getPlayerEdl: { method: "GET", path: "/api/projects/:projectId/videos/:videoId/edl", response: PlayerEdlSchema },
 
   listJobs: { method: "GET", path: "/api/projects/:projectId/jobs", response: z.strictObject({ jobs: z.array(JobSchema) }) },
   listDeliverables: { method: "GET", path: "/api/projects/:projectId/deliverables", response: z.strictObject({ deliverables: z.array(DeliverableSchema) }) },

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createCliEngineRunner } from "../../src/tools/engine-runner.ts";
+import { createCliEngineRunner, EngineReportedError } from "../../src/tools/engine-runner.ts";
 
 let scratchDir = "";
 let fakeEnginePath = "";
@@ -12,6 +12,7 @@ beforeAll(async () => {
   fakeEnginePath = join(scratchDir, "fake-engine.mjs");
   const fakeEngine = [
     "if (process.argv.includes('--fail')) { process.stderr.write('whisper model missing'); process.exit(3); }",
+    "if (process.argv.includes('--reject')) { process.stdout.write(JSON.stringify({ error: { code: 'spec_invalid', message: 'keyword text is 40 chars' } })); process.exit(6); }",
     "if (process.argv.includes('--report-error')) { process.stderr.write('joining 2 clips'); process.stdout.write(JSON.stringify({ error: { code: 'engine_failed', message: 'clips at different rates' } })); process.exit(1); }",
     "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), work: process.env.ZKS_WORK, home: process.env.ZKS_HOME, inPlace: process.env.ZKS_INPLACE, envNames: Object.keys(process.env) }));",
   ].join("\n");
@@ -35,9 +36,7 @@ describe("createCliEngineRunner", () => {
 
   it("fails with the error the engine reported on stdout, not its progress lines", async () => {
     const engine = createCliEngineRunner({ executable: process.execPath, prefixArgs: [fakeEnginePath], studioHome: "/studio-home" });
-    await expect(engine.run({ command: "ingest", args: ["--report-error"], workDir: scratchDir })).rejects.toThrow(
-      "zks-engine ingest failed: clips at different rates",
-    );
+    await expect(engine.run({ command: "ingest", args: ["--report-error"], workDir: scratchDir })).rejects.toThrow("clips at different rates");
   });
 
   it("registers the request's in-place files with the engine", async () => {
@@ -45,6 +44,13 @@ describe("createCliEngineRunner", () => {
     const inPlacePaths = [join(scratchDir, "a.mp4"), join(scratchDir, "b.mp4")];
     const report = await engine.run({ command: "ingest", args: [], workDir: scratchDir, inPlacePaths });
     expect(report).toMatchObject({ inPlace: inPlacePaths.join(delimiter) });
+  });
+
+  it("fails with the engine's own error report when it prints one", async () => {
+    const engine = createCliEngineRunner({ executable: process.execPath, prefixArgs: [fakeEnginePath], studioHome: "/studio-home" });
+    const failure = engine.run({ command: "validate-cue", args: ["--reject"], workDir: scratchDir });
+    await expect(failure).rejects.toBeInstanceOf(EngineReportedError);
+    await expect(failure).rejects.toMatchObject({ code: "spec_invalid", message: "keyword text is 40 chars" });
   });
 
   it("hands the engine an allowlisted env, never the server's credentials", async () => {

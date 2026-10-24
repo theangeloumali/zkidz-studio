@@ -24,7 +24,8 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
       bridge, MCP tools v1, activity feed) (done 2026-10-23; terminal mode stays opt-in and labelled pending Anthropic approval)
 - [x] Phase 3: Engine portability (hardware backends, whisper.cpp, JSON specs, theme packs) (done 2026-10-23, PR #12; amf/qsv/vaapi
       untested on hardware, videotoolbox frame 0 at SSIM 0.993 pending a manual macOS run, OpenCL composite pending a native NVIDIA host)
-- [ ] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions)
+- [x] Phase 4: Watch the AI build (live 9:16 preview, live timeline, spec versions) (done 2026-10-24; the preview clock
+      follows the playing proxy until Phase 5 renders the edit audio)
 - [ ] Phase 5: Render, covers, export and QC gates
 - [x] Phase 6: Bundled skills, rules panel, style onboarding, demo project (done 2026-10-24, PR #14; also added the engine
       `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
@@ -1196,7 +1197,10 @@ Google Fonts CDN. Icons lucide. Dark navy default; the preview stage stays dark 
    uses `sandbox="allow-scripts"` without `allow-same-origin`, and the preview origin sends
    `Content-Security-Policy: default-src 'self'; connect-src 'none'; frame-ancestors http://127.0.0.1:4317`. `compose.js` escapes
    `<!--` as well as `</` (today only `</`, zkidz-films `engine/hf/compose.js:63`).
-3. Audio clock: `audio/vN_edit.wav` (already in edited time) drives playback; video follows it, which removes drift across swaps.
+3. Clock: the playing proxy leads, read per presented frame (`requestVideoFrameCallback`), and the overlay follows it, so
+   overlays stay on the picture across swaps. Deviation (Phase 4): the plan named `audio/vN_edit.wav` as the clock, but that
+   file exists only after `audio.py`, which Phase 5's render runs; the preview plays the proxies' own audio until a cut-time
+   audio build lands, and switching the clock to it is a change to `playback-clock.ts` alone.
 4. Update loop: `spec.version` → `edl.py` (ms) → composition rebuild (seconds, no Chrome) → `preview.ready` → re-seek at the same time.
 5. Fallback for cut-heavy edits: a 540p edited proxy rendered on CPU `ultrafast`.
 

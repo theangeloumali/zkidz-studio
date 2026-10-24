@@ -20,6 +20,7 @@ vi.mock("../src/terminal/TerminalPane.tsx", () => ({
 
 const HOSTILE = "</script><img src=x onerror=alert(1)>";
 const DECISIONS = `/api/projects/${PROJECT_ID}/decisions`;
+const CUT_CANDIDATES = `/api/projects/${PROJECT_ID}/cut-candidates/c-1`;
 const OPEN_TERMINAL = `/api/projects/${PROJECT_ID}/terminal`;
 // The shared contract types sessionId as a UUID, so a free-form id fails the response parse.
 const TERMINAL_SESSION_ID = "6f1d2c3b-4a5e-4f60-8a71-92b3c4d5e6f7";
@@ -32,6 +33,7 @@ function stubAgentApi() {
   return stubFetch({
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     [`POST ${DECISIONS}`]: () => jsonResponse({ ok: true }),
+    [`POST ${CUT_CANDIDATES}`]: () => jsonResponse({ ok: true }),
     [`POST /api/projects/${PROJECT_ID}/prompt`]: () => jsonResponse({ ok: true }),
     [`POST /api/projects/${PROJECT_ID}/stop`]: () => jsonResponse({ ok: true }),
     [`POST ${OPEN_TERMINAL}`]: () => jsonResponse({ sessionId: TERMINAL_SESSION_ID }),
@@ -99,11 +101,13 @@ describe("AgentPane", () => {
     expect(requestBody(fetchMock, DECISIONS)).toEqual({ kind: "question", requestId: "q-1", answers: { "Which take should open the video?": "Take 2" } });
   });
 
-  it("sends the cut decisions", async () => {
+  it("sends the cut decisions to the cut-candidates route the reviewer waits on", async () => {
     const fetchMock = stubAgentApi();
     renderPane([SAMPLE_EVENTS["cuts.proposed"]]);
+    expect(screen.getByText("0:03.2–0:03.9")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Apply cuts" }));
-    expect(requestBody(fetchMock, DECISIONS)).toEqual({ kind: "cuts", requestId: "c-1", approved: ["cut-1"], rejected: [] });
+    expect(requestBody(fetchMock, CUT_CANDIDATES)).toEqual({ approved: ["cut-1"], rejected: [] });
+    expect(await screen.findByText("Sent.")).toBeInTheDocument();
   });
 
   it("sends the prompt with Ctrl+Enter and clears the field", async () => {

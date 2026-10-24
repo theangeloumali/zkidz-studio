@@ -17,6 +17,7 @@ beforeEach(async () => {
       studioHome: base.studioHome,
       eventBus: base.eventBus,
       jobRunner: base.jobRunner,
+      engine: { run: () => Promise.reject(new Error("no engine in this test")) },
       demoRunner: { run: () => Promise.reject(new Error("no demo in this test")) },
       ffprobePath: "ffprobe",
       uploadLimits: DEFAULT_UPLOAD_LIMITS,

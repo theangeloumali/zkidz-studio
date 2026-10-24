@@ -25,6 +25,28 @@ export interface CliEngineOptions {
   readonly parentEnv?: Readonly<Record<string, string | undefined>>;
 }
 
+/** The engine refused the input and said why on stdout (`{"error": {code, message}}`); the message is safe to show Claude. */
+export class EngineReportedError extends Error {
+  override readonly name = "EngineReportedError";
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const EngineErrorReportSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
+
+function engineErrorReport(error: unknown): { code: string; message: string } | undefined {
+  if (typeof error !== "object" || error === null || !("stdout" in error)) return undefined;
+  try {
+    const parsed = EngineErrorReportSchema.safeParse(JSON.parse(String(error.stdout)));
+    return parsed.success ? parsed.data.error : undefined;
+  } catch {
+    return undefined; // stdout was not a report; the stderr path below explains the failure
+  }
+}
+
 export function createCliEngineRunner(options: CliEngineOptions): EngineRunner {
   return {
     run: async ({ command, args, workDir, inPlacePaths = [] }) => {
@@ -34,30 +56,13 @@ export function createCliEngineRunner(options: CliEngineOptions): EngineRunner {
         const { stdout } = await runFile(options.executable, argv, { cwd: workDir, env, maxBuffer: MAX_REPORT_BYTES, shell: false });
         return JSON.parse(stdout) as unknown;
       } catch (error) {
-        throw new Error(`zks-engine ${command} failed: ${failureMessage(error)}`, { cause: error });
+        const report = engineErrorReport(error);
+        if (report !== undefined) throw new EngineReportedError(report.code, report.message);
+        const stderr = typeof error === "object" && error !== null && "stderr" in error ? String(error.stderr) : "";
+        throw new Error(`zks-engine ${command} failed: ${stderr.slice(-STDERR_TAIL_CHARS).trim() || String(error)}`, { cause: error });
       }
     },
   };
-}
-
-const ChildOutputSchema = z.object({ stdout: z.string().default(""), stderr: z.string().default("") });
-const EngineErrorReportSchema = z.object({ error: z.object({ message: z.string().min(1) }) });
-
-/** The engine's own JSON error when it printed one; stderr is progress lines, so it is only the fallback. */
-function failureMessage(error: unknown): string {
-  const output = ChildOutputSchema.safeParse(error);
-  if (!output.success) return String(error);
-  const reported = EngineErrorReportSchema.safeParse(parseJsonOrNull(output.data.stdout));
-  if (reported.success) return reported.data.error.message;
-  return output.data.stderr.slice(-STDERR_TAIL_CHARS).trim() || String(error);
-}
-
-function parseJsonOrNull(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 export function buildEngineEnv(options: Pick<CliEngineOptions, "proxyOptIn" | "parentEnv">): Record<string, string> {

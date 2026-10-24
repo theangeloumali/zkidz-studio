@@ -1,0 +1,354 @@
+/* Created by The Angelo Umali. */
+/* Ported from design/mockup/styles.css: the editor's player, timeline and version strip. */
+
+.player {
+  position: relative;
+  width: min(100%, 19.125rem);
+  aspect-ratio: 9 / 16;
+  margin-inline: auto;
+  border-radius: var(--radius-inset);
+  overflow: hidden;
+  background: var(--color-video-ink);
+}
+
+.player-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* A frame whose color-scheme differs from its page's gets an opaque backdrop; the overlay page declares none. */
+  color-scheme: normal;
+}
+
+.footage {
+  object-fit: cover;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.footage[data-active="false"] {
+  visibility: hidden;
+}
+
+.player[data-punch="true"] .footage {
+  transform: scale(1.08);
+}
+
+.blur-box {
+  position: absolute;
+  backdrop-filter: blur(12px);
+  background: color-mix(in oklab, var(--color-video-ink) 30%, transparent);
+}
+
+.player-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  color: var(--color-video-paper);
+  font-size: var(--text-ui-sm);
+  text-align: center;
+  background: var(--color-video-ink);
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.timecode {
+  font-size: var(--text-ui-sm);
+  color: var(--color-text-muted);
+  min-width: 11ch;
+}
+
+.punch-flag {
+  font-size: var(--text-label);
+  color: var(--color-accent);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sw {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+
+.sw-seg,
+.blk-seg {
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+
+.sw-punch,
+.blk-punch {
+  background: color-mix(in oklab, var(--color-accent) 38%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.sw-cut {
+  width: 2px;
+  background: var(--color-text);
+}
+
+.sw-blur,
+.blk-blur {
+  background: color-mix(in oklab, var(--color-text) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-text-muted);
+}
+
+.versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.version-list {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.version {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-ui-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.version[aria-current="true"] {
+  border-color: var(--color-line-strong);
+  color: var(--color-text);
+}
+
+.version[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.timeline {
+  --label-w: 6.5rem;
+  position: relative;
+  /* A scrub drag would otherwise select tick and block labels. */
+  user-select: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.track {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr);
+  align-items: center;
+  height: 2rem;
+}
+
+.track[data-track="video"] {
+  height: 2.75rem;
+}
+
+.track-label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 100%;
+  background: var(--color-bg);
+  font-size: var(--text-label);
+  color: var(--color-text-muted);
+}
+
+.track-lane {
+  position: relative;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-inset);
+  background: var(--color-bg-elevated);
+  overflow: hidden;
+}
+
+/* The ruler row is the Playhead slider; ticks sit on the lanes' time grid. */
+.ruler-row {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr);
+  height: 1.25rem;
+}
+
+.ruler {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 0.25rem;
+  border-left: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+
+.blk {
+  position: absolute;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  display: flex;
+  align-items: center;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-inset);
+  font-size: 0.6875rem;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+}
+
+.blk-cap {
+  background: color-mix(in oklab, var(--color-text) 14%, var(--color-bg-elevated));
+}
+
+.blk-cue {
+  background: color-mix(in oklab, var(--color-accent) 22%, var(--color-bg-elevated));
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+  font-family: var(--font-mono);
+}
+
+/* A density run (spec §6.1) keeps its lane's fill; the ring marks it as many items. */
+.blk-run {
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+
+/* 2–5 px: a plain bar; padding, radius and ring would swallow it (spec §6.1). */
+.blk-sliver {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.blk-cut {
+  background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-danger) 45%, transparent) 0 3px, transparent 3px 7px);
+  box-shadow: inset 0 0 0 1px var(--color-danger);
+  color: transparent;
+}
+
+.blk-cut::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--color-danger);
+}
+
+.blk-blur {
+  top: 0;
+  bottom: auto;
+  height: 0.375rem;
+}
+
+.blk-sfx {
+  top: 50%;
+  bottom: auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  padding: 0;
+  margin: -0.25rem 0 0 -0.25rem;
+  border-radius: 0;
+  background: var(--color-text-muted);
+  color: transparent;
+  transform: rotate(45deg);
+}
+
+.cut-chip {
+  position: absolute;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  border: 1px dashed var(--color-danger);
+  border-radius: var(--radius-inset);
+  background: color-mix(in oklab, var(--color-bg) 82%, var(--color-danger));
+}
+
+.cut-chip[data-decision="approved"] {
+  border-style: solid;
+}
+
+.cut-chip[data-decision="rejected"] {
+  border-color: var(--color-line-strong);
+  opacity: 0.7;
+}
+
+.chip-toggle {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-inset);
+  color: var(--color-text-muted);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+
+.chip-toggle:active {
+  transform: scale(0.94);
+}
+
+.chip-toggle[aria-pressed="true"] {
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--label-w);
+  z-index: 3;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text);
+  pointer-events: none;
+  will-change: transform;
+}

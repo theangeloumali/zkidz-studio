@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom"],
+    "typeRoots": ["../../server/node_modules/@types"]
+  },
+  "include": ["."],
+  "exclude": ["harness/serve.ts"]
+}

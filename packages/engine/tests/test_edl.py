@@ -11,6 +11,7 @@ import support  # noqa: F401  first: it sets a scratch ZKS_HOME
 
 from zks_engine import edl
 from zks_engine import pipeline
+from zks_engine.specs import SpecError
 
 
 class EdlTests(unittest.TestCase):
@@ -159,3 +160,38 @@ class MatteWindowTests(unittest.TestCase):
     def test_removed_matte_window_is_dropped(self):
         segments = [{"in": 0, "out": 90, "target": 0}, {"in": 300, "out": 400, "target": 90}]
         self.assertEqual(edl.map_windows([[4.0, 8.0]], segments), [])
+
+
+class StudioCutSpecTests(unittest.TestCase):
+    """The studio stores cuts/vN.json as a CutSpec; every engine reader must get the engine's shape from load_cuts."""
+
+    ASSET = "123e4567-e89b-42d3-a456-426614174000"
+
+    def load(self, video, spec):
+        with tempfile.TemporaryDirectory() as work, mock.patch.object(pipeline, "WORK", Path(work)):
+            (Path(work) / "cuts").mkdir()
+            (Path(work) / "cuts" / f"{video}.json").write_text(json.dumps(spec), encoding="utf-8")
+            return pipeline.load_cuts(video)
+
+    def cut_spec(self, **extra):
+        return {"schemaVersion": 1, "sourceAssetId": self.ASSET, "durationS": 20.0, "fps": {"num": 30000, "den": 1001},
+                "removals": [{"at": 2.0, "end": 4.0, "reason": "false start", "pin": True}], **extra}
+
+    def test_a_cut_spec_builds_the_same_edl_as_its_engine_form(self):
+        segments, frames = edl.build(self.load("v1", self.cut_spec()), np.full(2000, -20.0))
+        self.assertEqual([(segment["in"], segment["out"]) for segment in segments],
+                         [(0, round(2.0 * pipeline.FPS)), (round(4.0 * pipeline.FPS), round(20.0 * pipeline.FPS))])
+        self.assertEqual(frames, round(20.0 * pipeline.FPS) - (round(4.0 * pipeline.FPS) - round(2.0 * pipeline.FPS)))
+
+    def test_a_reel_cut_spec_keeps_its_base(self):
+        loaded = self.load("v1r", self.cut_spec(baseVideoId="v1", isReel=True))
+        self.assertEqual((loaded["base"], loaded["reel"]), ("v1", True))
+
+    def test_a_cut_spec_at_another_frame_rate_is_refused(self):
+        # The engine's EDL, audio and render all run on the 29.97 grid; a 25 fps spec would land every cut on the wrong frame.
+        with self.assertRaisesRegex(SpecError, "fps"):
+            self.load("v1", self.cut_spec(fps={"num": 25, "den": 1}))
+
+    def test_an_invalid_cut_spec_is_refused(self):
+        with self.assertRaisesRegex(SpecError, "removals"):
+            self.load("v1", self.cut_spec(removals=[{"at": 1.0, "end": 2.0}]))

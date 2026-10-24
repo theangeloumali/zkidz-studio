@@ -76,6 +76,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     db: deps.database,
     events: deps.eventBus,
     jobs: deps.jobRunner,
+    engine: deps.engine,
     requestApproval: (card, signal) => broker.requestApproval(projectId, card, signal),
     askQuestions: (questions, signal) => broker.askQuestions(projectId, questions, signal),
   });

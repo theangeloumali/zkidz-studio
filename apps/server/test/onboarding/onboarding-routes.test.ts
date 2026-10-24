@@ -39,6 +39,7 @@ beforeAll(async () => {
       studioHome: base.studioHome,
       eventBus: base.eventBus,
       jobRunner: base.jobRunner,
+      engine: { run: () => Promise.reject(new Error("no engine in this test")) },
       demoRunner: fakeDemoRunner,
       ffprobePath: "ffprobe",
       uploadLimits: DEFAULT_UPLOAD_LIMITS,

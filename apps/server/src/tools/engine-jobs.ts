@@ -18,7 +18,7 @@ import { writeJobResult } from "./job-results.ts";
 import { assetFilePath } from "./project-files.ts";
 
 /** Every zks-engine subcommand the server spawns; engine-cli-contract.test.ts runs each against the real CLI. */
-export const ENGINE_COMMANDS = ["ingest", "transcribe"] as const;
+export const ENGINE_COMMANDS = ["ingest", "transcribe", "cue-kinds", "validate-cue"] as const;
 type EngineCommand = (typeof ENGINE_COMMANDS)[number];
 
 export interface EngineRequest {

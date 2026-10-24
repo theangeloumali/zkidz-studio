@@ -2,11 +2,14 @@
 # The studio's engine CLI commands after ingest and transcribe (cli.py): edit, render-master, qc-master, check-motion,
 # make-covers and qc-status, each printing one JSON report.
 # Every path argument must sit under the project (pipeline.command_input), like a spec path.
+import contextlib
 import json
+import os
 
-from .. import covers, qc
-from ..pipeline import WORK, command_input
+from .. import covers, pipeline, qc
+from ..pipeline import command_input, snapshot_input
 from ..qc.motion import SUBJECT_REGION
+from ..specs.gates import GateFailed
 from . import render_master, stages
 from .stages import engine_steps
 
@@ -25,10 +28,6 @@ def region_box(value):
     return x, y, w, h
 
 
-def master_relative(path):
-    return path.relative_to(WORK).as_posix()
-
-
 def edit_payload(args):
     return stages.edit_stage(args.video, args.source)
 
@@ -38,11 +37,43 @@ def render_master_payload(args):
         return render_master(args.video, args.quality, args.source)
 
 
+def work_input(path, folder=None):
+    """A work-relative (or absolute) path from the server, under the project like a spec path, and under work/<folder> if named."""
+    resolved = pipeline.project_input(pipeline.WORK / path)
+    if folder and pipeline.WORK.resolve() / folder not in resolved.parents:
+        raise GateFailed(f"{path} is not under work/{folder}")
+    return resolved
+
+
+def specs_snapshot(value):
+    """The render job's own spec snapshot (snapshots/<sha>): QC judges the specs the master was drawn from, not the live ones."""
+    folder = work_input(value, "snapshots")
+    if not folder.is_dir():
+        raise GateFailed(f"spec snapshot {value} does not exist")
+    return folder
+
+
+@contextlib.contextmanager
+def reading_specs(folder):
+    saved = os.environ.get("ZKS_SPECS")
+    os.environ["ZKS_SPECS"] = str(folder)
+    try:
+        yield
+    finally:
+        if saved is None:
+            os.environ.pop("ZKS_SPECS", None)
+        else:
+            os.environ["ZKS_SPECS"] = saved
+
+
 def qc_master_payload(args):
-    master = qc.latest_master(args.video)
+    """Judges exactly the master, source and spec snapshot the server names; never "the latest master" or the live cut spec."""
+    master, source, snapshot = work_input(args.master, "out"), work_input(args.source), specs_snapshot(args.specs)
+    if not master.is_file():
+        raise GateFailed(f"{args.master} does not exist")
     words = json.loads(command_input(args.words).read_text(encoding="utf-8"))
-    report = qc.qc_master(args.video, master, command_input(args.source), words, qc.whisper_transcriber(args.language, args.model))
-    return {"master": master_relative(master), **report}
+    with reading_specs(snapshot):
+        return qc.qc_master(args.video, master, source, words, qc.whisper_transcriber(args.language, args.model), qc.work_relative(snapshot))
 
 
 def check_motion_payload(args):
@@ -53,11 +84,12 @@ def check_motion_payload(args):
 
 
 def make_covers_payload(args):
-    sheet = command_input(args.cover_sheet) if args.cover_sheet else None
+    sheet = snapshot_input(args.cover_sheet) if args.cover_sheet else None
+    caption = snapshot_input(args.post_caption) if args.post_caption else None
     with engine_steps():
         made = {"covers": covers.make_covers(args.video, args.at, sheet)}
-    if args.post_caption:
-        made["postCaption"] = covers.write_post_caption(args.video, command_input(args.post_caption))
+    if caption:
+        made["postCaption"] = covers.write_post_caption(args.video, caption)
     return made
 
 
@@ -74,8 +106,10 @@ def register(commands):
     master.add_argument("--quality", choices=QUALITIES, required=True)
     master.add_argument("--source", required=True, help="the file the cut spec's sourceAssetId names")
     master.set_defaults(handler=render_master_payload)
-    check = commands.add_parser("qc-master", help="every QC gate on the latest master; writes work/qc/<video>.json")
-    check.add_argument("--source", required=True, help="the edit's source file")
+    check = commands.add_parser("qc-master", help="every QC gate on the named master; writes work/qc/<video>.json")
+    check.add_argument("--master", required=True, help="the master to judge, under work/out (work-relative)")
+    check.add_argument("--source", required=True, help="the source the render job cut that master from")
+    check.add_argument("--specs", required=True, help="the render job's spec snapshot, under work/snapshots (work-relative)")
     check.add_argument("--words", required=True, help="the kept transcript as JSON [{at, end, text}] in source seconds")
     check.add_argument("--language", default="auto")
     check.add_argument("--model", help="whisper model for the re-transcription (default: the best installed)")

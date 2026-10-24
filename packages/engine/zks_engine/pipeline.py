@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import ffio
 from .specs.cuts import cut_spec_to_engine
+from .specs.gates import GateFailed
 from .specs.paths import inside_project, video_id
 from .specs.schema import SpecError
 
@@ -51,12 +52,34 @@ def source_record(video):
     return WORK / "edl" / f"{video_id(video)}.source.json"
 
 
+DERIVED = "derived"  # the engine's own writes (the reel cut, caption cues, placeholder sheets), never a spec folder
+
+
+def derived_file(work, rel):
+    return Path(work) / DERIVED / rel
+
+
 def spec_file(work, rel):
-    """A spec as the job's start snapshot holds it (ZKS_SPECS, plan §7.6); derived files are never in it, so they come from work."""
+    """A spec as the job's start snapshot holds it (ZKS_SPECS, plan §7.6), else work/; a derived file backs either. In a job a
+    spec the snapshot lacks stays missing: work/ is where the agent keeps editing after the render started."""
     snapshot = os.environ.get("ZKS_SPECS")
-    if snapshot and (Path(snapshot) / rel).is_file():
-        return Path(snapshot) / rel
-    return Path(work) / rel
+    primary = Path(snapshot or work) / rel
+    derived = derived_file(work, rel)
+    return derived if not primary.is_file() and derived.is_file() else primary
+
+
+def snapshot_input(path):
+    """A command-line spec file (a cover sheet, a post caption): in a job, the snapshot's copy of a file under work/."""
+    resolved = command_input(path)
+    snapshot = os.environ.get("ZKS_SPECS")
+    if not snapshot or Path(snapshot).resolve() in resolved.parents:
+        return resolved
+    if WORK.resolve() not in resolved.parents:
+        raise GateFailed(f"{path} is not a spec file of this job's snapshot")
+    copy = Path(snapshot) / resolved.relative_to(WORK.resolve())
+    if not copy.is_file():
+        raise GateFailed(f"{copy.relative_to(snapshot).as_posix()} is missing from the job's spec snapshot")
+    return copy
 
 
 def load_cuts(video):

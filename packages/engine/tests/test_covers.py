@@ -95,11 +95,12 @@ class MakeCoversTests(unittest.TestCase):
         sheet.parent.mkdir()
         sheet.write_text(json.dumps([{"kind": "hookTitle", "at": 0, "end": 3}]), encoding="utf-8")
         (self.work / "cues").mkdir()
-        for name in ("v1", "v1-cc"):
-            (self.work / "cues" / f"{name}.json").write_text("[]", encoding="utf-8")
+        (self.work / "cues" / "v1.json").write_text("[]", encoding="utf-8")
+        (self.work / "derived" / "cues").mkdir(parents=True)
+        (self.work / "derived" / "cues" / "v1-cc.json").write_text("[]", encoding="utf-8")
         covers.make_covers("v1", [seconds(10)], cover_sheet=sheet, draw_stills=self.draw_stills, work=self.work)
         self.assertEqual(self.drawn[0][2], ["v1", "v1-cc", "v1-cover"])  # the frame's caption shows on the cover
-        self.assertEqual(json.loads((self.work / "cues" / "v1-cover.json").read_text(encoding="utf-8"))[0]["kind"], "hookTitle")
+        self.assertEqual(json.loads((self.work / "derived" / "cues" / "v1-cover.json").read_text(encoding="utf-8"))[0]["kind"], "hookTitle")
 
 
 class PostCaptionTests(unittest.TestCase):

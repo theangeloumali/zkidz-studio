@@ -87,7 +87,8 @@ class MakeReelsTests(unittest.TestCase):
             output = io.StringIO()
             with mock.patch.object(make_reels, "WORK", work), mock.patch.object(pipeline, "WORK", work), contextlib.redirect_stdout(output):
                 make_reels.main("v4", "reels/v4.json")
-            written = json.loads((work / "cuts" / "v4r.json").read_text(encoding="utf-8"))
+            self.assertFalse((work / "cuts" / "v4r.json").exists())  # derived, so a job never mistakes it for a spec
+            written = json.loads((work / "derived" / "cuts" / "v4r.json").read_text(encoding="utf-8"))
         self.assertTrue(written["reel"])
         self.assertIn("3 keep ranges, 45.0s kept, about 38.0s", output.getvalue())
 

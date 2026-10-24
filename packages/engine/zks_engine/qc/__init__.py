@@ -1,7 +1,9 @@
 # Created by The Angelo Umali.
 # qc_master (plan §7.6): every gate runs on the finished master and reports; none stops at the first failure.
 # The report lands in work/qc/<video>.json, and export refuses a video whose last report failed.
+import hashlib
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -13,6 +15,8 @@ from .motion_check import check_motion_master, check_motion_source, motion_probl
 __all__ = ["assert_exportable", "check_motion_master", "check_motion_source", "latest_master", "qc_master", "whisper_transcriber"]
 
 MASTER_SUFFIXES = ("-4k", "", "-draft")
+MASTER_CHANGED = "master changed during QC"
+HASH_BLOCK = 1 << 20
 
 
 def latest_master(video):
@@ -22,10 +26,34 @@ def latest_master(video):
     return max(found, key=lambda path: path.stat().st_mtime)
 
 
-def master_fingerprint(master):
-    """Which file a report judged: a re-render after QC changes it, and export must not ride the old PASS."""
-    stat = Path(master).stat()
-    return {"name": Path(master).name, "bytes": stat.st_size, "mtimeNs": stat.st_mtime_ns}
+def master_record(master):
+    """The exact file a report judged, by its bytes: size and mtime alone can be set back over other content."""
+    path = Path(master).resolve()
+    stat = path.stat()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(HASH_BLOCK), b""):
+            digest.update(block)
+    return {"relPath": work_relative(path), "size": stat.st_size, "mtimeNs": str(stat.st_mtime_ns), "sha256": digest.hexdigest()}
+
+
+def work_relative(path):
+    return Path(os.path.relpath(Path(path).resolve(), inputs.work().resolve())).as_posix()
+
+
+def project_relative(path):
+    """How the server names an asset (media/raw/x.mp4, work/sources/v1.mkv); an in-place file outside the project keeps its realpath."""
+    resolved, root = Path(path).resolve(), inputs.work().resolve().parent
+    return resolved.relative_to(root).as_posix() if root in resolved.parents else resolved.as_posix()
+
+
+def render_source_problems(video, source):
+    """The edit stage records the source each render cut from; QC against any other file judges motion on the wrong footage."""
+    owner = (inputs.load_edl(video) or {}).get("base", video)
+    record = inputs.read_json(inputs.work() / "edl" / f"{owner}.source.json")
+    if record is None or Path(record["source"]).resolve() == Path(source).resolve():
+        return []
+    return [f"QC source {project_relative(source)} is not the source the master was rendered from ({project_relative(record['source'])})"]
 
 
 def whisper_transcriber(language="auto", model=None):
@@ -41,8 +69,10 @@ def whisper_transcriber(language="auto", model=None):
     return transcribe
 
 
-def qc_master(video, master, source, transcript_words, transcribe):
-    """transcript_words: [{at, end, text}] in source seconds; transcribe(master, start_s, end_s) -> words heard there."""
+def qc_master(video, master, source, transcript_words, transcribe, specs_snapshot=None):
+    """transcript_words: [{at, end, text}] in source seconds; transcribe(master, start_s, end_s) -> words heard there.
+    The master is fingerprinted before the gates and again after: a render landing mid-QC must not inherit the PASS."""
+    judged = master_record(master)
     edl, spec, intro = inputs.load_edl(video), inputs.load_spec(video), inputs.intro_of(video)
     gates_to_run = {
         "format": lambda: master_gates.format_problems(master),
@@ -53,27 +83,31 @@ def qc_master(video, master, source, transcript_words, transcribe):
         "captionContrast": lambda: master_gates.caption_problems(video, master, edl, intro),
         "hookMouth": lambda: master_gates.mouth_problems(video, edl, intro, spec),
         "lipSync": lambda: master_gates.lip_sync_problems(master, source, edl, intro),
+        "renderSource": lambda: render_source_problems(video, source),
     }
     checks = []
     for name, run_gate in gates_to_run.items():
         problems = run_gate()
         checks.append({"name": name, "ok": not problems, "detail": "; ".join(problems) or "pass"})
-    report = {"ok": all(check["ok"] for check in checks), "checks": checks}
+    unchanged = Path(master).exists() and master_record(master) == judged
+    checks.append({"name": "master", "ok": unchanged, "detail": "pass" if unchanged else MASTER_CHANGED})
+    report = {"ok": all(check["ok"] for check in checks), **({} if unchanged else {"reason": MASTER_CHANGED}), "checks": checks,
+              "master": judged, "source": {"relPath": project_relative(source)}, "specsSnapshot": specs_snapshot}
     (inputs.work() / "qc").mkdir(exist_ok=True)
-    (inputs.work() / "qc" / f"{video}.json").write_text(json.dumps({"master": Path(master).name, "fingerprint": master_fingerprint(master), **report}, indent=2), encoding="utf-8")
+    (inputs.work() / "qc" / f"{video}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 
 def assert_exportable(video):
-    """Delivery is blocked until the latest master passed every gate, the moving-footage gate above all; returns that master."""
+    """Delivery is blocked until the latest master passed every gate, the moving-footage gate above all; returns the exact
+    master, source and spec snapshot that report judged."""
     report = inputs.read_json(inputs.work() / "qc" / f"{video}.json")
     if report is None:
         raise GateFailed(f"{video} has no QC report; run qc_master before export")
     if failed := [check["name"] for check in report["checks"] if not check["ok"]]:
         raise GateFailed(f"{video} failed QC ({', '.join(failed)}); fix it and re-render before export")
-    master = latest_master(video)
-    fingerprint = master_fingerprint(master)
-    if report.get("fingerprint") != fingerprint:
+    judged = report.get("master")
+    master = inputs.work() / judged["relPath"] if isinstance(judged, dict) else None
+    if master is None or not master.is_file() or master.resolve() != latest_master(video).resolve() or master_record(master) != judged:
         raise GateFailed(f"{video}'s QC report is stale; rerun qc_master on the latest master")
-    # The exact file export may ship; mtimeNs as a string, which a JS number cannot hold exactly.
-    return {"master": f"out/{master.name}", "bytes": fingerprint["bytes"], "mtimeNs": str(fingerprint["mtimeNs"])}
+    return {"master": judged, "source": report["source"], "specsSnapshot": report["specsSnapshot"]}

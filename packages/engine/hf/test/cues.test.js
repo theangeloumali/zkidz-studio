@@ -63,18 +63,42 @@ test("a cue name cannot leave the cues folder", () => {
   assert.throws(() => loadCueSheet(workWith({}), ["../edl/v1"]), /not a cue file name/);
 });
 
-test("a job draws the cue sheet from its start snapshot (ZKS_SPECS), and derived sheets from work", () => {
-  const work = workWith({ "v1.json": [KEYWORD], "v1-cc.json": [{ kind: "caption", at: 1, end: 2, text: "hi" }] });
-  const snapshot = workWith({ "v1.json": [HOOK] });
+function inJob(snapshot, run) {
   const previous = process.env.ZKS_SPECS;
   process.env.ZKS_SPECS = snapshot;
   try {
-    assert.deepEqual(
-      loadCueSheet(work, ["v1", "v1-cc"]).map((cue) => cue.kind),
-      ["hookTitle", "caption"],
-    );
+    run();
   } finally {
     if (previous === undefined) delete process.env.ZKS_SPECS;
     else process.env.ZKS_SPECS = previous;
   }
+}
+
+function withDerived(work, files) {
+  fs.mkdirSync(path.join(work, "derived", "cues"), { recursive: true });
+  for (const [name, content] of Object.entries(files)) fs.writeFileSync(path.join(work, "derived", "cues", name), JSON.stringify(content));
+  return work;
+}
+
+test("a job draws the cue sheet from its start snapshot (ZKS_SPECS), and derived sheets from the engine's own folder", () => {
+  const work = withDerived(workWith({ "v1.json": [KEYWORD] }), { "v1-cc.json": [{ kind: "caption", at: 1, end: 2, text: "hi" }] });
+  inJob(workWith({ "v1.json": [HOOK] }), () =>
+    assert.deepEqual(
+      loadCueSheet(work, ["v1", "v1-cc"]).map((cue) => cue.kind),
+      ["hookTitle", "caption"],
+    ),
+  );
+});
+
+test("in a job, a sheet the snapshot lacks is missing, never read live from work/cues", () => {
+  const work = workWith({ "v1.json": [KEYWORD], "v1-cc.json": [{ kind: "caption", at: 1, end: 2, text: "planted" }] });
+  inJob(workWith({}), () => {
+    assert.throws(() => loadCueSheet(work, ["v1"]), /cues\/v1\.json is missing/);
+    assert.throws(() => loadCueSheet(work, ["v1-cc"]), /cues\/v1-cc\.json is missing/);
+  });
+});
+
+test("outside a job, an authored sheet in work/cues wins over the engine's placeholder", () => {
+  const work = withDerived(workWith({ "v1.json": [KEYWORD] }), { "v1.json": [] });
+  assert.deepEqual(loadCueSheet(work, ["v1"]), [KEYWORD]);
 });

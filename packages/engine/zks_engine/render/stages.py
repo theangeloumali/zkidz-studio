@@ -34,12 +34,14 @@ def engine_steps():
 
 
 def write_reel_cuts(video, base):
-    """cuts/<v>r.json from the base's spec narrowed to set_reel's keep ranges, as make_reels.py writes it."""
+    """derived/cuts/<v>r.json from the base's spec narrowed to set_reel's keep ranges, as make_reels.py builds it."""
     work = work_dir()
     keep = json.loads(pipeline.spec_file(work, f"reels/{base}.json").read_text(encoding="utf-8"))["keep"]
     spec = pipeline.load_cuts(base)
     rows = make_reels.merged([[item["at"], item["end"]] for item in keep], spec["duration"])
-    (work / "cuts" / f"{video}.json").write_text(json.dumps(make_reels.reel_spec(base, spec, rows), indent=1), encoding="utf-8")
+    target = pipeline.derived_file(work, f"cuts/{video}.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(make_reels.reel_spec(base, spec, rows), indent=1), encoding="utf-8")
 
 
 def edit_stage(video, source):
@@ -53,10 +55,10 @@ def edit_stage(video, source):
     source_path = str(pipeline.command_input(source))
     pipeline.source_record(spec_owner).parent.mkdir(exist_ok=True)
     pipeline.source_record(spec_owner).write_text(json.dumps({"source": source_path}), encoding="utf-8")
-    main_sheet = work / "cues" / f"{spec_owner}.json"
     if not pipeline.spec_file(work, f"cues/{spec_owner}.json").exists():  # render.js needs the main sheet even before add_cue wrote one
-        main_sheet.parent.mkdir(exist_ok=True)
-        main_sheet.write_text("[]", encoding="utf-8")
+        placeholder = pipeline.derived_file(work, f"cues/{spec_owner}.json")
+        placeholder.parent.mkdir(parents=True, exist_ok=True)
+        placeholder.write_text("[]", encoding="utf-8")
     if base:
         write_reel_cuts(video, base)
     spec = pipeline.load_cuts(video)
@@ -70,5 +72,5 @@ def edit_stage(video, source):
         caption_count = 0
         if pipeline.spec_file(work, f"captions/{video}.json").exists():
             captions.emit_cues(video)
-            caption_count = len(json.loads((work / "cues" / f"{video}-cc.json").read_text(encoding="utf-8")))
+            caption_count = len(json.loads(pipeline.derived_file(work, f"cues/{video}-cc.json").read_text(encoding="utf-8")))
     return {"frames": frames, "segments": len(segments), "captions": caption_count}

@@ -107,7 +107,7 @@ class CliTests(unittest.TestCase):
         made = [{"path": "covers/v1r-cover-a.png", "at": 2.3, "blurBoxes": 0}]
         with mock.patch("zks_engine.covers.make_covers", return_value=made) as make, \
                 mock.patch("zks_engine.covers.write_post_caption", return_value="covers/v1-caption.txt") as write, \
-                mock.patch("zks_engine.render.commands.command_input", side_effect=Path), mock.patch("builtins.print") as printed:
+                mock.patch("zks_engine.render.commands.snapshot_input", side_effect=Path), mock.patch("builtins.print") as printed:
             code = cli.main(["make-covers", "--video", "v1r", "--at", "2.3", "--post-caption", "post.txt", "--json"])
         self.assertEqual(code, 0)
         make.assert_called_once_with("v1r", [2.3], None)
@@ -115,7 +115,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json.loads(printed.call_args.args[0]), {"covers": made, "postCaption": "covers/v1-caption.txt"})
 
     def test_export_status_reports_the_master_qc_passed(self):
-        verdict = {"master": "out/v1-4k.mp4", "bytes": 12, "mtimeNs": "1700000000123456789"}
+        verdict = {"master": {"relPath": "out/v1-4k.mp4", "size": 12, "mtimeNs": "1700000000123456789", "sha256": "0" * 64},
+                   "source": {"relPath": "sources/v1.mkv"}, "specsSnapshot": "snapshots/abc"}
         with mock.patch("zks_engine.qc.assert_exportable", return_value=verdict), mock.patch("builtins.print") as printed:
             self.assertEqual(cli.main(["qc-status", "--video", "v1", "--json"]), 0)
         self.assertEqual(json.loads(printed.call_args.args[0]), {"ok": True, **verdict})

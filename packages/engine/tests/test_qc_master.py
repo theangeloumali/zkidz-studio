@@ -1,5 +1,6 @@
 # Created by The Angelo Umali.
 # qc_master on real masters built by ffmpeg: one passing edit, and one fixture per gate that must fail it (plan §14 Phase 5).
+import hashlib
 import json
 import os
 import shutil
@@ -130,7 +131,7 @@ class QcMasterTests(unittest.TestCase):
         self.assertEqual(self.failed(report), set(), report)
         self.assertTrue(report["ok"])
         self.assertEqual({check["name"] for check in report["checks"]},
-                         {"format", "frames", "loudness", "motion", "cutWords", "captionContrast", "hookMouth", "lipSync"})
+                         {"format", "frames", "loudness", "motion", "cutWords", "captionContrast", "hookMouth", "lipSync", "renderSource", "master"})
 
     def test_a_word_clipped_at_a_cut_fails(self):
         clipped = [*WORDS[:2], {"at": 1.9, "end": 3.1, "text": " clipped"}]
@@ -172,8 +173,10 @@ class QcMasterTests(unittest.TestCase):
 
     def test_the_export_verdict_names_the_exact_master_it_judged(self):
         # The server copies this file and re-checks it; mtimeNs is a string, as a JS number cannot hold it exactly.
-        stats = self.deliver().stat()
-        self.assertEqual(qc.assert_exportable("v1"), {"master": "out/v1.mp4", "bytes": stats.st_size, "mtimeNs": str(stats.st_mtime_ns)})
+        delivered = self.deliver()
+        stats = delivered.stat()
+        sha256 = hashlib.sha256(delivered.read_bytes()).hexdigest()
+        self.assertEqual(qc.assert_exportable("v1")["master"], {"relPath": "out/v1.mp4", "size": stats.st_size, "mtimeNs": str(stats.st_mtime_ns), "sha256": sha256})
 
     def test_a_master_rendered_after_its_passing_qc_is_blocked(self):
         delivered = self.deliver()

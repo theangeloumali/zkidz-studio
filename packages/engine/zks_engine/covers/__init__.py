@@ -76,8 +76,9 @@ def make_covers(video, times, cover_sheet=None, draw_stills=draw_stills, work=No
     names = cue_sheet_names(video, work)
     if cover_sheet:
         names.append(f"{video}-cover")
-        (work / "cues").mkdir(exist_ok=True)
-        shutil.copyfile(cover_sheet, work / "cues" / f"{video}-cover.json")
+        copy = pipeline.derived_file(work, f"cues/{video}-cover.json")
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cover_sheet, copy)
     stills = draw_stills(video, times, names, work)
     edl = inputs.read_json(work / "edl" / f"{video}.json")
     (work / "covers").mkdir(exist_ok=True)

@@ -31,7 +31,10 @@ def load_spec(video):
 
 
 def caption_cues(video):
-    return [cue for cue in read_json(pipeline.spec_file(work(), f"cues/{video}.json"), []) if cue.get("kind") == "caption"]
+    """Captions from the video's own sheet and the caption sheet the edit stage derives (<base>-cc), which hf draws last."""
+    base = (load_edl(video) or {}).get("base", video)
+    sheets = [read_json(pipeline.spec_file(work(), f"cues/{name}.json"), []) for name in (video, f"{base}-cc")]
+    return [cue for sheet in sheets for cue in sheet if isinstance(cue, dict) and cue.get("kind") == "caption"]
 
 
 def fps_of(edl):

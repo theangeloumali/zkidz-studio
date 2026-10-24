@@ -8,10 +8,12 @@ const CUE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const SAME_TIME = 1e-6;
 const isPatch = (entry) => entry !== null && typeof entry === "object" && "op" in entry;
 
-// A job's start snapshot (ZKS_SPECS, plan §7.6) wins; derived sheets such as <v>-cc exist only in work.
+// As pipeline.spec_file: a job reads its start snapshot (ZKS_SPECS, plan §7.6), never the live work/cues the agent edits;
+// the engine's derived sheets (<v>-cc, placeholders) back either one from work/derived.
 function cueFilePath(work, name) {
-  const snapshotFile = process.env.ZKS_SPECS && path.join(process.env.ZKS_SPECS, "cues", `${name}.json`);
-  return snapshotFile && fs.existsSync(snapshotFile) ? snapshotFile : path.join(work, "cues", `${name}.json`);
+  const primary = path.join(process.env.ZKS_SPECS || work, "cues", `${name}.json`);
+  const derived = path.join(work, "derived", "cues", `${name}.json`);
+  return !fs.existsSync(primary) && fs.existsSync(derived) ? derived : primary;
 }
 
 function readCueFile(work, name) {

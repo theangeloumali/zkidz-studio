@@ -109,7 +109,9 @@ class IngestAndEditTests(unittest.TestCase):
         self.assertLess(edl["frames"], CLIP_FRAMES)
         self.assertTrue((self.work / "audio" / "v1_edit.wav").exists())
         self.assertEqual(json.loads((self.work / "cuts" / "v1.json").read_text(encoding="utf-8")), STUDIO_CUTS)
-        self.assertEqual(json.loads((self.work / "cues" / "v1.json").read_text(encoding="utf-8")), [])  # an edit with no cues yet still draws
+        # An edit with no cues yet still draws, from a placeholder kept out of the spec folder.
+        self.assertEqual(json.loads((self.work / "derived" / "cues" / "v1.json").read_text(encoding="utf-8")), [])
+        self.assertFalse((self.work / "cues" / "v1.json").exists())
 
     def test_the_edl_stops_at_the_sources_last_frame_when_the_spec_rounds_its_length_up(self):
         (self.work / "cuts").mkdir(exist_ok=True)
@@ -128,6 +130,8 @@ class IngestAndEditTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertLess(report["frames"], 36)  # ~0.8 s kept; edl.py may snap the unpinned keep edge to a quiet frame
         self.assertTrue((self.work / "audio" / "v1r_edit.wav").exists())
+        self.assertTrue((self.work / "derived" / "cuts" / "v1r.json").exists())
+        self.assertFalse((self.work / "cuts" / "v1r.json").exists())
 
     def test_the_edit_stage_without_a_cut_spec_is_a_spec_error(self):
         empty = Path(tempfile.mkdtemp(prefix="zks-empty-", dir=self.root)) / "work"

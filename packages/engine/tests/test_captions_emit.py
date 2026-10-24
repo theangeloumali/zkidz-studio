@@ -1,5 +1,5 @@
 # Created by The Angelo Umali.
-# captions.emit_cues writes cues/<video>-cc.json, the only cue format hf reads (plan §7.7).
+# captions.emit_cues writes derived/cues/<video>-cc.json, the only cue format hf reads (plan §7.7).
 import json
 import tempfile
 import unittest
@@ -27,7 +27,8 @@ class EmitCuesTests(unittest.TestCase):
                 captions.emit_cues("v1")
 
             self.assertFalse((work / "cues" / "v1-cc.js").exists())
-            cues = json.loads((work / "cues" / "v1-cc.json").read_text(encoding="utf-8"))
+            self.assertFalse((work / "cues" / "v1-cc.json").exists())
+            cues = json.loads((work / "derived" / "cues" / "v1-cc.json").read_text(encoding="utf-8"))
             validate("cue-sheet", cues)
             self.assertEqual(
                 cues,

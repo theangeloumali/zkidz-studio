@@ -18,6 +18,9 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     css: false,
+    // A fresh jsdom per file loads over the slow 9p mount inside vitest's fixed 60 s worker start limit, and timed out
+    // under ci:local load. Shuffled single-fork runs showed no state leaking between files.
+    isolate: false,
     // Playwright owns e2e/; vitest would run its specs under jsdom.
     exclude: [...configDefaults.exclude, "e2e/**"],
   },

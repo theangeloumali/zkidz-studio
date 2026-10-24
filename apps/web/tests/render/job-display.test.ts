@@ -60,15 +60,8 @@ describe("stageRowsFor", () => {
 });
 
 describe("jobStatusText", () => {
-  it("gives a running job its percent and minutes left", () => {
-    expect(jobStatusText(makeJob({ pct: 42.4, etaS: 180 }))).toBe("42% · about 3 min left");
-  });
-
-  it("counts seconds when the ETA is under a minute", () => {
-    expect(jobStatusText(makeJob({ pct: 98, etaS: 20 }))).toBe("98% · about 20 s left");
-  });
-
-  it("shows the percent alone when the ETA is unknown", () => {
+  it("gives a running job its percent only; the ETA lives on the running stage row", () => {
+    expect(jobStatusText(makeJob({ pct: 42.4, etaS: 180 }))).toBe("42%");
     expect(jobStatusText(makeJob({ pct: 42, etaS: null }))).toBe("42%");
   });
 

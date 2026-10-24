@@ -52,7 +52,7 @@ describe("Render & export screen", () => {
     const queue = await screen.findByRole("region", { name: "Queue" });
     const job = await within(queue).findByRole("listitem", { name: /Full edit/ });
     expect(within(job).getByText("hevc_nvenc")).toBeInTheDocument();
-    expect(within(job).getByText("42% · about 3 min left")).toBeInTheDocument();
+    expect(within(job).getByText("about 3 min left")).toBeInTheDocument();
     expect(within(job).getByRole("progressbar", { name: "Overlay frames, about 3 min left" })).toHaveAttribute("aria-valuenow", "42");
     expect(within(job).getByRole("progressbar", { name: "Audio mix" })).toHaveAttribute("aria-valuenow", "100");
     expect(within(queue).getByText("Profile: NVIDIA · hevc_nvenc · 4 chunks")).toBeInTheDocument();

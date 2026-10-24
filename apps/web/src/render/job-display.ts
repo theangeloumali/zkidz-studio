@@ -53,8 +53,7 @@ export function stageRowsFor(job: Job): readonly StageRow[] {
 
 export function jobStatusText(job: Job): string {
   if (job.status !== "running") return FINISHED_STATUS_TEXT[job.status];
-  const pctText = `${Math.round(job.pct ?? 0)}%`;
-  return job.etaS === null ? pctText : `${pctText} · ${formatEta(job.etaS)}`;
+  return `${Math.round(job.pct ?? 0)}%`;
 }
 
 export function jobTitle(job: Job): string {

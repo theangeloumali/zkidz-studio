@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
-// Each spawn loads the CLI cold; on a slow filesystem (WSL /mnt) that alone takes ~4 s.
-const SUBPROCESS_TIMEOUT_MS = 30_000;
+// Each spawn loads the CLI cold: @zks/shared's sources alone take 3.5 s over WSL /mnt, and 20-27 s per spawn under
+// ci:local load. Two-spawn tests need room for both.
+const SUBPROCESS_TIMEOUT_MS = 90_000;
 const tempHomes: string[] = [];
 
 function runCli(args: string[], home = mkdtempSync(path.join(tmpdir(), "zks-cli-")), env: Record<string, string | undefined> = {}) {

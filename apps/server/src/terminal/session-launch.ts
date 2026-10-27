@@ -27,6 +27,7 @@ export interface TerminalSessionsDeps {
   readonly cancelProjectJobs: (projectId: string) => Promise<void>;
   readonly logger: Logger;
   readonly sessionStartTimeoutMs?: number;
+  readonly promptRetryMs?: number;
 }
 
 export interface OpenTerminalRequest {
@@ -56,6 +57,10 @@ export interface SessionRecord extends TerminalSession {
   lastPrompt?: string;
   /** Set by Stop: an interrupt before Claude answers puts the prompt back in its input. */
   promptToErase?: string;
+  /** Between UserPromptSubmit and Stop; Claude Code then queues a prompt itself. */
+  isWorking: boolean;
+  /** A prompt written while idle that UserPromptSubmit has not confirmed yet. */
+  promptRetryTimer?: NodeJS.Timeout;
   sessionStartTimer?: NodeJS.Timeout;
 }
 
@@ -88,7 +93,7 @@ export async function launchSession(deps: TerminalSessionsDeps, request: OpenTer
       cwd: request.projectDir,
       env: deps.buildEnv({ ...tokens, mcpUrl: files.mcpUrl }),
     });
-    return { ...request, ...tokens, sessionId, pty, files, hasStarted: false, wasKilled: false, queuedPrompts: [] };
+    return { ...request, ...tokens, sessionId, pty, files, hasStarted: false, wasKilled: false, isWorking: false, queuedPrompts: [] };
   } catch (error) {
     await removeSessionFiles(files);
     throw error;

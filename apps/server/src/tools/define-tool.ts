@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // Binds a shared tool contract (packages/shared/src/tools) to its handler, with input and output checked by the contract.
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ImageContent } from "@modelcontextprotocol/sdk/types.js";
 import { STUDIO_TOOLS, studioToolName, type StudioToolContract, type StudioToolName } from "@zks/shared";
 import { z } from "zod";
 import type { ToolContext } from "./context.ts";
@@ -14,6 +14,8 @@ interface HandlerOutcome<Output> {
   readonly output: Output;
   /** validate_spec reports its errors as structured output and still flags the call as failed. */
   readonly isError?: boolean;
+  /** render_preview shows its stills to the model as image blocks after the JSON text. */
+  readonly images?: readonly ImageContent[];
 }
 
 type ToolHandler<Name extends StudioToolName> = (
@@ -57,7 +59,7 @@ export function implementTool<Name extends StudioToolName>(name: Name, { descrip
         const outcome = await handler(parsedInput.data as ToolInput<Name>, context, signal);
         const output: unknown = contract.output.parse(outcome.output);
         if (!isRecord(output)) throw new Error(`${name} output is not an object`);
-        return toolResult(output, outcome.isError === true);
+        return toolResult(output, outcome.isError === true, outcome.images);
       } catch (error) {
         if (error instanceof ToolError) return toolErrorResult(error.message);
         throw error;

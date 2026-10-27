@@ -15,7 +15,8 @@ and the thumbnail promise the same thing.
 - Every cover is a settled `hookTitle` (kicker tab, a white line over a gold line, the gold rule) plus the caption on that
   frame. Never a separate cover-only title style.
 - Pick a time where the title has finished animating in and the speaker's face is clear: eyes open, not mid-blink or
-  mid-word.
+  mid-word. A hook title lands about 1.4 s after its cue starts; `make_covers` refuses an earlier time and names the first
+  time that works.
 
 ## Which covers
 
@@ -25,7 +26,6 @@ and the thumbnail promise the same thing.
 | B     | `source: "free"`, optional `cue` | any strong frame later in the edit                      |
 
 - Give cover B a `cue` (a `hookTitle` with its own short line) when the moment needs words of its own.
-- Check a time with `render_preview` first when you are unsure the title has settled.
 - The Reels covers (`reels-cover-A/B`) are a second call with `target: "reel"`, at times on the Reels cut's own timeline.
 
 ## Post caption

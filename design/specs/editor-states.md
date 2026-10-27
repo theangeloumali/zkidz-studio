@@ -221,8 +221,9 @@ Cut marks between segments are drawn but not counted. The AC is 60 fps scroll an
 
 ### 6.1 What is drawn
 
-- **Windowing.** Only items that intersect the visible time range plus one viewport width on each side are mounted. At any zoom the timeline has at
-  most 600 DOM nodes.
+- **Windowing.** Only items that intersect the visible time range plus one viewport width on each side are mounted. During a wheel or pinch zoom
+  only the visible range (snapped out to quarter-viewport steps) is mounted; the margins return 150 ms after the last zoom step, or at once
+  when the view scrolls or zooms any other way. At any zoom the timeline has at most 600 DOM nodes.
 - **Level of detail by on-screen width `w`:**
 
 | `w`       | Drawn as                                                                                  |

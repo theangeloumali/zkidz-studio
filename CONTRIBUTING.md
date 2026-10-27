@@ -10,6 +10,8 @@ Thanks for helping. This page covers setup, branches, commits, tests and the rul
 git clone https://github.com/theangeloumali/zkidz-studio && cd zkidz-studio
 ./setup.sh            # Windows: setup.cmd
 pnpm zks doctor       # checks node, pnpm, python, ffmpeg, GPU backends, models
+                      # --render: test-encode every listed encoder; --bench: first start, warm ready time, idle RSS, encode fps
+                      # --json: machine-readable; --bench --json is the redacted hardware report to paste in an issue
 pnpm verify           # attribution check, lint, typecheck, tests
 ```
 

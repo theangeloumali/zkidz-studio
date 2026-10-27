@@ -42,7 +42,13 @@ function captionCues(work, video) {
   return entries
     .filter((entry) => entry.ids.every((id) => byId.has(id)))
     .sort((first, second) => first.ids[0] - second.ids[0])
-    .map((entry) => ({ kind: "caption", at: byId.get(entry.ids[0]).at, end: byId.get(entry.ids.at(-1)).end, text: entry.en.trim() }));
+    .map((entry) => ({
+      kind: "caption",
+      at: byId.get(entry.ids[0]).at,
+      end: byId.get(entry.ids.at(-1)).end,
+      text: entry.en.trim(),
+      ...(entry.bottom === undefined ? {} : { bottom: entry.bottom }),
+    }));
 }
 
 // Image kinds copy a project file into the page; the preview never carries one.
@@ -78,7 +84,8 @@ function writePreview(dir, { html, css }) {
 
 function buildPreview({ work, video, theme: themeId = DEFAULT_THEME }) {
   if (typeof video !== "string" || !VIDEO_ID.test(video)) throw new Error(`${JSON.stringify(video)} is not a video id (v1, v1r)`);
-  const edl = readJson(path.join(work, "edl", `${video}.json`));
+  // The server's preview EDL, kept apart from edl/<video>.json, which is the render's.
+  const edl = readJson(path.join(work, "preview", `${video}.edl.json`));
   const theme = loadTheme(themeId);
   const brand = canvasBrand();
   brand.applyTheme(theme);
@@ -111,4 +118,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { buildPreview };
+module.exports = { buildPreview, captionCues };

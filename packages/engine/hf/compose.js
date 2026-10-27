@@ -29,7 +29,7 @@ const RUNTIME = `(() => {
 const guideBox = (left, top, right, bottom) => `<div style="left:${left}px;top:${top}px;width:${right - left}px;height:${bottom - top}px"></div>`;
 const GUIDES = `<div class="guides">${guideBox(SAFE.left, SAFE.top, SAFE.right, SAFE.columnTop)}${guideBox(70, 1270, 1010, 1430)}${guideBox(SAFE.columnRight, SAFE.columnTop, 1080, 1780)}</div>`;
 
-function composeDocument({ edl, cues, registry, compositionId, css, guides = false, size = [1080, 1920] }) {
+function composeDocument({ edl, cues, registry, compositionId, css, guides = false, settled = false, size = [1080, 1920] }) {
   const fps = edl.fps_num / edl.fps_den;
   const snap = (time) => Math.round(time * fps) / fps;
   const clips = [];
@@ -42,7 +42,7 @@ function composeDocument({ edl, cues, registry, compositionId, css, guides = fal
     if (endFrame <= firstFrame) return;
     const id = `c${index}`;
     const component = registry[cue.kind];
-    const context = { id, duration: cue.stop - cue.start, cues, fps };
+    const context = { id, duration: cue.stop - cue.start, cues, fps, settled };
     const start = Math.max(0, (firstFrame - CLIP_LEAD_FRAMES) / fps);
     const { html, motion, exit: exits = exit(".cue-out", context.duration) } = component.render(cue, context);
     clips.push(
@@ -57,7 +57,8 @@ function composeDocument({ edl, cues, registry, compositionId, css, guides = fal
         .join(", ");
       tweens.push({ ...spec, at: snap(cue.start + spec.at), target });
     }
-    placed.push({ id, kind: cue.kind, text: cue.text ?? cue.title ?? null, start: cue.start, stop: cue.stop, firstFrame, endFrame, seed: cue.seed });
+    const landed = component.landed ? { landed: cue.start + component.landed(cue) } : {};
+    placed.push({ id, kind: cue.kind, text: cue.text ?? cue.title ?? null, start: cue.start, stop: cue.stop, firstFrame, endFrame, seed: cue.seed, ...landed });
   });
 
   // Cue text is agent output: a raw `</script` ends the script and `<!--` puts the parser in its escaped state, so every `<` goes.

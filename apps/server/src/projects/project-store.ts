@@ -20,7 +20,8 @@ export async function findProjectOrThrow(database: StudioDatabase, rawProjectId:
   return project;
 }
 
-function slugifyTitle(title: string): string {
+/** Lowercase ASCII words joined by hyphens; also how user-typed names reach the agent (plan §11). */
+export function slugifyTitle(title: string): string {
   const slug = title
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")

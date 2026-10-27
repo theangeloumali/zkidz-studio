@@ -3,7 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { Route, Routes } from "react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Connection, DoctorCheck } from "../src/api/agent-client.ts";
 import { ROUTE_PATHS } from "../src/lib/routes.ts";
 import { SetupRoute } from "../src/routes/setup.tsx";
@@ -14,7 +14,10 @@ const NOT_CONNECTED: Connection = { mode: null, keyLast4: null, provider: null, 
 const CHECKS: DoctorCheck[] = [
   { id: "ffmpeg", label: "ffmpeg", status: "pass", detail: "7.1 with NVENC" },
   { id: "chrome", label: "Chrome", status: "fail", detail: "Not found", fix: "Install Google Chrome" },
+  { id: "database", label: "Data backend", status: "pass", detail: "Embedded database (PGlite)" },
 ];
+const withDatabase = (database: DoctorCheck) => [...CHECKS.filter((check) => check.id !== "database"), database];
+const dataBackendRow = async () => (await screen.findByRole("rowheader", { name: "Data backend" })).closest("tr") as HTMLElement;
 
 function stubSetup(connection: Connection = NOT_CONNECTED, extra: Parameters<typeof stubFetch>[0] = {}) {
   return stubFetch({
@@ -181,8 +184,47 @@ describe("SetupRoute", () => {
     renderWithProviders(<SetupRoute />);
     const table = await screen.findByRole("table", { name: "This computer" });
     expect(await within(table).findByText("Fix: Install Google Chrome")).toBeInTheDocument();
-    expect(within(table).getByText("Embedded database · switch in README (DATABASE_URL)")).toBeInTheDocument();
+    expect(within(table).getByText("Embedded database (PGlite) · switch in README (DATABASE_URL)")).toBeInTheDocument();
+    expect(within(table).getAllByRole("rowheader", { name: "Data backend" })).toHaveLength(1);
     expect(within(table).queryAllByRole("textbox")).toEqual([]);
+  });
+
+  it("names the Postgres backend the server runs on, not the embedded database", async () => {
+    const postgres: DoctorCheck = { id: "database", label: "Data backend", status: "pass", detail: "Postgres at 127.0.0.1:45322" };
+    stubSetup(NOT_CONNECTED, { "GET /api/doctor": () => jsonResponse({ checks: withDatabase(postgres) }) });
+    renderWithProviders(<SetupRoute />);
+
+    const row = await dataBackendRow();
+    expect(await within(row).findByText("Postgres at 127.0.0.1:45322 · switch in README (DATABASE_URL)")).toBeInTheDocument();
+    expect(within(row).getByText("OK")).toBeInTheDocument();
+    expect(screen.queryByText(/Embedded database/)).not.toBeInTheDocument();
+  });
+
+  it("shows a failing data backend as Fix needed, not Missing, with its fix", async () => {
+    const exposed: DoctorCheck = {
+      id: "database",
+      label: "Data backend",
+      status: "fail",
+      detail: "Postgres at 127.0.0.1:45322, but port 45322 answers on 192.0.2.10",
+      fix: "Publish Postgres on 127.0.0.1:45322 only",
+    };
+    stubSetup(NOT_CONNECTED, { "GET /api/doctor": () => jsonResponse({ checks: withDatabase(exposed) }) });
+    renderWithProviders(<SetupRoute />);
+
+    const row = await dataBackendRow();
+    expect(await within(row).findByText("Fix needed")).toBeInTheDocument();
+    expect(within(row).queryByText("Missing")).not.toBeInTheDocument();
+    expect(within(row).getByText("Fix: Publish Postgres on 127.0.0.1:45322 only")).toBeInTheDocument();
+  });
+
+  it("claims no backend while the checks are still running", async () => {
+    const answer = stubSetup();
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => (url === "/api/doctor" ? new Promise(() => {}) : answer(url, init)));
+    renderWithProviders(<SetupRoute />);
+
+    const row = await dataBackendRow();
+    expect(within(row).getByText("switch in README (DATABASE_URL)")).toBeInTheDocument();
+    expect(screen.queryByText(/Embedded database/)).not.toBeInTheDocument();
   });
 
   it("gates Continue until Claude is connected", async () => {

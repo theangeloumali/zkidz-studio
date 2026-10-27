@@ -95,6 +95,8 @@ export const API_ROUTES = {
     }),
   },
   streamMedia: { method: "GET", path: "/api/media/:assetId", response: "binary" },
+  /** The live preview's footage: work/mezz/<videoId>.mp4, the 1080 H.264 proxy ingest writes (plan §8.4). */
+  streamProxy: { method: "GET", path: "/api/projects/:projectId/videos/:videoId/proxy", response: "binary" },
 
   listSpecs: { method: "GET", path: "/api/projects/:projectId/specs", response: z.strictObject({ specs: z.array(SpecSummarySchema) }) },
   getSpecVersion: {

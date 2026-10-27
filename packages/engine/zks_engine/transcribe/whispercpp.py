@@ -2,6 +2,7 @@
 # whisper.cpp's whisper-cli (plan §7.4): the pinned binary under ZKS_HOME/tools, the model, and the word JSON it writes.
 # The pinned ffmpeg is built --disable-whisper (spike 04), so every transcription runs here.
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -94,11 +95,23 @@ def write_window(source, start, end, destination, lead=0.0, tail=0.0):
         writer.writeframes(silence(lead) + frames + silence(tail))
 
 
-def transcribe_file(wav, language, model, threads=4):
-    """Word lines for one wav, timed from its first sample."""
+def threads_for(workers=1):
+    """Threads for each of `workers` whisper processes running side by side. One process on every core ran slower than on
+    half of them (a 3 s window on a 24-core 285HX: 16.9 s on 24 threads, 7.4 s on 12)."""
+    return max(1, (os.cpu_count() or 2) // max(2, workers))
+
+
+def in_seconds(words):
+    """Word lines ({start, end} in ms, text with its leading space) as the studio reads words: seconds, text trimmed."""
+    return [{"at": word["start"] / 1000, "end": word["end"] / 1000, "text": word["text"].strip()} for word in words]
+
+
+def transcribe_file(wav, language, model, threads=None):
+    """Word lines for one wav, timed from its first sample. threads: threads_for() when one process runs alone."""
     with tempfile.TemporaryDirectory(prefix="zks-whisper-") as scratch:
         output_base = Path(scratch) / "words"
-        result = subprocess.run(cli_args(cli_path(), model, wav, output_base, language, threads), capture_output=True, text=True)
+        command = cli_args(cli_path(), model, wav, output_base, language, threads or threads_for())
+        result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode:
             raise RuntimeError(f"whisper-cli failed on {Path(wav).name} (exit {result.returncode}): {result.stderr.strip()[-300:]}")
         # A word split mid-character must not sink an hour-long transcription.

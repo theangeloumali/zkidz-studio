@@ -12,6 +12,11 @@ TRUST_SHARE = 0.25  # the share done from which a running stage's own pace is tr
 SHOWN = 2  # running edits named on the line; the rest are counted
 
 
+def pace_key(record):
+    """The history a record's ETA is paced by: its stage, or its own pace key (transcribing per model)."""
+    return record.get("pace", record["stage"])
+
+
 def rate(stage, history):
     paces = [entry["units"] / entry["seconds"] for entry in reversed(history) if entry["stage"] == stage and entry["units"] > 0 and entry["seconds"] > 0]
     return statistics.median(paces[:10]) if paces else SEED_RATES.get(stage)
@@ -32,8 +37,8 @@ def stage_left(record, history, now):
     """Seconds left in a started stage."""
     total, done, elapsed = record.get("total") or 0, record.get("done") or 0, now - record["started"]
     if not total:
-        return max(0.0, stage_seconds(record["stage"], record.get("frames"), history) - elapsed)
-    pace = rate(record["stage"], history)
+        return max(0.0, stage_seconds(pace_key(record), record.get("frames"), history) - elapsed)
+    pace = rate(pace_key(record), history)
     planned = (total - done) / pace if pace else None
     if not done:
         return max(0.0, planned - elapsed) if planned else 0.0
@@ -48,7 +53,7 @@ def eta_seconds(record, history, now):
     """Whole seconds left in a running stage, the record's etaS; None until a pace, seed or past run says anything."""
     if record.get("state") != "running":
         return None
-    stage, total = record["stage"], record.get("total")
+    stage, total = pace_key(record), record.get("total")
     known = (record.get("done") or rate(stage, history)) if total else stage_seconds(stage, record.get("frames"), history)
     if not known:
         return None

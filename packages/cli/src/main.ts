@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 // Created by The Angelo Umali.
 import { existsSync } from "node:fs";
-import os from "node:os";
 import type { PathRoots } from "@zks/shared";
-import type { ToolName } from "@zks/shared/node";
+import { pinnedExecutablePath, type ToolName } from "@zks/shared/node";
 import { createContext, resolveZksHome } from "./context.ts";
-import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, runDoctor } from "./doctor.ts";
+import { formatBenchJson, formatBenchText, runBench } from "./bench.ts";
+import { doctorExitCode, formatDoctorJson, formatDoctorText, formatFatalError, reportRoots, runDoctor } from "./doctor.ts";
 import { fetchModel, listModels } from "./models.ts";
 import { runScrubCheck } from "./commands/scrub-check.ts";
 import { runSetup } from "./setup.ts";
-import { pinnedToolPath } from "./tools.ts";
 
 const USAGE =
-  "usage: zks setup | zks doctor [--json] [--fetch] | zks models [--json] | zks models fetch <name> | zks tools path <tool> | zks scrub-check <path>...";
+  "usage: zks setup | zks doctor [--json] [--fetch] [--render] [--bench] | zks models [--json] | zks models fetch <name> | zks tools path <tool> | zks scrub-check <path>...";
 const EXIT_USAGE = 2;
 
 async function main(argv: string[]): Promise<number> {
@@ -26,11 +25,21 @@ async function main(argv: string[]): Promise<number> {
     case "doctor": {
       // --fetch repairs what setup would install, then diagnoses; logs go to stderr so --json stays parseable.
       if (flags.has("--fetch")) await runSetup(context, (line) => console.error(line));
-      const checks = await runDoctor(context);
       const roots = pathRoots();
+      // --bench measures instead of diagnosing, so its JSON is the stable hardware-report object alone.
+      if (flags.has("--bench")) {
+        const report = await runBench(context);
+        console.log(flags.has("--json") ? formatBenchJson(report, roots) : formatBenchText(report, roots));
+        return report.ok ? 0 : 1;
+      }
+      const checks = await runDoctor(context, { render: flags.has("--render") });
       console.log(flags.has("--json") ? formatDoctorJson(checks, roots) : formatDoctorText(checks, roots));
       return doctorExitCode(checks);
     }
+    case "--help":
+    case "help":
+      console.log(USAGE);
+      return 0;
     case "models":
       return runModels(context, rest, flags.has("--json"));
     case "tools":
@@ -44,7 +53,7 @@ async function main(argv: string[]): Promise<number> {
 }
 
 function pathRoots(): PathRoots {
-  return { zksHome: resolveZksHome(), homeDir: os.homedir() };
+  return reportRoots(resolveZksHome());
 }
 
 /** The pinned build for CI and the server to hand the engine (ZKS_FFMPEG, ZKS_CHROME): never an override, which may be stale. */
@@ -54,7 +63,7 @@ function printToolPath(context: ReturnType<typeof createContext>, args: string[]
     console.error(USAGE);
     return EXIT_USAGE;
   }
-  const executable = pinnedToolPath(context, name);
+  const executable = pinnedExecutablePath(context, name);
   if (!executable || !existsSync(executable)) {
     console.error(`${name} is not installed at ${executable ?? "its pinned location"}. Run: pnpm zks setup`);
     return 1;

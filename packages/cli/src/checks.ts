@@ -9,6 +9,7 @@ import { findOnPath } from "@zks/shared/node";
 import type { ZksContext } from "./context.ts";
 import { sha256File } from "./download.ts";
 import { bootstrapDirs, runCommand, type CommandRunner } from "./exec.ts";
+import { listsEncoder, probeEveryEncoder, type EncodeAttempt } from "./gpu.ts";
 import { listModels } from "./models.ts";
 import { isWslDrvfsPath } from "./platform.ts";
 import { toolExecutablePath } from "./tools.ts";
@@ -34,10 +35,6 @@ const MIN_CLAUDE_VERSION = [2, 1, 295] as const;
 const CLAUDE_INSTALL_URL = "https://code.claude.com/docs/en/setup";
 const CLAUDE_UPDATE_FIX = `terminal mode needs Claude Code ${MIN_CLAUDE_VERSION.join(".")}+: run claude update`;
 const HEVC_FAMILY = ["hevc_nvenc", "h264_nvenc", "hevc_videotoolbox", "hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265", "libx264"];
-
-export function listsEncoder(encoderListing: string, encoder: string): boolean {
-  return new RegExp(`\\s${encoder}\\s`).test(encoderListing);
-}
 
 function firstLine(text: string): string {
   return text.trim().split(/\r?\n/)[0] ?? "";
@@ -73,12 +70,13 @@ export function checkPython(context: ZksContext): CheckResult {
   return { id: "python", status: "ok", required: true, detail: firstLine(version.stdout), data: { path: firstLine(found.stdout) } };
 }
 
-export async function checkFfmpeg(context: ZksContext): Promise<CheckResult> {
+/** `everyEncoder` (doctor --render) adds a test encode of each listed encoder; the GPU profile comes from the engine probe. */
+export async function checkFfmpeg(context: ZksContext, { everyEncoder = false } = {}): Promise<CheckResult[]> {
   const executable = toolExecutablePath(context, "ffmpeg");
   const version = executable && existsSync(executable) ? runCommand(executable, ["-hide_banner", "-version"]) : undefined;
   if (!executable || version?.code !== 0) {
     const fix = process.env[ENV.ffmpeg] ? `${ENV.ffmpeg} does not run; unset it or point it at a working ffmpeg` : SETUP_FIX;
-    return { id: "ffmpeg", status: "fail", required: true, detail: "not installed", fix };
+    return [{ id: "ffmpeg", status: "fail", required: true, detail: "not installed", fix }];
   }
   const encoderListing = runCommand(executable, ["-hide_banner", "-encoders"]).stdout;
   const hwaccels = runCommand(executable, ["-hide_banner", "-hwaccels"])
@@ -86,7 +84,7 @@ export async function checkFfmpeg(context: ZksContext): Promise<CheckResult> {
     .slice(1)
     .map((line) => line.trim())
     .filter(Boolean);
-  return {
+  const ffmpegCheck: CheckResult = {
     id: "ffmpeg",
     status: "ok",
     required: true,
@@ -97,6 +95,22 @@ export async function checkFfmpeg(context: ZksContext): Promise<CheckResult> {
       encoders: HEVC_FAMILY.filter((encoder) => listsEncoder(encoderListing, encoder)),
       hwaccels,
     },
+  };
+  if (!everyEncoder) return [ffmpegCheck];
+  return [ffmpegCheck, encodersCheck(probeEveryEncoder(executable, encoderListing, runCommand))];
+}
+
+/** Builds such as BtbN list encoders for hardware the machine lacks, so a listed one that fails is data, not a failure. */
+export function encodersCheck(attempts: EncodeAttempt[]): CheckResult {
+  const working = attempts.filter((attempt) => attempt.ok).map((attempt) => attempt.encoder);
+  if (working.length === 0)
+    return { id: "encoders", status: "fail", required: false, detail: "no listed encoder passed a test encode", fix: SETUP_FIX, data: { attempts } };
+  return {
+    id: "encoders",
+    status: "ok",
+    required: false,
+    detail: `${working.length} of ${attempts.length} listed encoders work: ${working.join(", ")}`,
+    data: { attempts },
   };
 }
 

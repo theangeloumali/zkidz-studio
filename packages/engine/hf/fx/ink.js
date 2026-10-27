@@ -18,9 +18,11 @@ const flood = (target, at, [x, y], radius, { duration = 0.32 } = {}) => ({
   to: { clipPath: `circle(${radius}px at ${x}px ${y}px)`, duration, ease: "power2.out" },
 });
 
+const GLOW_SECONDS = 0.5;
+
 // One expanding, fading ring around a node that just landed (the woven Z's glow, spec §5.1).
 // `repeat` rings again every `duration + repeatDelay` (a gold node that keeps pulsing while its card is up).
-const glow = (target, at, { duration = 0.5, scale = 2.4, fromScale = 0.6, fromOpacity = 0.9, repeat = 0, repeatDelay = 1.5 } = {}) => ({
+const glow = (target, at, { duration = GLOW_SECONDS, scale = 2.4, fromScale = 0.6, fromOpacity = 0.9, repeat = 0, repeatDelay = 1.5 } = {}) => ({
   target,
   at,
   to: {
@@ -41,4 +43,4 @@ const penReveal = (target, [start, end], [left, top, right, bottom]) => ({
   to: { clipPath: penBox(left, right, top, bottom), duration: end - start, ease: "none" },
 });
 
-module.exports = { drawOn, flood, glow, penReveal };
+module.exports = { GLOW_SECONDS, drawOn, flood, glow, penReveal };

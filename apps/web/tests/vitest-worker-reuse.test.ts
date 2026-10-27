@@ -15,6 +15,9 @@ function runBrokenStartFixture() {
   const result = spawnSync(process.execPath, [VITEST_BIN, "run", "--root", FIXTURE_DIR, "--config", "vitest.fixture.config.mjs"], {
     encoding: "utf8",
     env: { ...env, NO_COLOR: "1" },
+    // Inside the test's 180 s, so a hung child fails this test instead of outliving it.
+    timeout: 170_000,
+    killSignal: "SIGKILL",
   });
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }

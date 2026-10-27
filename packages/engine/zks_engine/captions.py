@@ -8,7 +8,8 @@ import sys
 
 import numpy as np
 
-from .pipeline import ENERGY_WINDOW, FPS, WORK, derived_file, load_cuts, load_edl, load_energy, spec_file
+from . import edl
+from .pipeline import ENERGY_WINDOW, FPS, WORK, derived_file, load_cuts, load_energy, spec_file
 from .specs import gates
 
 PAUSE_BREAK = 0.35
@@ -57,20 +58,36 @@ def to_edited(seconds, segments):
 
 
 def reel_keeps(path):
-    return json.loads((WORK / path).read_text(encoding="utf-8"))["keep"] if path else []
+    """(at, end) per keep: the studio's {"at", "end", "pin"?} objects or the films' [low, high, ...] lists."""
+    keeps = json.loads(spec_file(WORK, path).read_text(encoding="utf-8"))["keep"] if path else []
+    return [(keep["at"], keep["end"]) if isinstance(keep, dict) else tuple(keep[:2]) for keep in keeps]
+
+
+def transcript_path(video):
+    """The studio transcript (a JSON array in seconds), else the films pipeline's JSONL in ms."""
+    studio = WORK / "transcripts" / f"{video}.words.json"
+    return studio if studio.exists() else WORK / "transcripts" / f"{video}_words.json"
+
+
+def transcript_words(video):
+    """(start, end, text) per word, in source seconds, from either transcript shape."""
+    path = transcript_path(video)
+    content = path.read_text(encoding="utf-8")
+    if path.name == f"{video}.words.json":
+        return [(word["at"], word["end"], word["text"]) for word in json.loads(content)]
+    lines = [json.loads(line) for line in content.splitlines() if line.strip()]
+    return [(word["start"] / 1000, word["end"] / 1000, word["text"]) for word in lines]
 
 
 def kept_words(video, segments, keeps):
     words = []
-    for line in (WORK / "transcripts" / f"{video}_words.json").read_text(encoding="utf-8").splitlines():
-        word = json.loads(line) if line.strip() else None
-        text = word and word["text"].strip()
+    for start, end, raw_text in transcript_words(video):
+        text = raw_text.strip()
         if not text:
             continue
-        start, end = word["start"] / 1000, word["end"] / 1000
         seg = segment_of((start + end) / 2, segments)
         if seg is not None:
-            reel = next((index for index, (low, high, *_) in enumerate(keeps) if low <= (start + end) / 2 < high), None)
+            reel = next((index for index, (low, high) in enumerate(keeps) if low <= (start + end) / 2 < high), None)
             words.append({"start": start, "end": end, "text": text, "seg": seg, "reel": reel})
     return words
 
@@ -104,10 +121,11 @@ def snap_start(words, previous, previous_start, onset_times):
 
 
 def build_phrases(video, reel_path):
-    spec, edl = load_cuts(video), load_edl(video)
-    segments = edl["segments"]
-    words = kept_words(video, segments, reel_keeps(reel_path))
+    # Segments from the current cut spec, as the edit stage builds them: edl/ is the last render's, missing before one.
+    spec = load_cuts(video)
     energy_db = load_energy(WORK / "audio" / f"{spec.get('base', video)}.wav")
+    segments, _frames = edl.build(spec, energy_db)
+    words = kept_words(video, segments, reel_keeps(reel_path))
     onset_times = onsets(energy_db) * ENERGY_WINDOW
     groups = group(words)
     starts = []
@@ -132,11 +150,12 @@ def build_phrases(video, reel_path):
         if index + 1 < len(groups) and groups[index + 1][0]["seg"] == words_in[0]["seg"]:
             end = min(end, starts[index + 1])  # two plates never share the band
         phrases.append({"id": index, "at": round(starts[index], 3), "end": round(end, 3), "reel": words_in[0]["reel"],
-                        "tl": " ".join(word["text"] for word in words_in)})
+                        "text": " ".join(word["text"] for word in words_in)})
     out = WORK / "captions" / f"{video}.phrases.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(phrases, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"{video}: {len(phrases)} phrases from {len(words)} kept words -> {out}")
+    return phrases
 
 
 def check_entries(entries, phrases):
@@ -166,7 +185,8 @@ def emit_cues(video):
         sys.exit(f"{video} captions: {failure}")
     if problems := check_entries(entries, phrases):
         sys.exit(f"{video} captions:\n  " + "\n  ".join(problems))
-    cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip()}
+    cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip(),
+             **({"bottom": entry["bottom"]} if "bottom" in entry else {})}
             for entry in sorted(entries, key=lambda entry: entry["ids"][0])]
     target = derived_file(WORK, f"cues/{video}-cc.json")
     target.parent.mkdir(parents=True, exist_ok=True)

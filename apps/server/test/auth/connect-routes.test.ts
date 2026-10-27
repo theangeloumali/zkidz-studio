@@ -35,7 +35,8 @@ describe("connect routes", () => {
       secretStore: createSecretStore({ studioHome: scratchDir, platform: "linux", keyring, readMounts: () => Promise.resolve("") }),
       fetch: () => Promise.resolve(new Response("{}", { status: modelsStatus })),
       logger: createLogger(() => undefined),
-      claudeVersion: "2.1.300",
+      // As in main.ts: the version probe is still running when the routes register.
+      claudeVersion: Promise.resolve("2.1.300"),
       onConnectionChanged: () => {
         changes += 1;
       },

@@ -3,6 +3,8 @@
 // one transparent 1080x1920 PNG per edited frame. Argument-compatible with render-overlays.js. From the work dir (or ZKS_WORK):
 //   node <engine>/hf/render.js v4r:v4+v4r+v4-cc            → frames/v4r/ (+ frames/v4r.intro/ for an intro hook)
 //   … --stills auto | 3.2 41.5 [--guides]                  → stills/<cues>.hf/t3.2.png, composited on the proxy
+//   … --stills 3.2 --settled                               → refused while a title is still animating in (covers)
+//   … --stills auto --max 4                                → only the earliest 4 auto times are drawn
 //   … --events                                             → edl/<video>.sfx.json only (for sfx.py)
 //   … --theme minimal                                       → draws in themes/minimal's look (default themes/zkidz)
 //   … --layer behind [--stills …]                          → frames/<video>.behind/ (stills/<cues>.hf.behind/): only the
@@ -179,10 +181,29 @@ const SETTLED_BEFORE_EXIT = EXIT_SECONDS + 0.1;
 const autoTimes = (placed) =>
   placed.filter((cue) => cue.kind !== "caption").map((cue) => +Math.max(cue.start + (cue.stop - cue.start) / 2, cue.stop - SETTLED_BEFORE_EXIT).toFixed(2));
 
-async function renderStills(target, times, guides, layer, theme) {
+// Each still that catches a cue before it has landed, with the first time that works instead.
+const unsettledStills = (placed, times) =>
+  times.flatMap((time) =>
+    placed
+      .filter((cue) => cue.landed !== undefined && cue.start <= time && time < cue.landed)
+      .map(
+        (cue) =>
+          `${time} s catches the ${cue.kind} before it lands at ${cue.landed.toFixed(2)} s: take it at ${(Math.ceil(cue.landed * 10) / 10).toFixed(1)} s or later`,
+      ),
+  );
+
+// The still times to draw: the ones named, or (auto) each cue's settled moment, the earliest `max` of them.
+function stillTimesFor(placed, times, max = Infinity) {
+  if (times[0] !== "auto") return [...new Set(times.map(Number))];
+  return [...new Set(autoTimes(placed))].sort((first, second) => first - second).slice(0, max);
+}
+
+async function renderStills(target, times, guides, layer, theme, settled, max) {
   // Its own folder: a frame render of the same target may be reading <target>/ (guides must never reach a master).
-  const { video, cueNames, edl, dir, placed } = build(target, { guides, variant: "stills", layer, theme });
-  const stillTimes = [...new Set(times[0] === "auto" ? autoTimes(placed) : times.map(Number))];
+  const { video, cueNames, edl, dir, placed } = build(target, { guides, settled, variant: "stills", layer, theme });
+  const stillTimes = stillTimesFor(placed, times, max);
+  const unsettled = settled ? unsettledStills(placed, stillTimes) : [];
+  if (unsettled.length) throw new Error(unsettled.join("; "));
   // An empty --at means "5 evenly spaced frames" to HyperFrames, so a sheet with only captions takes no stills.
   if (!stillTimes.length) return console.log(`stills: none (${target} has no cue but captions)`);
   const snapshots = path.join(dir, "snapshots");
@@ -236,8 +257,9 @@ async function main() {
   if (args.includes("--events")) await progress.track(target.split(":")[0], "events", () => build(target, { events: true, theme }));
   else {
     const layer = args.includes("--layer") ? option("--layer") : "front";
-    const times = args.filter((arg, index) => !arg.startsWith("--") && !["--layer", "--theme"].includes(args[index - 1]));
-    if (args.includes("--stills")) await renderStills(target, times, args.includes("--guides"), layer, theme);
+    const times = args.filter((arg, index) => !arg.startsWith("--") && !["--layer", "--theme", "--max"].includes(args[index - 1]));
+    const max = args.includes("--max") ? Number(option("--max")) : Infinity;
+    if (args.includes("--stills")) await renderStills(target, times, args.includes("--guides"), layer, theme, args.includes("--settled"), max);
     else await renderFrames(target, layer, theme);
   }
 }
@@ -248,4 +270,4 @@ if (require.main === module)
     process.exit(1);
   });
 
-module.exports = { failureText, framesCaptured };
+module.exports = { failureText, framesCaptured, stillTimesFor, unsettledStills };

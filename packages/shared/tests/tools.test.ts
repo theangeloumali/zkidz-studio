@@ -24,7 +24,7 @@ const EXPECTED_CATALOG = {
   make_caption_phrases: ["auto", true],
   set_captions: ["auto", false],
   validate_spec: ["auto", true],
-  render_preview: ["auto", true],
+  render_preview: ["auto", false], // rebuilds the edit (work/edl, its audio) to draw the stills
   check_motion: ["auto", true],
   make_covers: ["auto", false],
   render_master: ["gate", false],

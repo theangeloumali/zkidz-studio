@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import "./zod-config.ts";
 import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles/app.css";

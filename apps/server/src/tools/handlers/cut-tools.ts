@@ -2,6 +2,7 @@
 // propose_cuts, set_cuts and validate_spec (plan §6.8).
 import { randomUUID } from "node:crypto";
 import { CutSpecSchema, keptSpansOf, type CutSpec } from "@zks/shared";
+import { readCapabilities } from "../../jobs/master-files.ts";
 import { implementTool } from "../define-tool.ts";
 import type { ToolContext } from "../context.ts";
 import { findCutCandidates } from "../cut-candidates.ts";
@@ -80,6 +81,10 @@ async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<s
     if (approvedSpan === undefined) errors.push(`removal ${removalIndex} names candidate ${removal.fromCandidate}, which the user has not approved`);
     else if (reachesOutsideCandidate(removal, approvedSpan)) errors.push(`removal ${removalIndex} reaches outside candidate ${removal.fromCandidate}`);
   });
+  // Every zoom preset is animated; without the probe's composite, render_master refuses it after rendering the overlays.
+  if ((cuts.zooms?.length ?? 0) > 0 && (await readCapabilities(context.studioHome))?.features.zoomExpr === false) {
+    errors.push("this machine cannot render zooms (get_capabilities: zoomExpr is false); remove every zooms entry, snap included");
+  }
   // Approved candidates are the user's own cuts, so only untagged removals can re-apply a rejected one.
   const untaggedRemovals = cuts.removals.filter((removal) => removal.fromCandidate === undefined);
   for (const rejectedId of await findRejectedCandidates(context, untaggedRemovals)) {

@@ -18,6 +18,18 @@ describe("redactSecrets (server logs)", () => {
     expect(redactSecrets('{"detail":"authorization: Bearer secret"}')).toBe('{"detail":"authorization: [REDACTED]"}');
   });
 
+  it("masks the password in a connection URL, encoded or not, and keeps the rest readable", () => {
+    // Every credential slot is a ${placeholder}: a literal one would read as a leaked credential to gitleaks.
+    const password = ["S3cret", "Pw"].join("");
+    const encodedPassword = `${password}%40x`;
+    const masked = "[REDACTED]";
+    expect(redactSecrets(`DATABASE_URL=postgres://admin:${password}@127.0.0.1:45322/postgres failed`)).toBe(
+      `DATABASE_URL=postgres://admin:${masked}@127.0.0.1:45322/postgres failed`,
+    );
+    expect(redactSecrets(`postgresql://u:${encodedPassword}@db.internal/app`)).toBe(`postgresql://u:${masked}@db.internal/app`);
+    expect(redactSecrets("open https://example.com/docs:setup")).toBe("open https://example.com/docs:setup");
+  });
+
   it("masks a bearer token outside any header", () => {
     expect(redactSecrets(`upstream said ${PLANTED_BEARER} was rejected`)).toBe("upstream said Bearer [REDACTED] was rejected");
   });
@@ -61,5 +73,36 @@ describe("redactReport", () => {
 
   it("leaves numbers and booleans untouched", () => {
     expect(redactReport({ freeGb: 42, ok: true })).toEqual({ freeGb: 42, ok: true });
+  });
+});
+
+describe("identity masking (public reports)", () => {
+  const identity = { hostName: "jdoe-laptop", userName: "jdoe" };
+
+  it("masks the hostname and username as whole names only", () => {
+    const redacted = redactText("JDOE-LAPTOP refused jdoe; jdoerr and notjdoe stay", identity);
+    expect(redacted).toBe("<host> refused <user>; jdoerr and notjdoe stay");
+  });
+
+  it("masks dotted-quad IPv4 addresses with valid octets, port and CIDR included", () => {
+    expect(redactText("listen 203.0.113.7:4318, peer 10.0.0.2/24 via 255.255.255.0")).toBe("listen <ip>:4318, peer <ip>/24 via <ip>");
+  });
+
+  it("leaves dotted numbers that cannot be IPv4 addresses", () => {
+    expect(redactText("999.1.1.1 1.2.3 1.2.3.4.5 01.2.3.4")).toBe("999.1.1.1 1.2.3 1.2.3.4.5 01.2.3.4");
+  });
+
+  it("keeps a version with a suffix, like a WSL kernel release, in free text", () => {
+    expect(redactText("Linux 6.18.33.2-microsoft-standard-WSL2")).toBe("Linux 6.18.33.2-microsoft-standard-WSL2");
+  });
+
+  it("keeps a check's id and label when the username matches them, as the node user does in the container image", () => {
+    const report = { checks: [{ id: "node", label: "Node", status: "pass", detail: "/home/node/.local v24" }] };
+    expect(redactReport(report, { userName: "node" })).toEqual({ checks: [{ id: "node", label: "Node", status: "pass", detail: "/home/<user>/.local v24" }] });
+  });
+
+  it("keeps an IPv4-shaped version in an os or version field and masks the same digits elsewhere", () => {
+    const report = { machine: { os: "6.18.33.2", nodeVersion: "26.1.0.1", kernelRelease: "6.18.33.2" }, detail: "bound 6.18.33.2" };
+    expect(redactReport(report, identity)).toEqual({ machine: { os: "6.18.33.2", nodeVersion: "26.1.0.1", kernelRelease: "6.18.33.2" }, detail: "bound <ip>" });
   });
 });

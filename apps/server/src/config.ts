@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { access, chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { APP_PORT, ENV } from "@zks/shared";
+import { APP_PORT, ENV, PREVIEW_PORT } from "@zks/shared";
 import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
 
 export const PROJECT_DIRS = ["media", "work", "progress", "deliverables"] as const;
@@ -17,6 +17,7 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export interface ServerConfig {
   readonly studioHome: string;
   readonly port: number;
+  readonly previewPort: number;
   readonly databaseUrl: string | undefined;
   readonly isContainer: boolean;
   readonly ffprobePath: string;
@@ -25,9 +26,13 @@ export interface ServerConfig {
 export function loadServerConfig(env: Environment): ServerConfig {
   const studioHome = defaultZksHome({ platform: process.platform, homeDir: homedir(), env });
   if (!isAbsolute(studioHome)) throw new Error(`${ENV.home} must be an absolute path`);
+  const port = parsePort(ENV.port, env[ENV.port], APP_PORT);
+  const previewPort = parsePort(ENV.previewPort, env[ENV.previewPort], PREVIEW_PORT);
+  if (previewPort === port) throw new Error(`${ENV.previewPort} must differ from ${ENV.port} (${port}): the preview is a separate origin`);
   return {
     studioHome,
-    port: parsePort(env[ENV.port]),
+    port,
+    previewPort,
     databaseUrl: env[ENV.databaseUrl] || undefined,
     isContainer: env[ENV.container] === "1",
     ffprobePath: ffprobeBeside(pinnedFfmpegPath(env, studioHome)),
@@ -66,10 +71,10 @@ export async function createProjectDirs(studioHome: string, slug: string): Promi
   }
 }
 
-function parsePort(rawPort: string | undefined): number {
-  if (rawPort === undefined || rawPort === "") return APP_PORT;
+function parsePort(envName: string, rawPort: string | undefined, defaultPort: number): number {
+  if (rawPort === undefined || rawPort === "") return defaultPort;
   const port = Number(rawPort);
-  if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) throw new Error(`${ENV.port} must be a port number, got "${rawPort}"`);
+  if (!Number.isInteger(port) || port < 1 || port > MAX_PORT) throw new Error(`${envName} must be a port number, got "${rawPort}"`);
   return port;
 }
 

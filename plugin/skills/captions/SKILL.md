@@ -43,6 +43,7 @@ long-form transcript times, which drift by about half a second. Then add it to t
 ## Placement
 
 The plate sits in the bottom band. It must stay below the speaker's mouth and chin for the whole line, punch-ins and two-line
-captions included. Check with `render_preview` at a few caption times and report anything that covers the face.
+captions included. Check with `render_preview` at a few caption times. Its lower edge defaults to canvas y 1430; give an
+entry `bottom` to move that line's plate, from the style's own value when it names one, lower for a lean-in.
 
 Hands to next: a stored captions version → `reels` (the Reels keeps) and the caption cues the preview and render draw.

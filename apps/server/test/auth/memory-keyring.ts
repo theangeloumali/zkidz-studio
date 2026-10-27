@@ -5,13 +5,15 @@ export function memoryKeyring(stored: string | null = null): KeyringEntry & { st
   return {
     stored,
     read() {
-      return this.stored;
+      return Promise.resolve(this.stored);
     },
     write(secret: string) {
       this.stored = secret;
+      return Promise.resolve();
     },
     remove() {
       this.stored = null;
+      return Promise.resolve();
     },
   };
 }

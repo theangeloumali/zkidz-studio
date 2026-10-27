@@ -51,7 +51,7 @@ export interface PinnedToolsContext {
   lock: ToolsLock;
 }
 
-export const TOOLS_LOCK_PATH = new URL("../../../tools.lock.json", import.meta.url);
+const TOOLS_LOCK_PATH = new URL("../../../tools.lock.json", import.meta.url);
 
 export function isDownload(entry: PlatformEntry): entry is PinnedDownload {
   return "url" in entry;
@@ -89,9 +89,27 @@ export function findOnPath(name: string, extraDirs: string[] = []): string | und
   return undefined;
 }
 
+// `zks setup` installs Chrome through @puppeteer/browsers into its own cache layout, not a hash-named directory; the CLI's
+// tools test pins these paths to computeExecutablePath, as the server cannot load that package.
+const CHROME_LAYOUT: Partial<Record<PlatformKey, { readonly platformDir: string; readonly folder: string; readonly executable: string }>> = {
+  "linux-x64": { platformDir: "linux", folder: "chrome-headless-shell-linux64", executable: "chrome-headless-shell" },
+  "linux-arm64": { platformDir: "linux_arm", folder: "chrome-headless-shell-linux-arm64", executable: "chrome-headless-shell" },
+  "mac-arm64": { platformDir: "mac_arm", folder: "chrome-headless-shell-mac-arm64", executable: "chrome-headless-shell" },
+  "win-x64": { platformDir: "win64", folder: "chrome-headless-shell-win64", executable: "chrome-headless-shell.exe" },
+};
+
+function chromeExecutablePath({ toolsDir, platform, lock }: PinnedToolsContext): string {
+  const layout = CHROME_LAYOUT[platform];
+  if (!layout) throw new Error(`chrome-headless-shell has no install layout for ${platform}`);
+  const name = "chrome-headless-shell";
+  const buildDir = `${layout.platformDir}-${lock.tools[name].version}`;
+  return path.join(toolsDir, name, name, buildDir, layout.folder, layout.executable);
+}
+
 /** Where a pinned download's executable is (or will be once installed); a Homebrew-only pin resolves on PATH. */
 export function pinnedExecutablePath(context: PinnedToolsContext, name: ToolName): string | undefined {
   const entry = pinnedEntry(context, name);
   if (!isDownload(entry)) return findOnPath(entry.executable ?? entry.homebrew);
+  if (name === "chrome-headless-shell") return chromeExecutablePath(context);
   return path.join(pinnedInstallDir(context.toolsDir, name, entry), entry.executable ?? name);
 }

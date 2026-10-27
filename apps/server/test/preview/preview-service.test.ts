@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createPreviewService, type PreviewBuildRequest } from "../../src/preview/preview-service.ts";
@@ -22,7 +22,7 @@ beforeAll(async () => {
       previewPort: 4318,
       buildComposition: async (request) => {
         builds.push(request);
-        edlsAtBuild.push(JSON.parse(await readFile(join(request.projectRoot, "work/edl", `${request.videoId}.json`), "utf8")));
+        edlsAtBuild.push(JSON.parse(await readFile(join(request.projectRoot, "work/preview", `${request.videoId}.edl.json`), "utf8")));
         if (request.videoId === failingVideoId) throw new Error("build failed");
       },
     }),
@@ -118,6 +118,20 @@ describe("the composition rebuild", () => {
 
 describe("the engine EDL a build reads", () => {
   const edlBuiltFor = (fixture: ToolFixture) => edlsAtBuild.filter((_edl, index) => builds[index]?.projectRoot === fixture.projectRoot);
+
+  // QC, the motion check and covers read the render's EDL; a spec save after a render must not replace it.
+  it("leaves the render's own EDL in work/edl untouched", async () => {
+    const fixture = await fixtureWithCuts();
+    const renderEdlPath = join(fixture.projectRoot, "work/edl/v1.json");
+    const renderEdl = JSON.stringify({ frames: 1485, punch_crop: "crop", base: "v1", segments: [] });
+    await mkdir(join(fixture.projectRoot, "work/edl"), { recursive: true });
+    await writeFile(renderEdlPath, renderEdl);
+
+    await getRequest(server, edlPath(fixture));
+    await vi.waitFor(() => expect(edlBuiltFor(fixture)).toHaveLength(1));
+
+    expect(await readFile(renderEdlPath, "utf8")).toBe(renderEdl);
+  });
 
   it("is written from the current cuts, frame-snapped, before the build", async () => {
     const fixture = await fixtureWithCuts();

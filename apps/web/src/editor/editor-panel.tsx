@@ -1,8 +1,8 @@
 // Created by The Angelo Umali.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CueSheetSchema, CutSpecSchema, keptSpansOf, type PlayerEdl } from "@zks/shared";
+import { API_ROUTES, CueSheetSchema, CutSpecSchema, keptSpansOf, type PlayerEdl } from "@zks/shared";
 import { useEffect, useMemo, useState } from "react";
-import { decideCutCandidates, fetchSpecs, restoreSpecVersion, type SpecAddress } from "../api/client.ts";
+import { decideCutCandidates, fetchSpecs, restoreSpecVersion, routeUrl, type SpecAddress } from "../api/client.ts";
 import { playerEdlQuery, queryKeys, specsQuery, specVersionQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { useEventsStore } from "../events/store.ts";
@@ -50,6 +50,7 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
   const cutsVersion = useQuery({ ...specVersionQuery(cutsAddress, selectedVersion ?? undefined), enabled: cutsSummary !== undefined });
   const cuesVersion = useQuery({ ...specVersionQuery({ projectId, videoId: cuesSummary?.videoId ?? "", kind: "cues" }), enabled: cuesSummary !== undefined });
 
+  const footageUrl = cutsSummary === undefined ? undefined : routeUrl(API_ROUTES.streamProxy.path, { projectId, videoId: cutsSummary.videoId });
   const cuts = useMemo(() => {
     const parsed = CutSpecSchema.safeParse(cutsVersion.data?.content);
     return parsed.success ? parsed.data : null;
@@ -104,7 +105,7 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
           <h3 className="text-ui font-semibold">Preview</h3>
           <p className="text-ui-sm text-copy-muted">Live preview · not a render</p>
         </div>
-        <PreviewPlayer cuts={cuts} spans={spans} composition={composition} clock={clock} />
+        <PreviewPlayer cuts={cuts} spans={spans} composition={composition} clock={clock} footageUrl={footageUrl} />
       </div>
       <div className="flex flex-col gap-3">
         <Timeline

@@ -60,7 +60,7 @@ class TranscribeTests(unittest.TestCase):
     def test_words_come_back_in_source_seconds_as_the_studio_reads_them(self):
         work = Path(tempfile.mkdtemp(prefix="zks-words-"))
 
-        def fake_main(wav, destination, _chunks, language, model):
+        def fake_main(wav, destination, _chunks, language, model, stage=None):
             self.assertEqual((wav, language, model), ("audio/v1.wav", "auto", "base"))
             (work / destination).parent.mkdir(exist_ok=True)  # where the real transcribe.main writes its JSONL
             return [{"start": 400, "end": 800, "text": " we"}, {"start": 1200, "end": 1650, "text": " ship"}], 1
@@ -132,6 +132,17 @@ class IngestAndEditTests(unittest.TestCase):
         self.assertTrue((self.work / "audio" / "v1r_edit.wav").exists())
         self.assertTrue((self.work / "derived" / "cuts" / "v1r.json").exists())
         self.assertFalse((self.work / "cuts" / "v1r.json").exists())
+
+    def test_a_pinned_reel_keep_pins_the_reel_removals_on_its_edges(self):
+        (self.work / "cuts").mkdir(exist_ok=True)
+        (self.work / "reels").mkdir(exist_ok=True)
+        (self.work / "cuts" / "v1.json").write_text(json.dumps(STUDIO_CUTS), encoding="utf-8")
+        keep = [{"at": 0.2, "end": 0.8, "pin": True}]
+        (self.work / "reels" / "v1.json").write_text(json.dumps({"schemaVersion": 1, "baseVideoId": "v1", "keep": keep}), encoding="utf-8")
+        code, _, stderr = run_engine(self.work, "edit", "--video", "v1r", "--source", str(self.work / "sources" / "v1.mkv"))
+        self.assertEqual(code, 0, stderr)
+        reel = json.loads((self.work / "derived" / "cuts" / "v1r.json").read_text(encoding="utf-8"))
+        self.assertEqual([removal[:2] + removal[3:] for removal in reel["remove"][1:]], [[0.0, 0.2, "pin"], [0.8, 2, "pin"]])
 
     def test_the_edit_stage_without_a_cut_spec_is_a_spec_error(self):
         empty = Path(tempfile.mkdtemp(prefix="zks-empty-", dir=self.root)) / "work"

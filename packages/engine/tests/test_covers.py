@@ -5,12 +5,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
 from support import has_ffmpeg, make_edl, seconds  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import covers, ffio
+from zks_engine import covers, ffio, render
 from zks_engine.specs.gates import GateFailed
 
 EDL = make_edl([(0, 60), (90, 180)])
@@ -26,6 +27,16 @@ def read_rgb(path):
 def detail(pixels, box):
     x, y, w, h = box
     return float(np.abs(np.diff(pixels[y:y + h, x:x + w], axis=1)).mean())
+
+
+class DrawStillsTests(unittest.TestCase):
+    def test_a_cover_time_before_the_title_lands_is_a_gate_naming_the_time_that_works(self):
+        refusal = "38.3 s catches the hookTitle before it lands at 38.79 s: take it at 38.8 s or later"
+        failed = subprocess.CompletedProcess([], 1, stderr=f"CUE WARNING: snapped\n{refusal}\n")
+        with mock.patch.object(render.subprocess, "run", return_value=failed) as run:
+            with self.assertRaisesRegex(GateFailed, f"^stills: {refusal}$"):
+                covers.draw_stills("v1", [38.3], ["v1", "v1-cover"])
+        self.assertIn("--settled", run.call_args.args[0])
 
 
 class BoxTests(unittest.TestCase):
@@ -54,7 +65,7 @@ class MakeCoversTests(unittest.TestCase):
         (self.work / "cuts" / "v1.json").write_text(json.dumps({"blur": LEGACY_BLUR}), encoding="utf-8")
         self.drawn = []
 
-    def draw_stills(self, video, times, cues, work):
+    def draw_stills(self, video, times, cues):
         """Stands in for hf/render.js --stills: a still of fine random cells per time."""
         self.drawn.append((video, times, cues))
         stills = {}

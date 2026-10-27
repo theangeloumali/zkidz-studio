@@ -46,4 +46,8 @@ describe("mountedWindow", () => {
   it("snaps to a quarter of the viewport, so a zoomed-out window steps in minutes, not 10 s", () => {
     expect(mountedWindow(10, 610)).toEqual({ startS: -600, endS: 1350 });
   });
+
+  it("mounts just the snapped viewport when asked for no overscan, as a zoom gesture does", () => {
+    expect(mountedWindow(10, 610, 0)).toEqual({ startS: 0, endS: 750 });
+  });
 });

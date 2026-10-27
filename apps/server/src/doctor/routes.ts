@@ -1,6 +1,8 @@
 // Created by The Angelo Umali.
-// GET /api/doctor: the CLI's checks (already redacted by `doctor --json`) in the web's shape, cached until ?refresh=1.
+// GET /api/doctor: the CLI's checks (redacted by `doctor --json`) plus the server's own database check, in the web's shape,
+// cached until ?refresh=1. The database row stays unredacted: it names no secret, and this page is only served on loopback.
 import { API_ROUTES, type DoctorCheckSchema } from "@zks/shared";
+import type { DatabaseCheck } from "@zks/shared/node";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { HttpError, parseOrBadRequest } from "../http/http-error.ts";
@@ -11,6 +13,8 @@ type DoctorCheck = z.infer<typeof DoctorCheckSchema>;
 
 export interface DoctorRouteDeps {
   readonly runDoctor: DoctorRunner;
+  /** Run here, against the server's own DATABASE_URL, which the doctor child is never given. */
+  readonly checkDatabase: () => Promise<DatabaseCheck>;
   readonly logger: Logger;
 }
 
@@ -18,6 +22,8 @@ export interface DoctorRouteDeps {
 const CliReportSchema = z.object({
   checks: z.array(z.object({ id: z.string().min(1), status: z.enum(["ok", "warn", "fail"]), detail: z.string(), fix: z.string().optional() })),
 });
+// What the CLI prints when the doctor itself crashed; its message is the only clue, so it goes to the log.
+const CliFatalSchema = z.object({ ok: z.literal(false), error: z.string() });
 const WEB_STATUS = { ok: "pass", warn: "warn", fail: "fail" } as const;
 const LABELS: Readonly<Record<string, string>> = {
   node: "Node.js",
@@ -33,9 +39,11 @@ const LABELS: Readonly<Record<string, string>> = {
   "node-pty": "Terminal support",
   disk: "Disk space",
   wsl: "WSL filesystem",
+  database: "Data backend",
 };
-// The CLI probes the server's own port, which this server holds, so the row would always fail.
-const SERVER_HELD_CHECKS = new Set(["port"]);
+// The CLI probes the server's own port, which this server holds, so that row would always fail; its database row is
+// blind (no DATABASE_URL in the child), so the server's own check replaces it.
+const SERVER_HELD_CHECKS = new Set(["port", "database"]);
 
 export function registerDoctorRoutes(app: Hono, deps: DoctorRouteDeps): void {
   let cached: Promise<DoctorCheck[]> | undefined;
@@ -56,18 +64,22 @@ export function registerDoctorRoutes(app: Hono, deps: DoctorRouteDeps): void {
   });
 }
 
+function parseCliReport(raw: unknown) {
+  const fatal = CliFatalSchema.safeParse(raw);
+  if (fatal.success) throw new Error(`zks doctor could not run: ${fatal.data.error}`);
+  return CliReportSchema.parse(raw);
+}
+
 async function runChecks(deps: DoctorRouteDeps): Promise<DoctorCheck[]> {
   try {
-    const report = CliReportSchema.parse(await deps.runDoctor());
-    return report.checks
-      .filter((check) => !SERVER_HELD_CHECKS.has(check.id))
-      .map(({ id, status, detail, fix }) => ({
-        id,
-        label: LABELS[id] ?? id,
-        status: WEB_STATUS[status],
-        detail,
-        ...(fix === undefined ? {} : { fix }),
-      }));
+    const [report, database] = await Promise.all([deps.runDoctor().then(parseCliReport), deps.checkDatabase()]);
+    return [...report.checks.filter((check) => !SERVER_HELD_CHECKS.has(check.id)), database].map(({ id, status, detail, fix }) => ({
+      id,
+      label: LABELS[id] ?? id,
+      status: WEB_STATUS[status],
+      detail,
+      ...(fix === undefined ? {} : { fix }),
+    }));
   } catch (error) {
     deps.logger.error("doctor checks failed", { error });
     throw new HttpError(500, "The system checks could not run; see the server log");

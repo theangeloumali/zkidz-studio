@@ -2,13 +2,12 @@
 // Watching the agent build against the real preview build: spec writes reach the 4318 frame within 3 s, playback seeks
 // it, hostile cue text stays text, restore swaps the preview, rejected cuts stay out, and the timeline holds 60 fps.
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expectWithinBudget, percentile95 } from "../perf/budgets.ts";
 import { CUE_CALL_TEXT, HOSTILE_CUE_TEXT, type HarnessProject } from "./harness/script.ts";
 
 const CATCH_UP_MS = 3_000;
 /** For waits where the build is setup, not the thing measured. */
 const BUILD_WAIT_MS = 60_000;
-/** One frame at 60 Hz (plan §9.2), plus Chrome's 0.1 ms performance.now() coarsening: an on-time frame reads 16.6-16.8. */
-const FRAME_BUDGET_MS = 16.7 + 0.1;
 const FRAME_SAMPLE_MS = 3_000;
 /** Spec §6.1: the timeline never holds more than this many DOM nodes, at any zoom. */
 const TIMELINE_NODE_CAP = 600;
@@ -321,10 +320,8 @@ function sampleFrames(page: Page, driver: FrameDriver) {
   );
 }
 
-function expectSmooth({ frameDeltasMs, longTaskMs }: Awaited<ReturnType<typeof sampleFrames>>) {
-  const sorted = frameDeltasMs.toSorted((first, second) => first - second);
-  const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Infinity;
-  expect(p95Ms, `p95 of ${sorted.length} frames`).toBeLessThanOrEqual(FRAME_BUDGET_MS);
+function expectSmooth(budget: "timelineScroll" | "timelineZoom", { frameDeltasMs, longTaskMs }: Awaited<ReturnType<typeof sampleFrames>>) {
+  expectWithinBudget(budget, percentile95(frameDeltasMs));
   expect(longTaskMs, "long tasks over 50 ms").toEqual([]);
 }
 
@@ -334,7 +331,7 @@ test("a 2,000-cue timeline scrolls and plays inside one 60 Hz frame at p95", asy
   await openEditor(page, request, (project) => project.bulkProjectId);
   await expect(page.getByTestId("lane-cues").getByRole("listitem").first()).toBeVisible();
   await page.getByRole("button", { name: "Play" }).click();
-  expectSmooth(await sampleFrames(page, "scroll"));
+  expectSmooth("timelineScroll", await sampleFrames(page, "scroll"));
 });
 
 test("a 2,000-cue timeline zooms Fit → 40 px/s → Fit inside one 60 Hz frame at p95, under 600 nodes at each end", async ({ page, request }) => {
@@ -346,6 +343,6 @@ test("a 2,000-cue timeline zooms Fit → 40 px/s → Fit inside one 60 Hz frame 
   await expect(page.getByRole("button", { name: "Fit" })).toBeDisabled();
   expect(await timelineNodeCount(page)).toBeLessThanOrEqual(TIMELINE_NODE_CAP);
 
-  expectSmooth(await sampleFrames(page, "zoom"));
+  expectSmooth("timelineZoom", await sampleFrames(page, "zoom"));
   await expect(page.getByRole("button", { name: "Fit" })).toBeDisabled();
 });

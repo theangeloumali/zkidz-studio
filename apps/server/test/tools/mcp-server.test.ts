@@ -17,7 +17,7 @@ afterAll(async () => {
 describe("createStudioMcpServer", () => {
   it("serves the studio catalog in process", async () => {
     const fixture = await createToolFixture(server);
-    const mcpServer = createStudioMcpServer(fixture.context);
+    const mcpServer = await createStudioMcpServer(fixture.context);
     expect(mcpServer).toMatchObject({ type: "sdk", name: "studio" });
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

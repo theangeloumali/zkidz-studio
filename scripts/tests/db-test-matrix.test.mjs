@@ -1,23 +1,24 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { SUPABASE_DB_PORT } from "@zks/shared";
-import { DEFAULT_SUPABASE_TEST_URL, buildMatrixLegs } from "../db-test-matrix.mjs";
+import { buildMatrixLegs } from "../db-test-matrix.mjs";
+
+const STACK_URL = "postgresql://postgres:<per-install>@127.0.0.1:45322/postgres";
 
 describe("buildMatrixLegs", () => {
-  it("runs PGlite first with DATABASE_URL removed, then Postgres", () => {
-    const legs = buildMatrixLegs({ PATH: "/bin", DATABASE_URL: "postgresql://stray" });
+  it("runs PGlite first with DATABASE_URL removed, then the local Supabase stack's URL", () => {
+    const legs = buildMatrixLegs({ PATH: "/bin", DATABASE_URL: "postgresql://stray" }, () => STACK_URL);
 
     expect(legs.map((leg) => leg.label)).toEqual(["pglite", "postgres"]);
     expect(legs[0]?.env).toEqual({ PATH: "/bin" });
-    expect(legs[1]?.env).toEqual({ PATH: "/bin", DATABASE_URL: DEFAULT_SUPABASE_TEST_URL });
+    expect(legs[1]?.env).toEqual({ PATH: "/bin", DATABASE_URL: STACK_URL });
   });
 
-  it("targets the loopback Supabase port by default and honours an override", () => {
-    expect(DEFAULT_SUPABASE_TEST_URL).toBe("postgresql://postgres:postgres@127.0.0.1:45322/postgres");
-    expect(SUPABASE_DB_PORT).toBe(45322);
+  it("honours ZKS_TEST_DATABASE_URL without asking the stack", () => {
+    const override = "postgresql://postgres:<other>@127.0.0.1:6543/postgres";
+    const legs = buildMatrixLegs({ ZKS_TEST_DATABASE_URL: override }, () => {
+      throw new Error("stack must not be queried");
+    });
 
-    const legs = buildMatrixLegs({ ZKS_TEST_DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:6543/postgres" });
-
-    expect(legs[1]?.env.DATABASE_URL).toBe("postgresql://postgres:postgres@127.0.0.1:6543/postgres");
+    expect(legs[1]?.env.DATABASE_URL).toBe(override);
   });
 });

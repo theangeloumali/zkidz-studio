@@ -1,9 +1,25 @@
 // Created by The Angelo Umali.
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkDisk, listsEncoder } from "../src/checks.ts";
-import { doctorExitCode, formatDoctorJson, formatFatalError, type CheckResult } from "../src/doctor.ts";
+import { checkDisk, encodersCheck } from "../src/checks.ts";
+import { doctorExitCode, formatDoctorJson, formatFatalError, reportRoots, type CheckResult } from "../src/doctor.ts";
+import type { CommandRunner } from "../src/exec.ts";
+import { listsEncoder, probeEveryEncoder } from "../src/gpu.ts";
+
+const ENCODER_LISTING = [
+  " V....D hevc_nvenc  NVIDIA NVENC hevc encoder",
+  " V....D hevc_vaapi  H.265/HEVC (VAAPI)",
+  " V....D libx265  libx265 H.265 / HEVC",
+].join("\n");
+
+function fakeRunner(passingEncoders: string[], calls: string[][] = []): CommandRunner {
+  return (_command, args) => {
+    calls.push(args);
+    const encoder = args[args.indexOf("-c:v") + 1] ?? "";
+    return { code: passingEncoders.includes(encoder) ? 0 : 1, stdout: "", stderr: "" };
+  };
+}
 
 describe("listsEncoder", () => {
   it("matches a whole encoder name in ffmpeg -encoders, not a prefix", () => {
@@ -11,6 +27,45 @@ describe("listsEncoder", () => {
     expect(listsEncoder(listing, "hevc_nvenc")).toBe(true);
     expect(listsEncoder(listing, "hevc")).toBe(false);
     expect(listsEncoder(listing, "hevc_qsv")).toBe(false);
+  });
+});
+
+describe("probeEveryEncoder", () => {
+  // --render: a renderer may pick any listed encoder, so each one gets its own test encode.
+  it("test-encodes every listed encoder instead of stopping at the first pass", () => {
+    const attempts = probeEveryEncoder("ffmpeg", ENCODER_LISTING, fakeRunner(["hevc_nvenc", "libx265"]));
+    expect(attempts).toEqual([
+      { backend: "nvidia", encoder: "hevc_nvenc", ok: true },
+      { backend: "vaapi", encoder: "hevc_vaapi", ok: false },
+      { backend: "cpu", encoder: "libx265", ok: true },
+    ]);
+  });
+
+  it("uploads frames to the render node for VAAPI", () => {
+    const calls: string[][] = [];
+    probeEveryEncoder("ffmpeg", ENCODER_LISTING, fakeRunner([], calls));
+    const vaapiCall = calls.find((args) => args.includes("hevc_vaapi"));
+    expect(vaapiCall).toEqual(expect.arrayContaining(["-vaapi_device", "/dev/dri/renderD128", "format=nv12,hwupload"]));
+  });
+
+  it("skips encoders the build does not list", () => {
+    const calls: string[][] = [];
+    probeEveryEncoder("ffmpeg", ENCODER_LISTING, fakeRunner([], calls));
+    expect(calls.some((args) => args.includes("hevc_qsv"))).toBe(false);
+  });
+});
+
+describe("encodersCheck", () => {
+  it("passes when any encoder works and lists the ones that do", () => {
+    const check = encodersCheck([
+      { backend: "nvidia", encoder: "hevc_nvenc", ok: true },
+      { backend: "qsv", encoder: "hevc_qsv", ok: false },
+    ]);
+    expect(check).toMatchObject({ id: "encoders", status: "ok", required: false, detail: "1 of 2 listed encoders work: hevc_nvenc" });
+  });
+
+  it("fails, without failing doctor, when no listed encoder works", () => {
+    expect(encodersCheck([{ backend: "cpu", encoder: "libx264", ok: false }])).toMatchObject({ status: "fail", required: false });
   });
 });
 
@@ -48,6 +103,13 @@ describe("doctor report", () => {
     expect(json).not.toContain("jdoe");
     expect(json).toContain("$ZKS_HOME/tools/ffmpeg");
     expect(json).toContain("~/.cache");
+  });
+
+  it("masks this machine's hostname, username and IPv4 addresses by default", () => {
+    const { username } = os.userInfo();
+    const detail = `bound 203.0.113.7 on ${os.hostname()} as ${username}`;
+    const json = formatDoctorJson([{ id: "port", status: "warn", required: false, detail }], reportRoots());
+    for (const identifying of [os.hostname(), username, "203.0.113.7"]) expect(json).not.toContain(identifying);
   });
 });
 

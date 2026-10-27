@@ -5,15 +5,21 @@
 import contextlib
 import json
 import os
+import shutil
+import tempfile
+from pathlib import Path
 
 from .. import covers, pipeline, qc
 from ..pipeline import command_input, snapshot_input
 from ..qc.motion import SUBJECT_REGION
+from ..specs import SpecError
 from ..specs.gates import GateFailed
-from . import render_master, stages
+from ..specs.paths import video_id
+from . import cue_sheet_names, render_master, render_stills, stages
 from .stages import engine_steps
 
 QUALITIES = ("draft", "final", "4k")
+MAX_PREVIEW_STILLS = 4
 
 
 def clip_at(value):
@@ -85,7 +91,8 @@ def qc_master_payload(args):
     words = json.loads(command_input(args.words).read_text(encoding="utf-8"))
     recorded = render_inputs_arg(args.render_inputs)
     with reading_specs(snapshot):
-        return qc.qc_master(args.video, master, source, words, qc.whisper_transcriber(args.language, args.model), qc.work_relative(snapshot), recorded)
+        return qc.qc_master(args.video, master, source, words, qc.whisper_transcriber(args.language, args.model), qc.work_relative(snapshot), recorded,
+                            qc.source_hearing(args.language, args.model))
 
 
 def check_motion_payload(args):
@@ -107,6 +114,52 @@ def make_covers_payload(args):
 
 def qc_status_payload(args):
     return {"ok": True, **qc.assert_exportable(args.video)}
+
+
+def render_preview_payload(args):
+    """Overlay stills of the current edit: the edit stage first, so the stills show the specs as they are now."""
+    if args.at and len(args.at) > MAX_PREVIEW_STILLS:
+        raise SpecError(f"{len(args.at)} --at times: at most {MAX_PREVIEW_STILLS} stills per preview")
+    video = video_id(args.video)
+    with keeping_render_files(video):
+        return draw_preview(video, args)
+
+
+@contextlib.contextmanager
+def keeping_render_files(video):
+    """The preview builds its own edit; the files the last render's edit stage wrote, which QC judges that master against,
+    are moved aside first and put back byte for byte after, even when the preview fails."""
+    work, kept = pipeline.WORK, Path(tempfile.mkdtemp(prefix=".preview-keep-", dir=pipeline.WORK))
+    names = [name for name in stages.edit_stage_files(video) if (work / name).exists()]
+    try:
+        for name in names:
+            (kept / name).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(work / name, kept / name)
+        yield
+    finally:
+        for name in stages.edit_stage_files(video):
+            (work / name).unlink(missing_ok=True)
+        for name in names:
+            os.replace(kept / name, work / name)
+        shutil.rmtree(kept, ignore_errors=True)
+
+
+def draw_preview(video, args):
+    stages.edit_stage(video, args.source, with_audio=False)  # stills need the EDL and cues, not the edit's -14 LUFS audio
+    names = cue_sheet_names(video, pipeline.WORK)
+    times = [f"{at:g}" for at in args.at] if args.at else ["auto"]
+    # render.js skips a sheet with nothing but captions without clearing the folder, so an earlier preview's stills linger.
+    shutil.rmtree(pipeline.WORK / "stills" / f"{'+'.join(names)}.hf", ignore_errors=True)
+    with engine_steps():
+        folder = render_stills(video, names, times, *(["--guides"] if args.guides else []),
+                               *([] if args.at else ["--max", str(MAX_PREVIEW_STILLS)]))
+    if args.at:
+        stills = {at: folder / f"t{at:g}.png" for at in args.at}
+    else:  # render.js names each still t<seconds>.png after the times it picked
+        stills = dict(sorted((float(png.stem[1:]), png) for png in folder.glob("t*.png"))[:MAX_PREVIEW_STILLS])
+    if missing := [png.name for png in stills.values() if not png.is_file()]:
+        raise GateFailed(f"render.js did not write {', '.join(missing)}")
+    return {"stills": [{"at": at, "path": png.relative_to(pipeline.WORK).as_posix()} for at, png in stills.items()]}
 
 
 def register(commands):
@@ -140,6 +193,11 @@ def register(commands):
     cover.set_defaults(handler=make_covers_payload)
     status = commands.add_parser("qc-status", help="fails unless the latest QC report passed: export runs it first")
     status.set_defaults(handler=qc_status_payload)
-    for command in (edit, master, check, motion, cover, status):
+    preview = commands.add_parser("render-preview", help="the edit stage, then overlay stills of the edit at up to 4 times")
+    preview.add_argument("--source", required=True, help="the file the cut spec's sourceAssetId names")
+    preview.add_argument("--at", type=float, action="append", help="edited seconds, one per still; default: render.js picks (first 4)")
+    preview.add_argument("--guides", action="store_true", help="draw the safe-area guides on the stills")
+    preview.set_defaults(handler=render_preview_payload)
+    for command in (edit, master, check, motion, cover, status, preview):
         command.add_argument("--video", required=True)
         command.add_argument("--json", action="store_true", required=True, help="print JSON (the only output format)")

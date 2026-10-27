@@ -7,7 +7,7 @@ const { unit, box, drawable } = require("../brand/html");
 const { rise, pop, show, hide } = require("../fx/motion");
 const { cardLift, cardIn, cardOut, styleOf } = require("../fx/paper");
 const { scrim } = require("../fx/light");
-const { drawOn, glow, penReveal } = require("../fx/ink");
+const { GLOW_SECONDS, drawOn, glow, penReveal } = require("../fx/ink");
 const { words, tracking, swipe } = require("../fx/kinetic");
 const { spring } = require("../fx/springs");
 
@@ -57,6 +57,8 @@ function lineWithNode(cue, name, [x, y], length, drawAt, at, { appear = show, gl
 }
 
 const ringAt = (at, travel) => at + travel.duration * 0.6;
+// When a line drawing on from `at` has reached its tip and its node's first ring has faded.
+const lineLanded = (at) => Math.max(at + spring().duration, ringAt(at, spring()) + GLOW_SECONDS);
 const ringRepeat = (at, travel, until) =>
   until ? { repeat: Math.max(0, Math.floor((until - ringAt(at, travel) - 0.5) / (0.5 + PULSE_EVERY))), repeatDelay: PULSE_EVERY } : {};
 
@@ -254,6 +256,7 @@ module.exports = {
   drawn,
   after,
   lineWithNode,
+  lineLanded,
   goldRule,
   card,
   rising,

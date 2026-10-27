@@ -34,7 +34,7 @@ async function seedWork(relPath: string, content: unknown) {
 
 describe("the composition builder", () => {
   it("builds the engine's preview and the preview origin serves it", async () => {
-    await seedWork("work/edl/v1.json", EDL);
+    await seedWork("work/preview/v1.edl.json", EDL);
     await seedWork("work/cues/v1.json", [{ kind: "keyword", at: 3, end: 5, text: "word" }]);
     const buildComposition = createCompositionBuilder({ workerScriptPath: PREVIEW_WORKER, studioHome: server.studioHome });
 

@@ -75,14 +75,21 @@ export async function findLatestMaster(projectRoot: string, videoId: string): Pr
   return latest?.master;
 }
 
-/** The probed render profile, or undefined while capabilities.json is absent or unreadable. */
-export async function readRenderProfile(studioHome: string): Promise<RenderProfile | undefined> {
+type Capabilities = z.infer<typeof STUDIO_TOOLS.get_capabilities.output>;
+
+/** The hardware probe's result, or undefined while capabilities.json is absent or unreadable. */
+export async function readCapabilities(studioHome: string): Promise<Capabilities | undefined> {
   const capabilitiesText = await readFile(join(studioHome, CAPABILITIES_FILE), "utf8").catch(() => undefined);
   if (capabilitiesText === undefined) return undefined;
   try {
     const capabilities = STUDIO_TOOLS.get_capabilities.output.safeParse(JSON.parse(capabilitiesText));
-    return capabilities.success ? capabilities.data.profile : undefined;
+    return capabilities.success ? capabilities.data : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** The probed render profile, or undefined while capabilities.json is absent or unreadable. */
+export async function readRenderProfile(studioHome: string): Promise<RenderProfile | undefined> {
+  return (await readCapabilities(studioHome))?.profile;
 }

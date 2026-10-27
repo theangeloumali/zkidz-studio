@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
-// work/edl/<videoId>.json, the EDL the engine's preview build maps cues through, derived from the current cut spec.
+// work/preview/<videoId>.edl.json, the EDL the engine's preview build maps cues through, derived from the current cut spec.
+// Not work/edl/: that is the render's EDL, which QC, the motion check and covers judge the master against.
 import { join } from "node:path";
 import { keptSpansOf, type CutSpec } from "@zks/shared";
 import { writeFileAtomically } from "../specs/spec-files.ts";
@@ -39,5 +40,5 @@ function engineEdlOf(cuts: CutSpec): EngineEdl {
 }
 
 export function writePreviewEdl(projectRoot: string, videoId: string, cuts: CutSpec): Promise<void> {
-  return writeFileAtomically(join(projectRoot, "work", "edl", `${videoId}.json`), `${JSON.stringify(engineEdlOf(cuts))}\n`);
+  return writeFileAtomically(join(projectRoot, "work", "preview", `${videoId}.edl.json`), `${JSON.stringify(engineEdlOf(cuts))}\n`);
 }

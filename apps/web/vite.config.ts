@@ -19,7 +19,7 @@ export default defineConfig({
     setupFiles: ["./tests/setup.ts"],
     css: false,
     // A fresh jsdom per file costs up to 61 s over the 9p mount under ci:local load; sharing forks pays it once per worker.
-    // Shuffled single-fork runs showed no state leaking between files.
+    // Modules are shared across files too: a test that mutates module state resets it (see csrf-handoff.test.ts).
     isolate: false,
     // Playwright owns e2e/; vitest would run its specs under jsdom.
     exclude: [...configDefaults.exclude, "e2e/**"],

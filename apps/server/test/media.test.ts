@@ -141,6 +141,36 @@ describe.skipIf(!ffmpegAvailable)("GET /api/media/:assetId", () => {
   });
 });
 
+// Plan §8.4: the live preview plays the 1080 H.264 proxy. The original can be a phone's 4K HEVC, which Chrome cannot decode.
+describe("GET /api/projects/:projectId/videos/:videoId/proxy", () => {
+  async function projectWithProxy() {
+    const project = await insertProject(server);
+    const mezz = join(projectDir(server.studioHome, project.slug), "work", "mezz");
+    await mkdir(mezz, { recursive: true });
+    const bytes = Buffer.from("proxy bytes, h264 in an mp4");
+    await writeFile(join(mezz, "v1.mp4"), bytes);
+    return { project, bytes };
+  }
+
+  it("serves the video's proxy from work/mezz with byte ranges", async () => {
+    const { project, bytes } = await projectWithProxy();
+    const whole = await getRequest(server, `/api/projects/${project.id}/videos/v1/proxy`);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toBe("video/mp4");
+    expect(Buffer.from(await whole.arrayBuffer())).toEqual(bytes);
+    const part = await getRequest(server, `/api/projects/${project.id}/videos/v1/proxy`, { range: "bytes=0-4" });
+    expect(part.status).toBe(206);
+    expect(await part.text()).toBe("proxy");
+  });
+
+  it("answers 404 before the proxy exists, and for a malformed video or project id", async () => {
+    const { project } = await projectWithProxy();
+    expect((await getRequest(server, `/api/projects/${project.id}/videos/v2/proxy`)).status).toBe(404);
+    expect((await getRequest(server, `/api/projects/${project.id}/videos/..%2F..%2Fv1/proxy`)).status).toBe(404);
+    expect((await getRequest(server, `/api/projects/${crypto.randomUUID()}/videos/v1/proxy`)).status).toBe(404);
+  });
+});
+
 describe("GET /api/fs/list", () => {
   it("lists folders first, hides dot entries and ZKS_HOME, and reports file sizes", async () => {
     const browsed = join(server.scratchDir, "browse");

@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,7 @@ import { implementTool, studioTwinCatalog } from "../../src/tools/catalog.ts";
 import { studioMcpUrl } from "../../src/tools/mcp-paths.ts";
 import { registerStudioToolRoutes, type StudioToolSession } from "../../src/tools/routes.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
+import { fakeEngine, withEngine } from "./fake-engine.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, type ToolFixture } from "./tool-fixtures.ts";
 
 const TWIN_PATH = fileURLToPath(new URL("../../bin/zks-mcp.mjs", import.meta.url));
@@ -49,7 +50,7 @@ beforeAll(async () => {
   registerStudioToolRoutes(app, {
     findSession: (sessionId) => sessions.get(sessionId),
     tokensMatch: (expected, presented) => expected === presented,
-    tools: [...studioTwinCatalog(), fakeDeleteAsset],
+    tools: [...studioTwinCatalog().filter((studioTool) => studioTool.name !== "delete_asset"), fakeDeleteAsset],
   });
 });
 afterAll(async () => {
@@ -88,6 +89,23 @@ describe("zks-mcp stdio twin", { timeout: 60_000 }, () => {
     expect(stored.structuredContent).toMatchObject({ version: 1 });
     const escaped = await client.callTool({ name: "set_cuts", arguments: { cuts: { ...cutSpecFor(asset.id), source: "/etc/passwd" } } });
     expect(escaped.isError).toBe(true);
+    await client.close();
+  });
+
+  it("carries render_preview's PNG image blocks through unchanged", async () => {
+    const png = Buffer.from("png bytes");
+    const { engine } = fakeEngine(async (request) => {
+      await mkdir(join(request.workDir, "stills"), { recursive: true });
+      await writeFile(join(request.workDir, "stills", "t1.png"), png);
+      return { stills: [{ at: 1, path: "stills/t1.png" }] };
+    });
+    const fixture = withEngine(await createToolFixture(server), engine);
+    const asset = await insertCameraAsset(fixture);
+    const client = await connectTwin(addSession(fixture));
+    expect((await client.callTool({ name: "set_cuts", arguments: { cuts: cutSpecFor(asset.id) } })).isError).toBeFalsy();
+    const preview = await client.callTool({ name: "render_preview", arguments: { at: [1] } });
+    expect(preview.structuredContent).toEqual({ stills: [{ at: 1, path: "work/stills/t1.png" }] });
+    expect(preview.content).toContainEqual({ type: "image", data: png.toString("base64"), mimeType: "image/png" });
     await client.close();
   });
 

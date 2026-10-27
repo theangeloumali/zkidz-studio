@@ -41,7 +41,7 @@ function instantExitPtyHost(): PtyHost {
         },
       };
       ptys.set(sessionId, pty);
-      return pty;
+      return Promise.resolve(pty);
     },
     get: (sessionId) => ptys.get(sessionId),
   };

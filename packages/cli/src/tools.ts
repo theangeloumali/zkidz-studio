@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { Browser, BrowserPlatform, computeExecutablePath, getDownloadUrl, install } from "@puppeteer/browsers";
+import { Browser, BrowserPlatform, getDownloadUrl, install } from "@puppeteer/browsers";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { ENV } from "@zks/shared";
@@ -27,12 +27,6 @@ function chromeOptions(context: ZksContext) {
 export function toolExecutablePath(context: ZksContext, name: ToolName): string | undefined {
   if (name === "ffmpeg" && process.env[ENV.ffmpeg]) return process.env[ENV.ffmpeg];
   if (name === "chrome-headless-shell" && process.env[ENV.chrome]) return process.env[ENV.chrome];
-  return pinnedToolPath(context, name);
-}
-
-/** The pinned build's executable, ignoring any override: what CI and the render recipe export as ZKS_FFMPEG / ZKS_CHROME. */
-export function pinnedToolPath(context: ZksContext, name: ToolName): string | undefined {
-  if (name === "chrome-headless-shell" && isDownload(pinnedEntry(context, name))) return computeExecutablePath(chromeOptions(context));
   return pinnedExecutablePath(context, name);
 }
 
@@ -45,7 +39,8 @@ async function installChrome(context: ZksContext, entry: PinnedDownload): Promis
   const options = chromeOptions(context);
   const resolvedUrl = chromeDownloadUrl(context);
   if (resolvedUrl !== entry.url) throw new Error(`tools.lock.json chrome URL ${entry.url} differs from @puppeteer/browsers (${resolvedUrl})`);
-  if (existsSync(computeExecutablePath(options))) return "present";
+  // The shared path, which the server also reads; the CLI tools test pins it to where install() puts Chrome.
+  if (existsSync(pinnedExecutablePath(context, "chrome-headless-shell") ?? "")) return "present";
   await install({ ...options, expectedHash: entry.sha256 });
   return "installed";
 }

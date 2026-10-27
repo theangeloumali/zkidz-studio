@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // Read-only project tools: project_info, get_capabilities, read_transcript (plan §6.8).
 import { readFile } from "node:fs/promises";
+import { slugifyTitle } from "../../projects/project-store.ts";
 import { join } from "node:path";
 import { mediaAssets } from "@zks/db/schema";
 import { STUDIO_TOOLS } from "@zks/shared";
@@ -38,7 +39,16 @@ function toClipInfo(asset: MediaAssetRow) {
   if (asset.durationS === null || asset.fpsNum === null || asset.fpsDen === null) return [];
   const storedRotation = asset.probe?.rotation;
   const rotation = QUARTER_TURNS.find((quarterTurn) => quarterTurn === storedRotation) ?? 0;
-  return [{ assetId: asset.id, name: asset.name, durationS: asset.durationS, fps: { num: asset.fpsNum, den: asset.fpsDen }, rotation, hdr: asset.isHdr }];
+  return [
+    {
+      assetId: asset.id,
+      name: slugifyTitle(asset.name),
+      durationS: asset.durationS,
+      fps: { num: asset.fpsNum, den: asset.fpsDen },
+      rotation,
+      hdr: asset.isHdr,
+    },
+  ];
 }
 
 const getCapabilitiesTool = implementTool("get_capabilities", {

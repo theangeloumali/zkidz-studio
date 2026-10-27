@@ -18,13 +18,22 @@
     }
   },
   "scripts": {
-    "start": "pnpm -F @zks/web build && pnpm -F @zks/server start",
+    "start": "pnpm -F @zks/web build && pnpm -F @zks/server build && pnpm -F @zks/server start",
     "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
     "zks": "node packages/cli/src/main.ts",
     "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r --workspace-concurrency=1 test",
     "ci:local": "bash scripts/ci-local.sh",
     "verify:gpu": "node scripts/verify-gpu.mjs",
     "db:test:matrix": "node scripts/db-test-matrix.mjs",
+    "db:supabase:start": "node packages/db/scripts/supabase.ts start",
+    "db:supabase:stop": "node packages/db/scripts/supabase.ts stop",
+    "db:supabase:studio": "node packages/db/scripts/supabase.ts studio",
+    "db:supabase:url": "node packages/db/scripts/supabase.ts url",
+    "db:supabase:check": "node packages/db/scripts/supabase.ts check",
+    "db:backup": "node packages/db/scripts/db.ts backup",
+    "db:restore": "node packages/db/scripts/db.ts restore",
+    "db:reset": "node packages/db/scripts/db.ts reset",
+    "db:rollback": "node packages/db/scripts/db.ts rollback",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

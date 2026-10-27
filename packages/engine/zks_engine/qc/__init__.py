@@ -6,6 +6,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from .. import check_windows
 from ..specs.gates import GateFailed
 from ..transcribe import whispercpp
 from . import inputs, master_gates, media, words
@@ -58,13 +59,24 @@ def whisper_transcriber(language="auto", model=None):
         with tempfile.TemporaryDirectory(prefix="zks-qc-") as scratch:
             wav = Path(scratch) / "window.wav"
             media.write_wav(wav, master, start_s, end_s - start_s)
-            return whispercpp.transcribe_file(wav, language, model_file, 1)
+            # Windows are heard one at a time.
+            return whispercpp.transcribe_file(wav, language, model_file)
 
     return transcribe
 
 
-def qc_master(video, master, source, transcript_words, transcribe, specs_snapshot=None, recorded_inputs=None):
-    """transcript_words: [{at, end, text}] in source seconds; transcribe(master, start_s, end_s) -> words heard there.
+def source_hearing(language="auto", model=None):
+    """Hears a stretch of an ingested source wav alone (check_windows), in source seconds: the cutWords gate's second
+    opinion on a word the long-form transcript's drifted times flag."""
+    def hear(wav, start_s, end_s):
+        return whispercpp.in_seconds(check_windows.transcribe(wav, max(0.0, start_s), end_s, language, model))
+
+    return hear
+
+
+def qc_master(video, master, source, transcript_words, transcribe, specs_snapshot=None, recorded_inputs=None, hear_source=None):
+    """transcript_words: [{at, end, text}] in source seconds; transcribe(master, start_s, end_s) -> words heard there;
+    hear_source(wav, start_s, end_s) -> words heard alone in the source (source_hearing).
     The master is fingerprinted before the gates and again after: a render landing mid-QC must not inherit the PASS.
     recorded_inputs: the render's render_inputs; None (no render to compare with) leaves the renderInputs check out."""
     judged = master_record(master)
@@ -75,7 +87,9 @@ def qc_master(video, master, source, transcript_words, transcribe, specs_snapsho
         "frames": lambda: master_gates.frame_problems(master, edl, intro),
         "loudness": lambda: master_gates.loudness_problems(master),
         "motion": lambda: motion_problems(video, master, source),
-        "cutWords": lambda: words.cut_word_problems(transcript_words, edl, intro, lambda start_s, end_s: transcribe(master, start_s, end_s)),
+        "cutWords": lambda: words.cut_word_problems(
+            transcript_words, edl, intro, lambda start_s, end_s: transcribe(master, start_s, end_s),
+            hear_source and (lambda start_s, end_s: hear_source(f"audio/{edl['base']}.wav", start_s, end_s))),
         "captionContrast": lambda: master_gates.caption_problems(video, master, edl, intro),
         "hookMouth": lambda: master_gates.mouth_problems(video, edl, intro, spec),
         "lipSync": lambda: master_gates.lip_sync_problems(master, source, edl, intro),

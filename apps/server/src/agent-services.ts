@@ -8,7 +8,7 @@ import type { Hono } from "hono";
 import { DecisionBroker, sortById } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
 import { createPrintSessions, type PrintSessions } from "./agent/print-sessions.ts";
-import type { QueryFunction } from "./agent/query-function.ts";
+import { deferredQueryHandle, type QueryFunction } from "./agent/query-function.ts";
 import type { SessionLimits } from "./agent/query-options.ts";
 import { registerAgentRoutes } from "./agent/routes.ts";
 import { hasBundledClaudeBinary } from "./agent/sdk-binary.ts";
@@ -19,6 +19,7 @@ import type { SecretStore } from "./auth/secret-store.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { registerExportHandler } from "./jobs/deliverables.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
+import { gateRenderJobs } from "./jobs/edit-gate.ts";
 import { snapshotRenderJobSpecs } from "./jobs/spec-snapshot.ts";
 import type { Logger } from "./logging/logger.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
@@ -54,11 +55,12 @@ export interface AgentServicesDeps {
   /** §11 ZKS_RUN; main.ts empties it at startup. */
   readonly runDir: string;
   readonly claudePath: string | null;
-  readonly claudeVersion: string | null;
+  /** main.ts probes both after the server listens; the routes that need them await them. */
+  readonly claudeVersion: string | null | Promise<string | null>;
   readonly secretStore: SecretStore;
   readonly query: QueryFunction;
   /** Without the SDK's bundled binary, sessions run through `claude -p` (plan §6.7). */
-  readonly hasSdkBinary?: () => boolean;
+  readonly hasSdkBinary?: () => boolean | Promise<boolean>;
   readonly engine: EngineRunner;
   readonly ffprobePath: string;
   readonly fetch?: FetchFunction;
@@ -66,7 +68,7 @@ export interface AgentServicesDeps {
 
 export interface AgentServices {
   readonly terminalSessions: TerminalSessions;
-  readonly agentRunner: "sdk" | "print";
+  readonly agentRunner: Promise<"sdk" | "print">;
   readonly registerRoutes: (app: Hono) => void;
   /** Approval, question and cut-review cards still waiting, sent to every new event stream. */
   readonly pendingCards: (projectIds: readonly string[]) => StudioEvent[];
@@ -88,7 +90,10 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     askQuestions: (questions, signal) => broker.askQuestions(projectId, questions, signal),
   });
 
-  const printSessions = choosePrintSessions(deps);
+  // Settled once the binary probe resolves; no -p session or hook can exist before that.
+  let printSessions: PrintSessions | undefined;
+  const printSessionsChoice = choosePrintSessions(deps).then((chosen) => (printSessions = chosen));
+  printSessionsChoice.catch(() => undefined);
   const manager = new AgentManager({
     database: deps.database,
     secretStore: deps.secretStore,
@@ -97,11 +102,11 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     appVersion: deps.appVersion,
     pluginDir: deps.pluginDir,
     requiredSkills: REQUIRED_SKILLS,
-    query: printSessions?.query ?? deps.query,
+    query: (params) => deferredQueryHandle(printSessionsChoice.then((chosen) => (chosen?.query ?? deps.query)(params))),
     broker,
     limits: SESSION_LIMITS,
     loadSessionSetup: (project) => loadSessionSetup(deps.database, project.id),
-    studioMcpServer: printSessions === undefined ? (project) => createStudioMcpServer(toolContextFor(project.id)) : null,
+    studioMcpServer: async (project) => ((await printSessionsChoice) === undefined ? createStudioMcpServer(toolContextFor(project.id)) : null),
     describeGate: (project, tool, input) => describeStudioGate(toolContextFor(project.id), tool, input),
     cancelProjectJobs,
   });
@@ -128,6 +133,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
   registerEngineJobHandlers(deps.jobRunner, engineJobDeps);
   registerRenderJobHandlers(deps.jobRunner, engineJobDeps);
   snapshotRenderJobSpecs(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome });
+  gateRenderJobs(deps.jobRunner);
   registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine });
 
   const registerRoutes = (app: Hono) => {
@@ -180,7 +186,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
 
   return {
     terminalSessions,
-    agentRunner: printSessions === undefined ? "sdk" : "print",
+    agentRunner: printSessionsChoice.then((chosen) => (chosen === undefined ? "sdk" : "print")),
     registerRoutes,
     pendingCards: (projectIds) => sortById([...broker.pendingCards(projectIds), ...pendingCutReviewCards(projectIds)]),
     shutdown: () => {
@@ -190,9 +196,9 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
   };
 }
 
-function choosePrintSessions(deps: AgentServicesDeps): PrintSessions | undefined {
+async function choosePrintSessions(deps: AgentServicesDeps): Promise<PrintSessions | undefined> {
   // ASSUMPTION: with neither the SDK binary nor claude on PATH the SDK path stays, and its start error names the gap.
-  if ((deps.hasSdkBinary ?? hasBundledClaudeBinary)() || deps.claudePath === null) return undefined;
+  if (deps.claudePath === null || (await (deps.hasSdkBinary ?? hasBundledClaudeBinary)())) return undefined;
   return createPrintSessions({
     claudePath: deps.claudePath,
     runDir: deps.runDir,

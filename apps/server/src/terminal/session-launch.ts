@@ -80,7 +80,7 @@ export async function launchSession(deps: TerminalSessionsDeps, request: OpenTer
     model: request.model,
   });
   try {
-    const pty = deps.ptyHost.launch(sessionId, {
+    const pty = await deps.ptyHost.launch(sessionId, {
       argv: [deps.ptyHost.claudePath, ...args],
       cwd: request.projectDir,
       env: deps.buildEnv({ ...tokens, mcpUrl: files.mcpUrl }),

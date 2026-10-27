@@ -17,6 +17,7 @@ import numpy as np
 from support import ENGINE, GALLERY, GALLERY_FRAMES, HYPERFRAMES_SKIP, fixture_media, make_edl, needs_renderer, write_sheet, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import doctor, ffio
+from zks_engine.qc import media as qc_media, mouth
 from zks_engine.render_final import PNG_RGBA, png_header
 
 TINY_CUES = [{"kind": "keyword", "at": 0.2, "end": 1.8, "text": "Tiny", "tone": "paper"}]
@@ -58,6 +59,8 @@ class HyperFramesRenderTests(unittest.TestCase):
         write_sheet(cls.work, "tiny", TINY_CUES)
         (cls.work / "edl" / "opener.json").write_text(json.dumps(make_edl([(0, 90)])), encoding="utf-8")
         write_sheet(cls.work, "opener", OPENER_CUES)
+        (cls.work / "edl" / "hook.json").write_text(json.dumps(make_edl([(0, 90)])), encoding="utf-8")
+        write_sheet(cls.work, "hook", [{**OPENER_CUES[0], "intro": False}])
         # compositeStill needs a proxy to seek into: a flat 1080x1920 clip as long as the gallery edit.
         subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=97.1",
                         "-c:v", "libx264", "-preset", "ultrafast", "-g", "300", str(cls.work / "mezz" / "gallery.mp4")], check=True)
@@ -102,6 +105,15 @@ class HyperFramesRenderTests(unittest.TestCase):
         after = rgba(self.work / "frames" / "opener" / "00065.png")[..., 3]
         self.assertLess(after[:200, :40].max(), 128, "the upper half is still on frame")
         self.assertLess(after[1700:, 1000:].max(), 128, "the lower half is still on frame")
+
+    # The QC hookMouth gate measures overlay alpha over the mouth for 2.5 s; the default opener must pass its own gate.
+    def test_the_hook_title_keeps_the_mouth_clear(self):
+        result = self.render("hook")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        edl = make_edl([(0, 90)])
+        hook_frames = range(round(mouth.HOOK_S * edl["fps_num"] / edl["fps_den"]))
+        alpha = qc_media.overlay_alpha(self.work / "frames" / "hook", len(hook_frames), (edl["fps_num"], edl["fps_den"]))
+        self.assertEqual(mouth.mouth_problems(alpha, hook_frames, edl), [])
 
     def test_the_brand_intro_alone_renders_a_pre_roll_and_a_split_that_ends_clear(self):
         for orientation, (width, height) in (("landscape", (1920, 1080)), ("portrait", (1080, 1920))):

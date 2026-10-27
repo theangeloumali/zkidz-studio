@@ -5,6 +5,7 @@ packages:
   # The overlay renderer lives inside the uv engine package; listing it keeps its deps under the workspace's release-age and build policy.
   - packages/engine/hf
   - scripts
+  - docker
 
 # Reviewed build scripts only (strictDepBuilds fails the install on any other).
 strictDepBuilds: true

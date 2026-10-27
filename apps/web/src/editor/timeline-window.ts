@@ -46,13 +46,14 @@ export interface SecondsWindow {
 /** Edges snap outward to a quarter viewport, so a scroll re-renders the lanes once per step, not once per frame, at any zoom. */
 const WINDOW_STEPS_PER_VIEWPORT = 4;
 
-/** The mounted window (spec §6.1): one viewport width past each edge, snapped outward to the step. */
-export function mountedWindow(viewStartS: number, viewEndS: number): SecondsWindow {
+/** The mounted window (spec §6.1): `overscanViewports` viewport widths past each edge, snapped outward to the step. */
+export function mountedWindow(viewStartS: number, viewEndS: number, overscanViewports = 1): SecondsWindow {
   const viewportS = viewEndS - viewStartS;
   if (viewportS <= 0) return { startS: viewStartS, endS: viewEndS };
   const stepS = viewportS / WINDOW_STEPS_PER_VIEWPORT;
+  const overscanS = viewportS * overscanViewports;
   return {
-    startS: Math.floor((viewStartS - viewportS) / stepS) * stepS,
-    endS: Math.ceil((viewEndS + viewportS) / stepS) * stepS,
+    startS: Math.floor((viewStartS - overscanS) / stepS) * stepS,
+    endS: Math.ceil((viewEndS + overscanS) / stepS) * stepS,
   };
 }

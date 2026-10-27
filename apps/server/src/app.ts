@@ -6,8 +6,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
-import { registerDoctorRoutes } from "./doctor/routes.ts";
-import type { DoctorRunner } from "./doctor/runner.ts";
+import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
@@ -42,7 +41,7 @@ export interface AppDependencies {
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
   readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
   /** GET /api/doctor; main.ts always passes it. */
-  readonly runDoctor?: DoctorRunner;
+  readonly doctor?: Omit<DoctorRouteDeps, "logger">;
   /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
   readonly onboarding?: OnboardingServices;
   /** The player EDL and the composition rebuild loop; main.ts always passes it. */
@@ -64,7 +63,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
-  if (deps.runDoctor !== undefined) registerDoctorRoutes(app, { runDoctor: deps.runDoctor, logger: deps.logger });
+  if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);
   registerSpecRoutes(app, deps);
   deps.previewService?.registerRoutes(app);

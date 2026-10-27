@@ -1,0 +1,61 @@
+# Created by The Angelo Umali.
+# The README's single setup command on a bare runner per OS, then the server it starts must answer on 127.0.0.1:4317.
+# Actions are pinned by commit SHA; bump the SHA and the tag comment together.
+name: setup-e2e
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: setup-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    name: setup on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # tools.lock.json pins ffmpeg and whisper.cpp to Homebrew on mac-arm64; setup checks for them, it does not install them.
+      - name: Install the Homebrew tools setup expects
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg whisper-cpp
+      # No --no-start: the command a user types is the one that must end with a running server.
+      - name: Run ./setup.sh
+        if: runner.os != 'Windows'
+        env:
+          ZKS_HOME: ${{ runner.temp }}/zks
+        run: nohup ./setup.sh > setup-e2e.log 2>&1 &
+      - name: Run setup.cmd
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ZKS_HOME: ${{ runner.temp }}\zks
+        run: Start-Process -FilePath cmd.exe -ArgumentList '/c', 'setup.cmd > setup-e2e.log 2>&1' -WorkingDirectory $PWD -WindowStyle Hidden
+      - name: Wait for 127.0.0.1:4317
+        shell: bash
+        run: |
+          for attempt in $(seq 1 180); do
+            if curl -fsS -o /dev/null -H 'Host: 127.0.0.1:4317' http://127.0.0.1:4317/; then
+              echo "127.0.0.1:4317 answered after about $((attempt * 5)) s"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::127.0.0.1:4317 never answered after setup"
+          exit 1
+      - name: Setup log
+        if: always()
+        shell: bash
+        run: cat setup-e2e.log || true

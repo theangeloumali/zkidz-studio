@@ -18,21 +18,21 @@ def merged(ranges, duration):
             continue
         if result and start <= result[-1][1]:
             result[-1][1] = max(result[-1][1], end)
+            if "pin" in flags and "pin" not in result[-1]:
+                result[-1].append("pin")
         else:
             result.append([start, end, *flags])
     return result
 
 
 def complement(keep, duration):
-    """The removals outside the keep ranges. A pinned keep pins the removal leading into it, so edl.py cannot snap
-    that edge into a word the reel cuts (v5r QC r6: 180.05 snapped back into the 'ko' at 179.913)."""
-    gaps, cursor = [], 0.0
-    for start, end, *flags in keep:
+    """The removals outside the keep ranges. A pinned keep pins the removals on both its edges, so edl.py cannot snap
+    either edge into a word the reel cuts (v5r QC r6: 180.05 snapped back into the 'ko' at 179.913)."""
+    gaps, cursor, previous_flags = [], 0.0, []
+    for start, end, *flags in [*keep, [duration, duration]]:
         if start > cursor:
-            gaps.append([cursor, start, OUTSIDE_KEEP, *flags])
-        cursor = end
-    if cursor < duration:
-        gaps.append([cursor, duration, OUTSIDE_KEEP])
+            gaps.append([cursor, start, OUTSIDE_KEEP, *(["pin"] if "pin" in previous_flags + flags else [])])
+        cursor, previous_flags = end, flags
     return gaps
 
 

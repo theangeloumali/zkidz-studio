@@ -19,7 +19,7 @@ const WORK_PREFIX = "work/";
 const OWNER_ONLY_DIR_MODE = 0o700;
 const OWNER_ONLY_FILE_MODE = 0o600;
 // Every job kind that reads specs (cuts, cues, captions, reels) while it renders or judges the master.
-const RENDER_JOB_KINDS = ["render_master", "qc_master", "check_motion", "make_covers"];
+export const RENDER_JOB_KINDS = ["render_master", "qc_master", "check_motion", "make_covers"];
 const activeSnapshotDir = new AsyncLocalStorage<string>();
 
 export interface SpecSnapshotDeps {

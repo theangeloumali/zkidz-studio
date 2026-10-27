@@ -18,7 +18,7 @@ const MS_PER_SECOND = 1000;
 
 const setCaptions = implementTool("set_captions", {
   description:
-    "Write the English captions as groups of consecutive phrase ids from make_caption_phrases. Every phrase is captioned once; a group may not cross a Reels keep edge or wrap past two lines.",
+    "Write the English captions as groups of consecutive phrase ids from make_caption_phrases. Every phrase is captioned once; a group may not cross a Reels keep edge or wrap past two lines. An entry's bottom (canvas y of the plate's lower edge, default 1430) moves that line's plate, e.g. clear of the speaker's mouth.",
   handler: async (input, context) => {
     const project = await loadProject(context);
     const phrasesPath = join(projectRootOf(context, project), "work", "captions", `${project.videoId}.phrases.json`);

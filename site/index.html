@@ -1,0 +1,550 @@
+<!-- Created by The Angelo Umali. -->
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZKidz Studio: type what you want, watch the edit happen</title>
+    <meta
+      name="description"
+      content="ZKidz Studio is an open-source video editor that runs on your own computer. Drop in footage, say what you want, and an AI agent cuts, captions and renders it."
+    />
+    <meta name="theme-color" content="#0c1117" id="theme-color" />
+    <!-- Pages cannot send headers. The script hash must be recomputed whenever the inline script changes. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'sha256-2O2VRtqMa7l2+IVl2XD5ocx+Kgo3K78OveIpOkbjOdQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="canonical" href="https://theangeloumali.github.io/zkidz-studio/" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ZKidz Studio" />
+    <meta property="og:title" content="ZKidz Studio: type what you want, watch the edit happen" />
+    <meta property="og:description" content="An open-source, local-first video editor. An AI agent trims, captions and renders while you watch." />
+    <meta property="og:url" content="https://theangeloumali.github.io/zkidz-studio/" />
+    <meta property="og:image" content="https://theangeloumali.github.io/zkidz-studio/assets/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="ZKidz Studio: type what you want, watch the edit happen, beside a column of video covers" />
+    <meta property="og:video" content="https://theangeloumali.github.io/zkidz-studio/assets/zkidz-studio-launch.mp4" />
+    <meta property="og:video:type" content="video/mp4" />
+    <meta property="og:video:width" content="1920" />
+    <meta property="og:video:height" content="1080" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ZKidz Studio: type what you want, watch the edit happen" />
+    <meta name="twitter:description" content="An open-source, local-first video editor. An AI agent trims, captions and renders while you watch." />
+    <meta name="twitter:image" content="https://theangeloumali.github.io/zkidz-studio/assets/social-preview.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=JetBrains+Mono:wght@400;500&display=swap" />
+    <link rel="stylesheet" href="assets/site.css" />
+
+    <script>
+      // Theme first (no flash), then copy buttons and scroll reveal once the DOM exists.
+      (function () {
+        var root = document.documentElement;
+        var themeColor = document.getElementById("theme-color");
+        function applyTheme(theme) {
+          root.dataset.theme = theme;
+          themeColor.content = theme === "light" ? "#f3efe8" : "#0c1117";
+        }
+        var saved = null;
+        try {
+          saved = localStorage.getItem("zks-theme");
+        } catch (e) {}
+        // No saved choice: follow the system setting.
+        if (saved === "light" || saved === "dark") applyTheme(saved);
+        else if (window.matchMedia("(prefers-color-scheme: light)").matches) applyTheme("light");
+        root.classList.add("js");
+
+        document.addEventListener("DOMContentLoaded", function () {
+          var toggle = document.getElementById("theme-toggle");
+          toggle.addEventListener("click", function () {
+            var next = root.dataset.theme === "light" ? "dark" : "light";
+            applyTheme(next);
+            toggle.setAttribute("aria-pressed", String(next === "light"));
+            try {
+              localStorage.setItem("zks-theme", next);
+            } catch (e) {}
+          });
+          toggle.setAttribute("aria-pressed", String(root.dataset.theme === "light"));
+
+          document.querySelectorAll("[data-copy]").forEach(function (button) {
+            button.addEventListener("click", function () {
+              var text = document.getElementById(button.dataset.copy).innerText;
+              var status = document.getElementById("copy-status");
+              navigator.clipboard.writeText(text).then(
+                function () {
+                  status.textContent = button.dataset.label + " command copied";
+                  button.textContent = "Copied";
+                  setTimeout(function () {
+                    button.textContent = "Copy";
+                  }, 1800);
+                },
+                function () {
+                  status.textContent = "Copy failed. Select the command and copy it by hand.";
+                },
+              );
+            });
+          });
+
+          var wall = document.getElementById("cover-wall");
+          var wallToggle = document.getElementById("wall-toggle");
+          wallToggle.addEventListener("click", function () {
+            var paused = wall.classList.toggle("paused");
+            wallToggle.setAttribute("aria-pressed", String(paused));
+          });
+
+          var items = document.querySelectorAll(".reveal");
+          if (!("IntersectionObserver" in window)) {
+            items.forEach(function (el) {
+              el.classList.add("in");
+            });
+            return;
+          }
+          var observer = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("in");
+                observer.unobserve(entry.target);
+              });
+            },
+            { rootMargin: "0px 0px -8% 0px" },
+          );
+          items.forEach(function (el) {
+            observer.observe(el);
+          });
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="#top" aria-label="ZKidz Studio, back to top">ZKidz <span>Studio</span></a>
+        <nav class="nav" aria-label="Sections">
+          <a href="#what-it-does">What it does</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#showcase">Showcase</a>
+          <a href="#connect-claude">Connect Claude</a>
+          <a href="#install">Install</a>
+          <a href="#docs">Docs</a>
+        </nav>
+        <a class="icon-btn gh-link" href="https://github.com/theangeloumali/zkidz-studio">GitHub</a>
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Light theme" aria-pressed="false">
+          <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z" /></svg>
+          <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="wrap">
+          <h1>
+            <span class="line"><span>Type what you want.</span></span>
+            <span class="line"><span class="accent">Watch the edit happen.</span></span>
+          </h1>
+          <div class="hero-copy">
+            <p class="lede">
+              ZKidz Studio is an open-source video editor that runs on your own computer. Drop in your footage and say what you want in plain words. An AI agent
+              cuts it, captions it and renders it while you watch.
+            </p>
+            <div class="actions">
+              <a class="btn" href="#install">Get started</a>
+              <a class="btn btn-ghost" href="https://github.com/theangeloumali/zkidz-studio">View on GitHub</a>
+            </div>
+          </div>
+          <figure class="film">
+            <video controls playsinline preload="metadata" poster="assets/launch-poster.jpg" width="1920" height="1080">
+              <source src="assets/zkidz-studio-launch.mp4" type="video/mp4" />
+              Your browser cannot play this video. It is the 80-second ZKidz Studio launch film.
+            </video>
+            <figcaption>The launch film, 80 seconds.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section id="what-it-does">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>What it does</h2>
+            <p class="lede">One sentence in, a finished short out. Every step happens on your machine and shows up in the preview and timeline as it lands.</p>
+          </div>
+          <div class="bento">
+            <article class="cell cell-lead reveal">
+              <h3>Say it, then watch it get made</h3>
+              <p>
+                The agent trims pauses and retakes, writes captions, adds titles and motion, and lays the sound underneath. You type a request like this one.
+              </p>
+              <p class="prompt-line mono">cut the pauses and retakes, add captions</p>
+            </article>
+            <article class="cell cell-tall reveal" style="--i: 1">
+              <h3>Eleven checks before anything ships</h3>
+              <p>These run on the export. A master that fails one does not get copied out.</p>
+              <ul class="tag-list" aria-label="The eleven quality checks">
+                <li>format</li>
+                <li>frames</li>
+                <li>loudness</li>
+                <li>motion</li>
+                <li>cutWords</li>
+                <li>captionContrast</li>
+                <li>hookMouth</li>
+                <li>lipSync</li>
+                <li>renderSource</li>
+                <li>renderInputs</li>
+                <li>master</li>
+              </ul>
+            </article>
+            <article class="cell reveal" style="--i: 1">
+              <h3>A master, a Reels cut and covers</h3>
+              <p>
+                Each deliverable is hashed while it is copied, and the SHA-256 is listed on the Render screen. 4K renders on NVIDIA today; other backends render
+                1080.
+              </p>
+            </article>
+            <article class="cell reveal" style="--i: 2">
+              <h3>Every version is saved</h3>
+              <p>Ask for a change and the preview updates right away. Go back to any earlier version when you want to.</p>
+            </article>
+            <article class="cell cell-half reveal">
+              <h3>Your footage stays on your computer</h3>
+              <p>The only outside traffic is the calls to Claude and the downloads setup makes. Bring an API key, your cloud, or your own Claude Code login.</p>
+            </article>
+            <article class="cell cell-half reveal" style="--i: 1">
+              <h3>Runs on the hardware you have</h3>
+              <p><code>zks doctor</code> tests each backend by encoding real frames, then uses the first one that works. Every feature has a CPU path.</p>
+              <ul class="tag-list" aria-label="Video backends">
+                <li>nvidia</li>
+                <li>videotoolbox</li>
+                <li>qsv</li>
+                <li>amf</li>
+                <li>vaapi</li>
+                <li>cpu</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>How it works</h2>
+            <p class="lede">From a sentence to a checked export, in five steps.</p>
+          </div>
+          <ol class="flow">
+            <li class="reveal">
+              <h3>You</h3>
+              <p>Drop in footage and type what you want, in plain words.</p>
+            </li>
+            <li class="reveal" style="--i: 1">
+              <h3>Claude</h3>
+              <p>Watches the recording and plans the edit: cuts, captions, titles and sound.</p>
+            </li>
+            <li class="reveal" style="--i: 2">
+              <h3>Studio tools</h3>
+              <p>The plan runs through the app's own tools, so each change lands in the timeline while you watch.</p>
+            </li>
+            <li class="reveal" style="--i: 3">
+              <h3>Engine</h3>
+              <p>Renders on your machine with the first video backend that works, down to plain CPU.</p>
+            </li>
+            <li class="reveal" style="--i: 4">
+              <h3>Preview, checks, export</h3>
+              <p>Eleven checks run on the export. Then you get the master, the Reels cut and the covers.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="showcase">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>Showcase</h2>
+            <p class="lede">ZKidz Studio grew out of a pipeline that has shipped 40+ edits. These are the covers from that channel.</p>
+          </div>
+        </div>
+        <div class="wall reveal" id="cover-wall" role="group" aria-label="Video covers from the YouTube channel" tabindex="0">
+          <div class="row">
+            <img src="assets/showcase/01-gpt-astra-vs-claude-opus-5-5.jpg" alt="Cover: GPT Astra vs Claude Opus 5.5" width="480" height="854" loading="lazy" />
+            <img
+              src="assets/showcase/02-how-i-orchestrate-my-ai-dev-team.jpg"
+              alt="Cover: How I orchestrate my AI dev team"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img
+              src="assets/showcase/03-10-years-of-my-github-before-vs-after-ai.jpg"
+              alt="Cover: 10 years of my GitHub, before vs after AI"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img
+              src="assets/showcase/04-how-i-landed-a-client-in-one-week.jpg"
+              alt="Cover: How I landed a client in one week"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img src="assets/showcase/06-claude-set-up-my-whole-nas.jpg" alt="Cover: Claude set up my whole NAS" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/07-my-coding-is-100-ai-now.jpg" alt="Cover: My coding is 100% AI now" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/08-where-i-find-clients.jpg" alt="Cover: Where I find my clients" width="480" height="854" loading="lazy" />
+            <img
+              src="assets/showcase/09-ats-friendly-resume-free-with-ai.jpg"
+              alt="Cover: ATS-friendly resume, free with AI"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img src="assets/showcase/10-how-i-negotiate-my-rate.jpg" alt="Cover: How I negotiate my rate" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/11-claude-edits-my-videos-now.jpg" alt="Cover: Claude edits my videos now" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/12-who-pays-my-ai-subscriptions.jpg" alt="Cover: Who pays my AI subscriptions?" width="480" height="854" loading="lazy" />
+            <img
+              src="assets/showcase/13-how-to-start-a-freelance-career.jpg"
+              alt="Cover: How to start a freelance career"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img
+              src="assets/showcase/14-scheduled-automation-with-claude-cowork.jpg"
+              alt="Cover: Scheduled automation with Claude Cowork"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img
+              src="assets/showcase/15-are-software-engineers-still-needed.jpg"
+              alt="Cover: Are software engineers still needed?"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img src="assets/showcase/01-gpt-astra-vs-claude-opus-5-5.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/02-how-i-orchestrate-my-ai-dev-team.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/03-10-years-of-my-github-before-vs-after-ai.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/04-how-i-landed-a-client-in-one-week.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/06-claude-set-up-my-whole-nas.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/07-my-coding-is-100-ai-now.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/08-where-i-find-clients.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/09-ats-friendly-resume-free-with-ai.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/10-how-i-negotiate-my-rate.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/11-claude-edits-my-videos-now.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/12-who-pays-my-ai-subscriptions.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/13-how-to-start-a-freelance-career.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/14-scheduled-automation-with-claude-cowork.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/15-are-software-engineers-still-needed.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+          </div>
+          <div class="row reverse">
+            <img src="assets/showcase/16-how-to-ask-for-a-salary-increase.jpg" alt="Cover: How I ask for a raise" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/17-rog-rapture-gt-be98-unboxing.jpg" alt="Cover: ROG Rapture GT-BE98 unboxing" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/20-discipline-timelapse.jpg" alt="Cover: Nobody claps (desk timelapse)" width="480" height="854" loading="lazy" />
+            <img
+              src="assets/showcase/21-lg-ultragear-oled-setup.jpg"
+              alt="Cover: New setup. Same hunger. (LG UltraGear OLED)"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img src="assets/showcase/23-how-i-handle-burnout.jpg" alt="Cover: How I handle burnout" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/24-my-plan-b-trading.jpg" alt="Cover: My plan B if AI takes my dev job" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/26-camera-bag.jpg" alt="Cover: Inside my camera bag" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/27-desk-workflow.jpg" alt="Cover: My desk and workflow" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/29-claude-mods.jpg" alt="Cover: Claude Code mods: my agent tracking workflow" width="480" height="854" loading="lazy" />
+            <img
+              src="assets/showcase/30-gpt-6-1-video-editor.jpg"
+              alt="Cover: GPT-6.1 Sol as an alternative video editor"
+              width="480"
+              height="854"
+              loading="lazy"
+            />
+            <img src="assets/showcase/39-zkidz-publisher.jpg" alt="Cover: ZKidz Publisher: my own autoposter" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/48-zkidz-studio-build.jpg" alt="Cover: Building ZKidz Studio in the open" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/49-codex-vs-claude.jpg" alt="Cover: Same prompt: Codex vs Claude Opus 5.5" width="480" height="854" loading="lazy" />
+            <img src="assets/showcase/16-how-to-ask-for-a-salary-increase.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/17-rog-rapture-gt-be98-unboxing.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/20-discipline-timelapse.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/21-lg-ultragear-oled-setup.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/23-how-i-handle-burnout.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/24-my-plan-b-trading.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/26-camera-bag.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/27-desk-workflow.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/29-claude-mods.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/30-gpt-6-1-video-editor.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/39-zkidz-publisher.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/48-zkidz-studio-build.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+            <img src="assets/showcase/49-codex-vs-claude.jpg" alt="" width="480" height="854" loading="lazy" aria-hidden="true" />
+          </div>
+        </div>
+        <div class="wrap">
+          <p class="wall-link">
+            <button class="btn btn-ghost wall-toggle" id="wall-toggle" type="button" aria-controls="cover-wall" aria-pressed="false">Pause covers</button>
+            <a class="btn btn-ghost" href="https://www.youtube.com/@theangeloumali">Watch the channel on YouTube</a>
+          </p>
+          <div class="edited reveal">
+            <div class="edited-text">
+              <h3>Edited in ZKidz Studio</h3>
+              <p>Episode 12, "Who pays my AI subscriptions?", was edited in the studio. Its master passed 11 of 11 quality checks.</p>
+            </div>
+            <div class="edited-covers">
+              <figure>
+                <img src="assets/showcase/studio-ep12-cover-A.jpg" alt="Cover A for episode 12, made in ZKidz Studio" width="480" height="854" loading="lazy" />
+                <figcaption>Cover for the full edit</figcaption>
+              </figure>
+              <figure>
+                <img
+                  src="assets/showcase/studio-ep12-reels-cover.jpg"
+                  alt="Cover for the episode 12 Reels cut, made in ZKidz Studio"
+                  width="480"
+                  height="854"
+                  loading="lazy"
+                />
+                <figcaption>Cover for the Reels cut</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="connect-claude">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>Connect Claude</h2>
+            <p class="lede">Pick one of three ways to reach Claude. You can switch later.</p>
+          </div>
+          <div class="modes">
+            <article class="mode recommended reveal">
+              <span class="mode-letter" aria-hidden="true">A</span>
+              <h3>Your own API key</h3>
+              <span class="chip">Recommended</span>
+              <dl>
+                <dt>You bring</dt>
+                <dd>A Claude Console API key</dd>
+                <dt>Who pays</dt>
+                <dd>Your Console account</dd>
+              </dl>
+              <p>The key is stored in your OS keychain, and only its last four characters are ever shown.</p>
+            </article>
+            <article class="mode reveal" style="--i: 1">
+              <span class="mode-letter" aria-hidden="true">B</span>
+              <h3>Your own cloud</h3>
+              <span class="chip">Advanced</span>
+              <dl>
+                <dt>You bring</dt>
+                <dd>Bedrock, Vertex, Foundry or Claude on AWS</dd>
+                <dt>Who pays</dt>
+                <dd>Your cloud account</dd>
+              </dl>
+              <p>It uses your cloud CLI's own sign-in. The app stores no cloud secret.</p>
+            </article>
+            <article class="mode reveal" style="--i: 2">
+              <span class="mode-letter" aria-hidden="true">T</span>
+              <h3>Your Claude Code login</h3>
+              <span class="chip">Opt-in, pending Anthropic approval</span>
+              <dl>
+                <dt>You bring</dt>
+                <dd>Claude Code installed on this computer, signed in</dd>
+                <dt>Who pays</dt>
+                <dd>Your Claude plan's limits</dd>
+              </dl>
+              <p>Off until you turn it on. It runs the unmodified <code>claude</code> program in a terminal pane.</p>
+            </article>
+          </div>
+          <p class="fineprint">
+            The app never offers "Sign in with Claude" and never accepts a pasted token or credential file.
+            <a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/claude-access.md">Read the details</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="install" id="install" data-tone="flood">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>Install</h2>
+            <p class="lede">One command per OS. It installs the pinned tools, runs setup, then starts the app.</p>
+          </div>
+          <div class="install-grid">
+            <div class="codebox reveal">
+              <header>
+                <span>macOS, Linux, WSL</span>
+                <button class="copy-btn" type="button" data-copy="cmd-unix" data-label="macOS, Linux, WSL">Copy</button>
+              </header>
+              <pre
+                id="cmd-unix"
+                tabindex="0"
+                aria-label="macOS, Linux and WSL install command"
+              ><code>git clone https://github.com/theangeloumali/zkidz-studio && cd zkidz-studio && ./setup.sh</code></pre>
+            </div>
+            <div class="codebox reveal" style="--i: 1">
+              <header>
+                <span>Windows (PowerShell)</span>
+                <button class="copy-btn" type="button" data-copy="cmd-win" data-label="Windows">Copy</button>
+              </header>
+              <pre
+                id="cmd-win"
+                tabindex="0"
+                aria-label="Windows install commands"
+              ><code>git clone https://github.com/theangeloumali/zkidz-studio; cd zkidz-studio
+powershell -ExecutionPolicy Bypass -File .\setup.ps1</code></pre>
+            </div>
+          </div>
+          <p id="copy-status" class="sr-only" role="status" aria-live="polite"></p>
+          <div class="after-install">
+            <p>Then run <code>pnpm start</code> and open <code>http://127.0.0.1:4317</code>. The server listens on loopback only.</p>
+            <p>
+              You need Linux x64 or arm64, macOS on Apple silicon, or Windows 10/11, plus 20 GB of free disk, git and curl. Setup downloads the rest and checks
+              each download's SHA-256. On WSL, keep the repo and your media in the Linux home, not under <code>/mnt</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="docs">
+        <div class="wrap">
+          <div class="section-head reveal">
+            <h2>Docs</h2>
+            <p class="lede">The user guides live in the repository.</p>
+          </div>
+          <ul class="doc-list reveal">
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/getting-started.md">Getting started</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/claude-access.md">Connecting Claude</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/editor.md">The editor</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/templates-and-styles.md">Templates and styles</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/rules.md">Rules</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/render-and-export.md">Render, covers, export and checks</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/deliverables.md">Deliverables</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/troubleshooting.md">Troubleshooting with zks doctor</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/privacy-and-security.md">Privacy and security</a></li>
+            <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/docs/user/docker.md">Docker</a></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <ul class="footer-links">
+          <li><a href="https://github.com/theangeloumali/zkidz-studio">GitHub</a></li>
+          <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/LICENSE">Apache-2.0 licence</a></li>
+          <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/TRADEMARKS.md">Trademarks</a></li>
+          <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/SECURITY.md">Security</a></li>
+          <li><a href="https://github.com/theangeloumali/zkidz-studio/blob/main/CONTRIBUTING.md">Contributing</a></li>
+        </ul>
+        <p>ZKidz Studio is not affiliated with, endorsed by, or sponsored by Anthropic. Claude, Claude Code and Anthropic are trademarks of Anthropic.</p>
+        <p>Created by The Angelo Umali. Released under the Apache-2.0 licence.</p>
+      </div>
+    </footer>
+  </body>
+</html>

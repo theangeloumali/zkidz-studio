@@ -2,12 +2,87 @@
 
 # ZKidz Studio
 
-ZKidz Studio is a local-first desktop app for short-form video. You drop in your footage and type what you want, and an AI agent
-assembles the clip on your machine: it trims pauses and retakes, writes captions, adds titles and sound, and renders a 4K master
-plus a Reels cut and covers. You watch each change land in the preview and timeline as the agent makes it. Your footage stays on your
-computer; the only outside traffic is the calls to Claude and setup's downloads.
+**Drop in your footage, say what you want, and watch Claude edit it on your own computer.**
+
+<p align="center">
+  <a href="https://theangeloumali.github.io/zkidz-studio/"><img src="site/assets/launch-poster.jpg" width="720" alt="Watch the ZKidz Studio launch film"></a>
+</p>
+
+<p align="center">
+  <img src="site/assets/launch-teaser.webp" width="720" alt="An 8-second teaser of ZKidz Studio editing a short">
+</p>
+
+[Website](https://theangeloumali.github.io/zkidz-studio/) · [Docs](docs/user/README.md) · [Install](#install)
+
+ZKidz Studio is a local-first desktop app for short-form video. Your footage stays on your computer; the only outside traffic is
+the calls to Claude and setup's downloads.
 
 ZKidz Studio is not affiliated with, endorsed by, or sponsored by Anthropic.
+
+## What it does
+
+- **Footage plus a prompt.** Drop in clips, type what you want, and the agent plans the edit.
+- **Live cuts.** Claude cuts pauses and retakes, and every change lands in the preview and timeline as it happens.
+- **Captions, titles, overlays and sound.** Captions, titles, animated overlays and sound effects sit on their own timeline tracks.
+- **Versions.** Every spec the agent writes is a saved version; restore an older one at any time.
+- **11 quality checks on the export**, including `cutWords`, `hookMouth`, `lipSync`, `captionContrast` and `loudness`. Only a master
+  that passed is exported.
+- **Deliverables.** A 4K master (on the `nvidia` backend; other backends make 1080), the Reels cut and covers, each file
+  listed with its SHA-256.
+- **Local-first, bring your own Claude.** Use an API key, your cloud, or your installed Claude Code.
+
+## How it works
+
+```text
+ you ──> prompt ──> Claude (Claude Code or the Agent SDK)
+                         │
+                         ▼
+                 studio tools (MCP)
+                         │
+                         ▼
+        engine: ffmpeg · whisper.cpp · HyperFrames
+                         │
+        ┌────────────┬───┴────────┬────────────┐
+        ▼            ▼            ▼            ▼
+   live preview   timeline        QC        export
+```
+
+## Showcase
+
+The studio's engine grew out of a private editing pipeline that has delivered 40+ edits for the ZKidz Dev channel. These covers
+came from it.
+
+<table>
+  <tr>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/11-claude-edits-my-videos-now.jpg" width="180" alt="Claude edits my videos now"></a><br>Claude edits my videos now</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/48-zkidz-studio-build.jpg" width="180" alt="Building ZKidz Studio in the open"></a><br>Building ZKidz Studio in the open</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/49-codex-vs-claude.jpg" width="180" alt="Codex vs Claude Opus 5.5"></a><br>Codex vs Claude Opus 5.5</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/29-claude-mods.jpg" width="180" alt="Claude Code mods"></a><br>Claude Code mods</td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/39-zkidz-publisher.jpg" width="180" alt="ZKidz Publisher"></a><br>ZKidz Publisher</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/07-my-coding-is-100-ai-now.jpg" width="180" alt="My coding is 100% AI now"></a><br>My coding is 100% AI now</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/06-claude-set-up-my-whole-nas.jpg" width="180" alt="Claude set up my whole NAS"></a><br>Claude set up my whole NAS</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/30-gpt-6-1-video-editor.jpg" width="180" alt="GPT-6.1 Sol as an alternative video editor"></a><br>GPT-6.1 Sol as an alternative video editor</td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/15-are-software-engineers-still-needed.jpg" width="180" alt="Are software engineers still needed?"></a><br>Are software engineers still needed?</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/17-rog-rapture-gt-be98-unboxing.jpg" width="180" alt="ROG Rapture GT-BE98 unboxing"></a><br>ROG Rapture GT-BE98 unboxing</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/26-camera-bag.jpg" width="180" alt="Inside my camera bag"></a><br>Inside my camera bag</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/13-how-to-start-a-freelance-career.jpg" width="180" alt="How to start a freelance career"></a><br>How to start a freelance career</td>
+  </tr>
+</table>
+
+### Edited in ZKidz Studio
+
+<table>
+  <tr>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/studio-ep12-cover-A.jpg" width="180" alt="Cover of the master edited in ZKidz Studio"></a></td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/studio-ep12-reels-cover.jpg" width="180" alt="Cover of the Reels cut edited in ZKidz Studio"></a></td>
+  </tr>
+</table>
+
+The studio's first real edit: a 4K master and a Reels cut that passed all 11 checks, made by Claude in terminal mode.
 
 ## Requirements
 
@@ -112,6 +187,8 @@ pnpm start
 A pull request that changes an unverified backend carries the `gpu-needed` label until someone checks it on real hardware.
 
 ## Documentation
+
+Full guide: [docs/user](docs/user/README.md). Website: <https://theangeloumali.github.io/zkidz-studio/>.
 
 - [Getting started](docs/user/getting-started.md)
 - [Connecting Claude](docs/user/claude-access.md)

@@ -27,6 +27,8 @@ docs/plans/*.html
 *.[aA][aA][cC]
 *.[fF][lL][aA][cC]
 *.[hH][eE][iI][cC]
+# The one published film: the launch page plays it from site/assets/.
+!site/assets/zkidz-studio-launch.mp4
 # Images stay tracked in design/; anything under media/ or raw/ is ignored
 media/
 raw/

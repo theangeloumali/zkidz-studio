@@ -4,6 +4,8 @@
 
 For people editing videos with ZKidz Studio. Last reviewed 2026-10-24.
 
+Website: <https://theangeloumali.github.io/zkidz-studio/>
+
 1. [Getting started](getting-started.md): install, first run, the demo project.
 2. [Connecting Claude](claude-access.md): modes A, B and T.
 3. [The editor](editor.md): preview, timeline, versions, cut review.

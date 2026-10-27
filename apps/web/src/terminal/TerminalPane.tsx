@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { RotateCcw } from "lucide-react";
@@ -37,6 +38,11 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
     const terminal = new Terminal({ convertEol: false, cursorBlink: true, fontFamily: "ui-monospace, monospace", fontSize: 13 });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
+    // Before open(), so xterm never builds its DOM renderer: that one styles cells with <style> elements and style
+    // attributes, which the app's style-src 'self' blocks, leaving Claude Code's output uncoloured and off its grid.
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    terminal.loadAddon(webgl);
     terminal.open(host);
     const connection = openTerminalConnection({
       sessionId,

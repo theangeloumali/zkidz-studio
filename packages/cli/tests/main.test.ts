@@ -22,17 +22,34 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
     for (const home of tempHomes) rmSync(home, { recursive: true, force: true });
   });
 
+  // `zks setup --help` once ignored the flag and ran the whole setup, downloads included.
+  it.each([["setup", "--help"], ["doctor", "-h"], ["--help"]])("prints the usage for %s %s and runs nothing", (...args) => {
+    const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
+    const outcome = runCli(args, home);
+    expect(outcome.status, outcome.stderr).toBe(0);
+    expect(outcome.stdout).toMatch(/^usage: zks setup/);
+    expect(existsSync(path.join(home, "tools"))).toBe(false);
+  });
+
   it("lists pinned models as JSON without downloading", () => {
     const listing = runCli(["models", "--json"]);
     expect(listing.status).toBe(0);
     const models = JSON.parse(listing.stdout) as { name: string; installed: boolean }[];
     expect(models.find((model) => model.name === "base")).toMatchObject({ installed: false, fetchOnSetup: true });
+    // Plan §7.4: the pinned whisper-cli is a CPU build, and on CPU the quantised turbo is the model edits and QC use.
+    expect(models.find((model) => model.name === "large-v3-turbo-q5_0")).toMatchObject({ installed: false, fetchOnSetup: true });
   });
 
   it("rejects an unknown command with usage and exit 2", () => {
     const outcome = runCli(["deploy"]);
     expect(outcome.status).toBe(2);
     expect(outcome.stderr).toMatch(/usage: zks (setup|doctor|models)/);
+  });
+
+  it("prints usage with every doctor flag on --help, exit 0", () => {
+    const outcome = runCli(["--help"]);
+    expect(outcome.status).toBe(0);
+    expect(outcome.stdout).toContain("zks doctor [--json] [--fetch] [--render] [--bench]");
   });
 
   // CI and the server hand the engine these paths (ZKS_FFMPEG, ZKS_CHROME), so the renders use the pinned builds.
@@ -80,11 +97,12 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
   // A fresh install has no ZKS_HOME yet; doctor must still diagnose it, as JSON, without naming the user.
   it("reports a missing ZKS_HOME as failed checks in valid, redacted JSON", { timeout: 120_000 }, () => {
     const missingHome = path.join(homedir(), `.zks-missing-${process.pid}`);
-    const outcome = runCli(["doctor", "--json"], missingHome);
+    const outcome = runCli(["doctor", "--json"], missingHome, { DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:45322/postgres" });
     expect(outcome.status).toBe(1);
-    const report = JSON.parse(outcome.stdout) as { ok: boolean; checks: { id: string }[] };
+    const report = JSON.parse(outcome.stdout) as { ok: boolean; checks: { id: string; status: string }[] };
     expect(report.ok).toBe(false);
     expect(report.checks.map((check) => check.id)).toContain("disk");
+    expect(report.checks.find((check) => check.id === "database")).toMatchObject({ status: "fail" });
     expect(outcome.stdout + outcome.stderr).not.toContain(homedir());
     expect(existsSync(missingHome)).toBe(false);
   });

@@ -3,7 +3,7 @@
 // fallback is refused on DrvFs, where 0600 means nothing.
 import { readFile, rm, writeFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Entry } from "@napi-rs/keyring";
+import { lazyImport, ModuleLoadError } from "../lazy-import.ts";
 
 const KEYRING_SERVICE = "zkidz-studio";
 const KEYRING_ACCOUNT = "anthropic-api-key";
@@ -12,11 +12,12 @@ const SECRETS_FILE_MODE = 0o600;
 const API_KEY_LINE = /^ANTHROPIC_API_KEY=(.+)$/m;
 // Used only when /proc/mounts is unreadable: WSL's automount root.
 const WSL_DRIVE_PATH = /^\/mnt\/[a-z](?:\/|$)/i;
+const loadKeyring = lazyImport("@napi-rs/keyring", () => import("@napi-rs/keyring"));
 
 export interface KeyringEntry {
-  readonly read: () => string | null;
-  readonly write: (secret: string) => void;
-  readonly remove: () => void;
+  readonly read: () => Promise<string | null>;
+  readonly write: (secret: string) => Promise<void>;
+  readonly remove: () => Promise<void>;
 }
 
 export interface SecretStore {
@@ -37,12 +38,12 @@ export class SecretStorageError extends Error {
 }
 
 export function createOsKeyringEntry(): KeyringEntry {
-  const entry = new Entry(KEYRING_SERVICE, KEYRING_ACCOUNT);
+  const openEntry = async () => new (await loadKeyring()).Entry(KEYRING_SERVICE, KEYRING_ACCOUNT);
   return {
-    read: () => entry.getPassword(),
-    write: (secret) => entry.setPassword(secret),
-    remove: () => {
-      entry.deletePassword();
+    read: async () => (await openEntry()).getPassword(),
+    write: async (secret) => (await openEntry()).setPassword(secret),
+    remove: async () => {
+      (await openEntry()).deletePassword();
     },
   };
 }
@@ -54,12 +55,12 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
 
   return {
     readApiKey: async () => {
-      const keyringValue = attempt(() => options.keyring.read());
+      const keyringValue = await attempt(() => options.keyring.read());
       if (keyringValue.ok && keyringValue.value !== null) return keyringValue.value;
       return isFileFallbackAllowed ? readSecretsFile(secretsPath) : null;
     },
     writeApiKey: async (apiKey) => {
-      if (attempt(() => options.keyring.write(apiKey)).ok) return;
+      if ((await attempt(() => options.keyring.write(apiKey))).ok) return;
       if (!isFileFallbackAllowed) throw new SecretStorageError("Windows Credential Manager is unavailable, so the key was not saved");
       if (await isOnDrvFs(options.studioHome, readMounts)) {
         throw new SecretStorageError("No OS keyring, and ZKS_HOME is on DrvFs where file permissions cannot protect the key");
@@ -67,7 +68,7 @@ export function createSecretStore(options: SecretStoreOptions): SecretStore {
       await writeSecretsFile(secretsPath, apiKey);
     },
     deleteApiKey: async () => {
-      attempt(() => options.keyring.remove());
+      await attempt(() => options.keyring.remove());
       if (isFileFallbackAllowed) await rm(secretsPath, { force: true });
     },
   };
@@ -115,11 +116,12 @@ async function writeSecretsFile(secretsPath: string, apiKey: string): Promise<vo
 
 type Attempt<Value> = { readonly ok: true; readonly value: Value } | { readonly ok: false };
 
-/** A keyring backend can be missing at runtime (no Secret Service on a headless Linux box); that is a fallback, not a crash. */
-function attempt<Value>(operation: () => Value): Attempt<Value> {
+/** A missing keyring backend (no Secret Service on a headless Linux box) is a fallback; a missing keyring module is a crash. */
+async function attempt<Value>(operation: () => Promise<Value>): Promise<Attempt<Value>> {
   try {
-    return { ok: true, value: operation() };
-  } catch {
+    return { ok: true, value: await operation() };
+  } catch (error) {
+    if (error instanceof ModuleLoadError) throw error;
     return { ok: false };
   }
 }

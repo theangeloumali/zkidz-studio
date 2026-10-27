@@ -79,6 +79,11 @@ describe("captions", () => {
     expect(CaptionEntrySchema.safeParse({ ids: [1, 2], en: "from the studio, back again." }).success).toBe(true);
   });
 
+  it("accepts a plate bottom on the canvas, so a line can move off the speaker's mouth", () => {
+    expect(CaptionEntrySchema.safeParse({ ids: [1], en: "lower", bottom: 1750 }).success).toBe(true);
+    expect(CaptionEntrySchema.safeParse({ ids: [1], en: "off the frame", bottom: 2000 }).success).toBe(false);
+  });
+
   it("rejects an entry with no phrase ids", () => {
     expect(CaptionEntrySchema.safeParse({ ids: [], en: "orphan" }).success).toBe(false);
   });

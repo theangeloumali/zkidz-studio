@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
-const { buildPreview } = require("..");
+const { buildPreview, captionCues } = require("..");
 
 const FRAMES = 300;
 const EDL = { fps_num: 30, fps_den: 1, frames: FRAMES, segments: [{ in: 0, out: FRAMES, target: 0, zoom: 1, cut_after: "pause" }], bleeps: [], cutaways: [] };
@@ -20,7 +20,7 @@ function workWith({ cues, captions }) {
     fs.mkdirSync(path.dirname(path.join(work, relative)), { recursive: true });
     fs.writeFileSync(path.join(work, relative), JSON.stringify(content));
   };
-  write("edl/v1.json", EDL);
+  write("preview/v1.edl.json", EDL); // the server's preview EDL, never the render's edl/v1.json
   if (cues) write("cues/v1.json", cues);
   if (captions) {
     write("captions/v1.json", captions);
@@ -86,6 +86,11 @@ test("hostile cue and caption text is drawn as text, never parsed as markup", ()
     placed.map((clip) => clip.text),
     [HOSTILE, HOSTILE],
   );
+});
+
+test("a caption's own plate bottom reaches the preview, as emit_cues carries it to the render", () => {
+  const work = workWith({ captions: [{ ids: [0, 1], en: "Lower", bottom: 1750 }] });
+  assert.deepEqual(captionCues(work, "v1"), [{ kind: "caption", at: 0.5, end: 2.4, text: "Lower", bottom: 1750 }]);
 });
 
 test("a video with no cues or captions yet still builds an empty, seekable page", () => {

@@ -1,15 +1,16 @@
 // Created by The Angelo Umali.
 // GET /api/media/:assetId with Range. Only registered files are served: uploads through confinePath, in-place files only
-// while their path still resolves to the realpath recorded at registration.
+// while their path still resolves to the realpath recorded at registration. GET …/videos/:videoId/proxy serves the
+// video's ingest proxy, the one file the live preview plays.
 import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { Readable } from "node:stream";
 import type { StudioDatabase } from "@zks/db";
 import { mediaAssets, projects } from "@zks/db/schema";
-import { API_ROUTES, IdSchema } from "@zks/shared";
+import { API_ROUTES, BaseVideoIdSchema, IdSchema } from "@zks/shared";
 import { eq } from "drizzle-orm";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { projectDir } from "../config.ts";
 import { notFound } from "../http/http-error.ts";
 import { parseByteRange } from "../media-io/range.ts";
@@ -52,21 +53,34 @@ export interface MediaStreamDeps {
 }
 
 export function registerMediaStreamRoute(app: Hono, deps: MediaStreamDeps): void {
-  app.get(API_ROUTES.streamMedia.path, async (c) => {
-    const filePath = await resolveRegisteredFile(deps, c.req.param("assetId"));
-    const { size } = await stat(filePath);
-    const headers: Record<string, string> = {
-      "accept-ranges": "bytes",
-      "content-type": CONTENT_TYPES[extname(filePath).slice(1).toLowerCase()] ?? "application/octet-stream",
-      "cross-origin-resource-policy": "same-origin",
-    };
-    const range = parseByteRange(c.req.header("range"), size);
-    if (range === "unsatisfiable") return c.body(null, 416, { ...headers, "content-range": `bytes */${size}` });
-    const { start, end } = range ?? { start: 0, end: size - 1 };
-    const body = size === 0 ? new Uint8Array(0) : Readable.toWeb(createReadStream(filePath, { start, end }));
-    headers["content-length"] = String(size === 0 ? 0 : end - start + 1);
-    if (range === null) return c.body(body, 200, headers);
-    return c.body(body, 206, { ...headers, "content-range": `bytes ${start}-${end}/${size}` });
+  app.get(API_ROUTES.streamMedia.path, async (c) => streamFile(c, await resolveRegisteredFile(deps, c.req.param("assetId"))));
+  app.get(API_ROUTES.streamProxy.path, async (c) => streamFile(c, await resolveProxyFile(deps, c.req.param("projectId"), c.req.param("videoId"))));
+}
+
+async function streamFile(c: Context, filePath: string): Promise<Response> {
+  const { size } = await stat(filePath);
+  const headers: Record<string, string> = {
+    "accept-ranges": "bytes",
+    "content-type": CONTENT_TYPES[extname(filePath).slice(1).toLowerCase()] ?? "application/octet-stream",
+    "cross-origin-resource-policy": "same-origin",
+  };
+  const range = parseByteRange(c.req.header("range"), size);
+  if (range === "unsatisfiable") return c.body(null, 416, { ...headers, "content-range": `bytes */${size}` });
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  const body = size === 0 ? new Uint8Array(0) : Readable.toWeb(createReadStream(filePath, { start, end }));
+  headers["content-length"] = String(size === 0 ? 0 : end - start + 1);
+  if (range === null) return c.body(body, 200, headers);
+  return c.body(body, 206, { ...headers, "content-range": `bytes ${start}-${end}/${size}` });
+}
+
+async function resolveProxyFile(deps: MediaStreamDeps, rawProjectId: string | undefined, rawVideoId: string | undefined): Promise<string> {
+  const projectId = IdSchema.safeParse(rawProjectId);
+  const videoId = BaseVideoIdSchema.safeParse(rawVideoId);
+  if (!projectId.success || !videoId.success) throw notFound();
+  const [project] = await deps.database.select({ slug: projects.slug }).from(projects).where(eq(projects.id, projectId.data));
+  if (project === undefined) throw notFound();
+  return deps.confinePath(projectDir(deps.studioHome, project.slug), `work/mezz/${videoId.data}.mp4`).catch(() => {
+    throw notFound();
   });
 }
 

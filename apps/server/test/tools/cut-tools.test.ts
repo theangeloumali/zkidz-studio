@@ -1,4 +1,6 @@
 // Created by The Angelo Umali.
+import { rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { findRejectedCandidates, MAX_REJECTED_SPANS, pendingCutReviewCards, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
@@ -63,6 +65,34 @@ describe("set_cuts", () => {
     const asset = await insertCameraAsset(fixture);
     const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(asset.id, [{ at: 1, end: 2, reason: "filler", fromCandidate: "nope" }]) });
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("set_cuts on hardware without animated zooms", () => {
+  const capabilitiesPath = () => join(server.studioHome, "capabilities.json");
+  const writeCapabilities = (zoomExpr: boolean) =>
+    writeFile(
+      capabilitiesPath(),
+      JSON.stringify({ profile: "nvidia", features: { uhd: true, intro: true, zoomExpr, matte: false }, transcribe: "whisper.cpp" }),
+    );
+  afterAll(() => rm(capabilitiesPath(), { force: true }));
+
+  // Every zoom preset is animated, so render_master would refuse it only after the overlays had rendered.
+  it("refuses zooms when the probe found no animated-zoom composite", async () => {
+    await writeCapabilities(false);
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const result = await callTool(fixture, "set_cuts", { cuts: { ...cutSpecFor(asset.id), zooms: [{ at: 1, end: 2, preset: "snap" }] } });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("zoomExpr");
+  });
+
+  it("keeps zooms where the probe found the composite", async () => {
+    await writeCapabilities(true);
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const result = await callTool(fixture, "set_cuts", { cuts: { ...cutSpecFor(asset.id), zooms: [{ at: 1, end: 2, preset: "snap" }] } });
+    expect(result.isError).toBeUndefined();
   });
 });
 

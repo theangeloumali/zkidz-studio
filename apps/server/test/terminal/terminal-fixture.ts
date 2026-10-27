@@ -54,6 +54,8 @@ export async function createTerminalFixture(overrides: Partial<TerminalSessionsD
     buildEnv: (tokens) => buildAgentEnv({ kind: "terminal", tokens }, { studioHome, appVersion: "0.0.0-test", proxyOptIn: false }),
     cancelProjectJobs: (projectId) => Promise.resolve(void cancelledProjects.push(projectId)),
     logger: silentLogger,
+    // Off unless a test turns it on: the stub never fires UserPromptSubmit, so every prompt would be resent.
+    promptRetryMs: 60_000,
     ...overrides,
   });
 

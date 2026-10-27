@@ -152,7 +152,7 @@ function withImages(clips) {
 }
 
 // Writes the composition and returns what the renderer needs; warns like the canvas page, throws on an unknown kind.
-function build(target, { guides = false, events = false, variant = "", layer = "front", theme: themeId = DEFAULT_THEME } = {}) {
+function build(target, { guides = false, events = false, settled = false, variant = "", layer = "front", theme: themeId = DEFAULT_THEME } = {}) {
   if (!LAYERS.includes(layer)) throw new Error(`--layer is behind (or omitted for the normal pass), not ${layer}`);
   const [video, cueList = video] = target.split(":");
   const cueNames = cueList.split(/[+ ,]/).filter(Boolean);
@@ -192,6 +192,7 @@ function build(target, { guides = false, events = false, variant = "", layer = "
     compositionId: behind ? `${compositionId}-behind` : compositionId,
     css: pageCss(),
     guides,
+    settled,
   });
   writeComposition(dir, html, images);
   fs.writeFileSync(path.join(dir, "cues.json"), JSON.stringify(placed, null, 1));

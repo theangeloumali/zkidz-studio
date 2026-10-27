@@ -2,7 +2,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
+import { encodePrompt, eraseInput, PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
 import type { PtyHost, TerminalPty } from "../../src/terminal/pty-host.ts";
 import type { TerminalSession } from "../../src/terminal/terminal-sessions.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, stubReport, waitFor } from "./stub-claude.ts";
@@ -41,7 +41,7 @@ function instantExitPtyHost(): PtyHost {
         },
       };
       ptys.set(sessionId, pty);
-      return pty;
+      return Promise.resolve(pty);
     },
     get: (sessionId) => ptys.get(sessionId),
   };
@@ -254,6 +254,15 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
       return latest?.type === "terminal.state" && latest.state === "ready";
     });
 
+    // An early interrupt puts the prompt back in Claude Code's input, so the next one erases it first.
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "next")).toBe(true);
+    await waitFor(() => session.pty.snapshot().includes("next"));
+    expect(session.pty.snapshot()).toContain(JSON.stringify(`${"\x7f".repeat("trim[201~".length)}${PASTE_START}next`).slice(1, -1));
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "after")).toBe(true);
+    await waitFor(() => session.pty.snapshot().includes("after"));
+    // Only the prompt an interrupt put back is erased.
+    expect(session.pty.snapshot()).toContain(`GOT ${JSON.stringify(`${PASTE_START}after`).slice(0, -1)}`);
+
     const sessionDir = join(fixture.runDir, session.sessionId);
     expect(fixture.sessions.kill(PROJECT_ID)).toBe(true);
     await waitFor(() => fixture.events.some((event) => event.type === "terminal.state" && event.state === "exited"));
@@ -262,6 +271,28 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.events).not.toContainEqual(expect.objectContaining({ type: "session.error" }));
     expect(fixture.sessions.submitPrompt(PROJECT_ID, "again")).toBe(false);
     expect(fixture.cancelledProjects).toEqual([PROJECT_ID]);
+  });
+
+  it("sends a prompt again until Claude Code reports it submitted, and not while a turn runs", async () => {
+    fixture = await createTerminalFixture({ promptRetryMs: 150 });
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+    await startSession(session);
+    const resent = (text: string) => JSON.stringify(`${eraseInput(`${text}\n`)}${encodePrompt(text)}`).slice(1, -1);
+
+    // A resumed Claude Code drops input for its first seconds, after the SessionStart hook has fired.
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "cut")).toBe(true);
+    await waitFor(() => session.pty.snapshot().includes(resent("cut")));
+    await fixture.sessions.handleHook(session.sessionId, hook(session.sessionId, { hook_event_name: "UserPromptSubmit", prompt: "cut" }));
+    const afterSubmit = session.pty.snapshot();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(session.pty.snapshot()).toBe(afterSubmit);
+
+    // Mid-turn, Claude Code queues the prompt and reports it only when its turn comes.
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "queued")).toBe(true);
+    await waitFor(() => session.pty.snapshot().includes("queued"));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(session.pty.snapshot()).not.toContain(resent("queued"));
   });
 
   it("cancels the project's jobs when claude exits unexpectedly, and leaves them on a clean exit", async () => {

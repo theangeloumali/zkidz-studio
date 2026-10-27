@@ -1,0 +1,51 @@
+# Created by The Angelo Umali.
+# Local Docker run of the studio (plan §10.0): docker compose -f docker/compose.yml up -d --build
+# GPU encoders: docker compose -f docker/compose.yml up -d studio-nvidia (run one service at a time; both publish 4317).
+name: zkidz-studio
+
+x-studio: &studio
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: zkidz-studio:local
+  # Built from this checkout every time; never pulled from or pushed to a registry.
+  pull_policy: build
+  init: true
+  # Loopback only: the server binds 0.0.0.0 inside the container, so this mapping is the network boundary.
+  ports:
+    - "127.0.0.1:4317:4317"
+  volumes:
+    - zks-home:/zks-home
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4317/').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+
+services:
+  studio:
+    <<: *studio
+    environment:
+      ZKS_CONTAINER: "1"
+      ZKS_HOME: /zks-home
+
+  studio-nvidia:
+    <<: *studio
+    profiles: [nvidia]
+    environment:
+      ZKS_CONTAINER: "1"
+      ZKS_HOME: /zks-home
+      # video mounts the NVENC/NVDEC libraries; the toolkit default (compute,utility) leaves them out.
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility, video]
+
+volumes:
+  # Holds the database, projects and the API key entered in the UI (0600); never put the key in .env.
+  zks-home:

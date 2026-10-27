@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // Tool results as MCP CallToolResult: JSON text for the model plus `structuredContent` for the server.
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ImageContent } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
 
 /** An expected failure the model can act on; its message reaches Claude verbatim, so it never carries a path. */
@@ -8,8 +8,8 @@ export class ToolError extends Error {
   override readonly name = "ToolError";
 }
 
-export function toolResult(structuredContent: Record<string, unknown>, isError: boolean): CallToolResult {
-  const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(structuredContent) }];
+export function toolResult(structuredContent: Record<string, unknown>, isError: boolean, images: readonly ImageContent[] = []): CallToolResult {
+  const content: CallToolResult["content"] = [{ type: "text", text: JSON.stringify(structuredContent) }, ...images];
   return isError ? { content, structuredContent, isError: true } : { content, structuredContent };
 }
 

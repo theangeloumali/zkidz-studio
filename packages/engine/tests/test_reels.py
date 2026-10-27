@@ -37,17 +37,21 @@ class MakeReelsTests(unittest.TestCase):
         ranges = [[30, 40], [5, 15], [38, 45], [-3, 1], [95, 120], [60, 60]]
         self.assertEqual(make_reels.merged(ranges, 100.0), [[0.0, 1], [5, 15], [30, 45], [95, 100.0]])
 
+    def test_a_pin_survives_keeps_that_touch_and_join(self):
+        self.assertEqual(make_reels.merged([[10, 20], [20, 25, "pin"]], 60.0), [[10, 25, "pin"]])
+        self.assertEqual(make_reels.merged([[10, 20, "pin"], [15, 25]], 60.0), [[10, 25, "pin"]])
+
     def test_complement_covers_everything_outside_keep(self):
         gaps = make_reels.complement([[5, 15], [30, 45]], 100.0)
         self.assertEqual([gap[:2] for gap in gaps], [[0.0, 5], [15, 30], [45, 100.0]])
         self.assertEqual(make_reels.complement([[0.0, 100.0]], 100.0), [])
 
-    def test_a_pinned_keep_pins_the_removal_that_leads_into_it(self):
+    def test_a_pinned_keep_pins_the_removals_on_both_its_edges(self):
         # v5r QC r6: the unpinned edge at 180.05 snapped back into the [k] of the cut 'ko' at 179.913.
         keep = make_reels.merged([[30, 45, "pin"], [5, 15]], 100.0)
         self.assertEqual(keep, [[5, 15], [30, 45, "pin"]])
         outside = make_reels.OUTSIDE_KEEP
-        self.assertEqual(make_reels.complement(keep, 100.0), [[0.0, 5, outside], [15, 30, outside, "pin"], [45, 100.0, outside]])
+        self.assertEqual(make_reels.complement(keep, 100.0), [[0.0, 5, outside], [15, 30, outside, "pin"], [45, 100.0, outside, "pin"]])
         self.assertTrue(make_reels.inside({"at": 31, "end": 40}, keep))
 
     def test_reel_spec_adds_the_complement_and_flags_the_reel(self):

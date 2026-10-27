@@ -15,7 +15,7 @@ from unittest import mock
 from support import ENGINE, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from test_cli import run_cli
-from zks_engine import cli, ffio, home, join_sources, showcase, transcribe
+from zks_engine import cli, ffio, home, join_sources, progress, progress_store, showcase, transcribe
 from zks_engine.transcribe import whispercpp
 
 JFK_WAV = ENGINE / "tests" / "fixture" / "whisper" / "jfk-3s.wav"
@@ -134,6 +134,21 @@ class TranscribeTests(ScratchWork):
         model_path.assert_called_once_with("base")
         words = json.loads((self.work / "transcripts" / "v1.words.json").read_text(encoding="utf-8"))
         self.assertEqual(words, [{"at": 0.1, "end": 0.4, "text": "Hello"}, {"at": 0.4, "end": 0.9, "text": "world."}])
+
+    # The server mirrors this record into the job row, so a long transcription shows its progress, not 0%. Audio seconds
+    # paced per model: a chunk's length and a model's speed both vary too much to pace an ETA.
+    def test_reports_finished_chunks_in_the_progress_record(self):
+        self.ingested_audio()
+        with (
+            mock.patch.object(progress_store, "WORK", self.work),
+            mock.patch.object(whispercpp, "transcribe_file", side_effect=self.fake_whisper),
+            mock.patch.object(whispercpp, "model_path", return_value=Path("m.bin")),
+        ):
+            code, _report = call_cli("transcribe", "--json", "--video", "v1", "--language", "en", "--model", "base")
+            record = progress.read_record(progress.record_path("v1"))
+        self.assertEqual(code, 0)
+        self.assertEqual({key: record[key] for key in ("stage", "pace", "state", "done", "total", "unit")},
+                         {"stage": "transcribing", "pace": "transcribing m", "state": "done", "done": 3.0, "total": 3.0, "unit": "audio seconds"})
 
     def test_without_ingested_audio_it_says_to_ingest_first(self):
         code, payload = call_cli("transcribe", "--json", "--video", "v1", "--language", "en", "--model", "base")

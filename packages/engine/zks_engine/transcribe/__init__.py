@@ -2,7 +2,7 @@
 # Word-level transcription through whisper.cpp, split at quiet points and run in parallel.
 # Usage (from the work dir): python -m zks_engine.transcribe audio/v3.wav transcripts/v3_words.json [chunks] [language] [model]
 import json
-import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -41,15 +41,30 @@ def transcribe_chunk(wav, start, end, index, language, model, threads):
     return [{**word, "start": word["start"] + offset, "end": word["end"] + offset} for word in words]
 
 
-def main(wav, destination, chunks=6, language="tl", model=None):
+def main(wav, destination, chunks=6, language="tl", model=None, stage=None):
+    """stage: an optional progress.Job, told the audio seconds to hear and how many are heard so far."""
     (WORK / "transcripts").mkdir(exist_ok=True)
     model_file = whispercpp.model_path(model)
     points = split_points(load_energy(WORK / wav), chunks)
     count = len(points) - 1
     jobs = min(count, MAX_JOBS)
-    threads = max(1, (os.cpu_count() or 4) // jobs)  # parallel chunks share the cores instead of oversubscribing them
+    threads = whispercpp.threads_for(jobs)
+    heard = 0.0
+    lock = threading.Lock()
+
+    def run_chunk(index):
+        nonlocal heard
+        words = transcribe_chunk(wav, points[index], points[index + 1], index, language, model_file, threads)
+        if stage is not None:
+            with lock:
+                heard += points[index + 1] - points[index]
+                stage.update(round(heard, 2))
+        return words
+
     with slot("whisper", f"transcribe {wav} ({WORK})"), ThreadPoolExecutor(jobs) as pool:
-        parts = pool.map(lambda index: transcribe_chunk(wav, points[index], points[index + 1], index, language, model_file, threads), range(count))
+        if stage is not None:
+            stage.begin(total=round(points[-1] - points[0], 2), pace=f"transcribing {model_file.stem}")
+        parts = pool.map(run_chunk, range(count))
     words = [word for part in parts for word in part]
     (WORK / destination).write_text("".join(json.dumps(word) + "\n" for word in words), encoding="utf-8")
     print(f"{len(words)} words from {count} chunks split at {[round(p, 1) for p in points]}")

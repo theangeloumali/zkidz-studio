@@ -8,10 +8,13 @@ export const PREVIEW_PORT = 4318;
 /** Local Supabase Postgres. Below 49152: Hyper-V reserves shifting 54xxx/55xxx ranges on Windows (spike 03, plan §8). */
 export const SUPABASE_DB_PORT = 45322;
 export const LOOPBACK_HOST = "127.0.0.1";
+/** Literal addresses only: "localhost" depends on the hosts file, which can point it at a LAN address. */
+export const LOOPBACK_LITERAL_HOSTS: ReadonlySet<string> = new Set([LOOPBACK_HOST, "::1", "[::1]"]);
 
 export const ENV = {
   home: "ZKS_HOME",
   port: "ZKS_PORT",
+  previewPort: "ZKS_PREVIEW_PORT",
   ffmpeg: "ZKS_FFMPEG",
   chrome: "ZKS_CHROME",
   container: "ZKS_CONTAINER",

@@ -1,0 +1,38 @@
+# Created by The Angelo Umali.
+# Dependency review (plan §11 supply chain), started by hand: fails on a newly added dependency with a known
+# vulnerability between two refs. Actions are pinned by commit SHA; bump the SHA and the tag comment together.
+name: dependency-review
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+    inputs:
+      base-ref:
+        description: The ref the change is compared against
+        required: true
+        default: develop
+      head-ref:
+        description: The ref holding the change (blank for the ref this run started on)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: dependency review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # The inputs reach the action as `with:` values, never a shell, so a crafted ref cannot inject a command.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          base-ref: ${{ inputs.base-ref }}
+          head-ref: ${{ inputs.head-ref || github.sha }}
+          fail-on-severity: moderate
+          comment-summary-in-pr: never

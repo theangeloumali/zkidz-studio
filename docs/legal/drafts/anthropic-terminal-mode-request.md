@@ -49,7 +49,8 @@ Options 1 and 2 ship regardless of your answer.
 - It runs Claude only for the person at the keyboard of that machine. Requests to the terminal from any other web origin are refused.
   There is no LAN mode, no remote access and no shared account.
 - It does not use the Agent SDK at all. The SDK is used only with an API key or a cloud provider (options 1 and 2).
-- The product name is "ZKidz Studio". The UI says "Powered by Claude" and, in plain text, "runs Claude Code on your computer". It uses
+- The product name is "ZKidz Studio". The UI names Claude and Claude Code only in plain text that describes what runs, for example
+  "The studio runs Claude on this computer" and "Use Claude Code in a terminal (your own sign-in)". It uses
   no Claude or Anthropic logos and no Claude Code artwork.
 
 This is the same pattern as Orca (https://github.com/stablyai/orca), which runs the user's own Claude Code in its terminals.

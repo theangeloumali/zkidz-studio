@@ -39,7 +39,7 @@ export interface AgentManagerDeps {
   /** Per-project limits and the rules block, read at every start so a new rule reaches the next session. */
   readonly loadSessionSetup?: (project: ProjectRow) => Promise<SessionSetup>;
   /** null on the `-p` path, whose child reaches the studio tools through the HTTP twin instead. */
-  readonly studioMcpServer: ((project: ProjectRow) => McpServerConfig) | null;
+  readonly studioMcpServer: ((project: ProjectRow) => McpServerConfig | null | Promise<McpServerConfig | null>) | null;
   readonly describeGate: (project: ProjectRow, tool: string, input: unknown) => Promise<ApprovalFacts | null>;
   readonly cancelProjectJobs: (projectId: string) => Promise<void>;
   readonly initTimeoutMs?: number;
@@ -178,7 +178,8 @@ export class AgentManager {
     await ensureAgentConfigDir(agentConfigDir(studioHome));
     const recorder = new SessionRecorder({ database, projectId: project.id, credential });
     const env = buildAgentEnv(credential, { studioHome, appVersion: this.#deps.appVersion, proxyOptIn: settings.proxyOptIn });
-    const options = this.#sessionOptions({ project, credential, env, recorder, setup });
+    const studioMcpServer = (await this.#deps.studioMcpServer?.(project)) ?? null;
+    const options = this.#sessionOptions({ project, credential, env, recorder, setup, studioMcpServer });
     const session = createAgentSession({ ...options, ...(resume === undefined ? {} : { resume }) });
     return { project, session, recorder, attempt: request.attempt };
   }
@@ -189,6 +190,7 @@ export class AgentManager {
     env: Record<string, string>;
     recorder: SessionRecorder;
     setup: SessionSetup | undefined;
+    studioMcpServer: McpServerConfig | null;
   }): AgentSessionOptions {
     const { project, credential } = start;
     const deps = this.#deps;
@@ -203,7 +205,7 @@ export class AgentManager {
         env: start.env,
         broker: deps.broker,
         limits: { ...deps.limits, ...start.setup?.limits },
-        studioMcpServer: deps.studioMcpServer?.(project) ?? null,
+        studioMcpServer: start.studioMcpServer,
         ...(start.setup === undefined ? {} : { systemPromptAppend: start.setup.systemPromptAppend }),
         describeGate: (tool: string, input: unknown) => deps.describeGate(project, tool, input),
       }),

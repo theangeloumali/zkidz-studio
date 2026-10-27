@@ -1,0 +1,53 @@
+# Created by The Angelo Umali.
+# Build context: source only. Never secrets, git history, host installs, media or local agent state.
+# Unprefixed patterns match only at the context root, so everything that can appear at any depth carries **/.
+.git
+.claude
+recordings
+docker/compose.yml
+# Secrets (mirrors .gitignore, plus key material .gitignore leaves to gitleaks)
+**/.env
+**/.env.*
+!**/.env.example
+**/*.secrets.json
+**/.npmrc
+**/*.pem
+**/*.key
+# Host installs and build output
+**/node_modules
+**/.venv
+**/dist
+**/coverage
+**/.turbo
+**/playwright-report
+**/test-results
+**/.DS_Store
+**/claudedocs
+# Media, models, partial downloads and local data (mirrors .gitignore)
+**/*.[mM][pP]4
+**/*.[mM][oO][vV]
+**/*.[mM][kK][vV]
+**/*.[wW][aA][vV]
+**/*.[mM][tT][sS]
+**/*.[mM]2[tT][sS]
+**/*.[iI][nN][sS][vVpP]
+**/*.[lL][rR][vV]
+**/*.[wW][eE][bB][mM]
+**/*.[aA][vV][iI]
+**/*.[mM]4[aA]
+**/*.[mM][pP]3
+**/*.[aA][aA][cC]
+**/*.[fF][lL][aA][cC]
+**/*.[hH][eE][iI][cC]
+**/media
+**/raw
+**/*.bin
+**/*.part
+**/models
+**/.models
+**/data
+**/.data
+**/.zks
+**/*.gguf
+**/*.onnx
+**/*.safetensors

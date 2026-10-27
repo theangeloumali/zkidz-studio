@@ -4,7 +4,7 @@ import type { HookPayload, HookResponse } from "@zks/shared";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import { hookToStudioEvents } from "./hook-events.ts";
 import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
-import { encodePrompt } from "./prompt-input.ts";
+import { encodePrompt, eraseInput } from "./prompt-input.ts";
 import { removeSessionFiles } from "./session-files.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
 
@@ -12,6 +12,9 @@ export type { TerminalSession, TerminalSessionsDeps } from "./session-launch.ts"
 
 /** Spike 07: SessionStart lands about 3 s after spawn; past this the user is likely signing in. */
 const SESSION_START_TIMEOUT_MS = 30_000;
+/** A resumed Claude Code drops input for its first seconds, after SessionStart has fired (measured on 2.1.311). */
+const PROMPT_RETRY_MS = 3000;
+const PROMPT_ATTEMPTS = 4;
 
 export interface TerminalSessions {
   open(request: OpenTerminalRequest): Promise<TerminalSession>;
@@ -51,6 +54,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
 
     record.pty.onExit((exitCode) => {
       clearTimeout(record.sessionStartTimer);
+      clearTimeout(record.promptRetryTimer);
       records.delete(record.sessionId);
       const isUnexpected = !record.wasKilled && exitCode !== 0;
       const exitEvents: NewStudioEvent[] = [{ type: "terminal.state", projectId, state: "exited", exitCode }];
@@ -95,6 +99,29 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     return preToolUseAnswer(decision);
   };
 
+  // Erases a prompt a Stop put back in Claude Code's input first, so the paste is not appended to it.
+  const writePrompt = (record: SessionRecord, text: string) => {
+    const erase = record.promptToErase === undefined ? "" : eraseInput(record.promptToErase);
+    record.promptToErase = undefined;
+    record.lastPrompt = text;
+    record.pty.write(erase + encodePrompt(text));
+    if (!record.isWorking) retryUntilSubmitted(record, text, 1);
+  };
+
+  // Resent until UserPromptSubmit confirms it; the erase covers the text and the newline a swallowed Enter left behind.
+  const retryUntilSubmitted = (record: SessionRecord, text: string, attempt: number) => {
+    clearTimeout(record.promptRetryTimer);
+    record.promptRetryTimer = setTimeout(() => {
+      if (attempt >= PROMPT_ATTEMPTS) {
+        deps.logger.warn("terminal prompt never confirmed", { projectId: record.projectId });
+        return;
+      }
+      record.pty.write(eraseInput(`${text}\n`) + encodePrompt(text));
+      retryUntilSubmitted(record, text, attempt + 1);
+    }, deps.promptRetryMs ?? PROMPT_RETRY_MS);
+    record.promptRetryTimer.unref();
+  };
+
   const withProjectRecord = (projectId: string, act: (record: SessionRecord) => void): boolean => {
     const record = findRecordByProject(projectId);
     if (record === undefined) return false;
@@ -128,6 +155,11 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
         return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This Claude session has ended." }) : {};
       }
       if (payload.hook_event_name === "PreToolUse") return answerPreToolUse(record, payload);
+      if (payload.hook_event_name === "UserPromptSubmit") {
+        clearTimeout(record.promptRetryTimer);
+        record.isWorking = true;
+      }
+      if (payload.hook_event_name === "Stop") record.isWorking = false;
       if (payload.hook_event_name === "SessionStart") {
         clearTimeout(record.sessionStartTimer);
         // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run.
@@ -136,7 +168,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
           return {};
         }
         record.hasStarted = true;
-        for (const text of record.queuedPrompts.splice(0)) record.pty.write(encodePrompt(text));
+        for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
       }
       await publishAll(hookToStudioEvents(payload, eventContext(record)));
       return {};
@@ -144,13 +176,16 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     // Before SessionStart the folder-trust dialog may own the pane, and the prompt's Enter would pick its "No, exit" default.
     submitPrompt: (projectId, text) =>
       withProjectRecord(projectId, (record) => {
-        if (record.hasStarted) record.pty.write(encodePrompt(text));
+        if (record.hasStarted) writePrompt(record, text);
         else record.queuedPrompts.push(text);
       }),
     // Claude Code fires no Stop hook on a user interrupt, so the turn's end is reported here.
     stop: (projectId) =>
       withProjectRecord(projectId, (record) => {
         record.pty.interrupt();
+        clearTimeout(record.promptRetryTimer);
+        record.isWorking = false;
+        record.promptToErase = record.lastPrompt;
         publishInBackground([{ type: "terminal.state", projectId, state: "ready" }]);
       }),
     kill: (projectId) => withProjectRecord(projectId, killRecord),

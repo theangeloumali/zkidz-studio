@@ -2,6 +2,7 @@
 # render_master (plan §6.8): the overlays and SFX mix, then render_final's chunked master, then the frame and loudness gates.
 # 4K is HEVC on the NVIDIA composite; every other backend delivers a 1080 master (plan §14 Phase 5).
 import subprocess
+import sys
 
 from .. import backends, pipeline, qc, render_final, sfx
 from ..pipeline import HF_DIR, loudness
@@ -22,6 +23,18 @@ def master_path(work, video, draft, uhd):
     return work / "out" / f"{video}{'-4k' if uhd else '-draft' if draft else ''}.mp4"
 
 
+def render_stills(video, names, times, *flags):
+    """hf/render.js --stills of those cue sheets, composited on the proxy, into stills/<names>.hf/t<at>.png. A refusal
+    (a cover title still animating in) is a gate naming its reason."""
+    command = ["node", str(HF_DIR / "render.js"), f"{video}:{'+'.join(names)}", "--stills", *times, *flags]
+    result = subprocess.run(command, stderr=subprocess.PIPE, text=True)
+    sys.stderr.write(result.stderr)
+    if result.returncode:
+        lines = result.stderr.strip().splitlines()
+        raise GateFailed(f"stills: {lines[-1] if lines else f'render.js exit {result.returncode}'}")
+    return pipeline.WORK / "stills" / f"{'+'.join(names)}.hf"
+
+
 def cue_sheet_names(video, work):
     """The cue sheets render.js draws for a video, in order: the main sheet, a reel's own overrides, then the captions."""
     base = inputs.read_json(work / "edl" / f"{video}.json").get("base", video)
@@ -37,12 +50,14 @@ def draw_overlays(video):
     subprocess.run(["node", str(HF_DIR / "render.js"), target], check=True)
 
 
-def render_master(video, quality, source, backend=None, edit=edit_stage, overlays=draw_overlays, encode=render_final.main, work=None):
+def render_master(video, quality, source, backend=None, edit=edit_stage, preflight=render_final.preflight, overlays=draw_overlays,
+                  encode=render_final.main, work=None):
     """-> {path (relative to the work dir), frames, lufs, truePeak, bytes, master, inputs}; GateFailed when the master misses the EDL or -14 LUFS.
     The edit stage runs first, so the master's frame and loudness gates judge the current cut spec."""
     work = work or pipeline.WORK
     draft, uhd = master_flags((backend or backends.active()).name, quality)
     edit(video, source)
+    preflight(video)
     overlays(video)
     encode(video, draft, uhd)
     path = master_path(work, video, draft, uhd)

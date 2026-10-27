@@ -443,10 +443,21 @@ def main(video, draft=False, uhd=False):
     print(f"rendered {output} ({audio_path.name}{note})")
 
 
-def encode_master(video, edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro=None, report=None):
+def refuse_off_gpu(video, edl, route):
     if not route.on_gpu and (edl.get("zooms") or edl.get("matte")):
         sys.exit(f"{video}: animated zooms and the matte render only on the NVIDIA CUDA + OpenCL composite; this source takes "
                  f"{route.backend.name}'s CPU-filter graph")
+
+
+def preflight(video):
+    """render_master's check before the overlay frames, so a route that cannot composite the EDL fails in seconds."""
+    edl = load_edl(video)
+    if edl.get("zooms") or edl.get("matte"):
+        refuse_off_gpu(video, edl, route_for(source_path(load_cuts(video)), backends.active()))
+
+
+def encode_master(video, edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro=None, report=None):
+    refuse_off_gpu(video, edl, route)
     if not route.on_gpu:
         print(f"{video}: compositing with CPU filters between {route.backend.name} decode and encode", flush=True)
     render_chunks(edl, spec, source, route, size, encoder, frames_dir, audio_path, part, intro, report)

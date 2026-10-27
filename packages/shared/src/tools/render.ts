@@ -19,7 +19,8 @@ export const renderPreview = defineTool({
   input: z.strictObject({ at: z.array(EditedSecondsSchema).min(1).max(MAX_PREVIEW_STILLS).optional(), guides: z.boolean().optional() }),
   output: z.strictObject({ stills: z.array(z.strictObject({ at: EditedSecondsSchema, path: ProjectPathSchema })).max(MAX_PREVIEW_STILLS) }),
   approval: "auto",
-  isReadOnly: true,
+  /** It rebuilds the edit (work/edl, the edit's audio), so it must not run beside another write. */
+  isReadOnly: false,
 });
 
 export const checkMotion = defineTool({

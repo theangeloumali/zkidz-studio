@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import { API_ROUTES } from "@zks/shared";
+import type { DatabaseCheck } from "@zks/shared/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestServer, getRequest, type TestServer } from "../support/test-server.ts";
 
@@ -13,14 +14,17 @@ const CLI_REPORT = {
     { id: "something-new", status: "warn", required: false, detail: "later CLI check" },
   ],
 };
+const EMBEDDED: DatabaseCheck = { id: "database", status: "ok", required: true, detail: "Embedded database (PGlite)" };
 
 // One server per test, booted in the hook: a PGlite boot takes up to ~30 s on a loaded machine, past the 5 s test timeout.
 // Each test swaps in its own doctor before its first request; the fresh server keeps the cache per test.
 let server: TestServer;
 let runDoctor: () => Promise<unknown> = () => Promise.resolve(CLI_REPORT);
+let databaseCheck: DatabaseCheck = EMBEDDED;
 beforeEach(async () => {
   runDoctor = () => Promise.resolve(CLI_REPORT);
-  server = await createTestServer({ runDoctor: () => runDoctor() });
+  databaseCheck = EMBEDDED;
+  server = await createTestServer({ doctor: { runDoctor: () => runDoctor(), checkDatabase: () => Promise.resolve(databaseCheck) } });
 });
 afterEach(async () => {
   await server.close();
@@ -42,8 +46,29 @@ describe("GET /api/doctor", () => {
         { id: "ffmpeg", label: "ffmpeg", status: "pass", detail: "7.1 with NVENC" },
         { id: "chrome", label: "Chrome", status: "fail", detail: "not installed", fix: "run: pnpm zks setup" },
         { id: "something-new", label: "something-new", status: "warn", detail: "later CLI check" },
+        { id: "database", label: "Data backend", status: "pass", detail: "Embedded database (PGlite)" },
       ],
     });
+  });
+
+  // The doctor child never sees DATABASE_URL, so on Postgres its own database row would still say PGlite.
+  it("reports the server's own database check in place of the doctor child's", async () => {
+    const app = serverWith(() =>
+      Promise.resolve({ checks: [...CLI_REPORT.checks, { id: "database", status: "ok", required: true, detail: "Embedded database (PGlite)" }] }),
+    );
+    databaseCheck = {
+      id: "database",
+      status: "fail",
+      required: true,
+      detail: "Postgres at 127.0.0.1:45322, but port 45322 answers on 192.0.2.10",
+      fix: "Publish Postgres on 127.0.0.1:45322 only",
+    };
+
+    const { checks } = API_ROUTES.getDoctor.response.parse(await (await getRequest(app, API_ROUTES.getDoctor.path)).json());
+
+    expect(checks.filter((check) => check.id === "database")).toEqual([
+      { id: "database", label: "Data backend", status: "fail", detail: databaseCheck.detail, fix: "Publish Postgres on 127.0.0.1:45322 only" },
+    ]);
   });
 
   it("runs the checks once and serves the cached rows until ?refresh=1", async () => {
@@ -70,6 +95,13 @@ describe("GET /api/doctor", () => {
     expect(await failed.json()).toEqual({ error: "The system checks could not run; see the server log" });
     expect((await getRequest(app, "/api/doctor")).status).toBe(200);
     expect(runs).toBe(2);
+  });
+
+  it("logs the CLI's own error when the doctor could not run at all", async () => {
+    const app = serverWith(() => Promise.resolve({ ok: false, error: "EACCES: permission denied, open '$ZKS_HOME/capabilities.json'" }));
+
+    expect((await getRequest(app, "/api/doctor")).status).toBe(500);
+    expect(app.logLines.some((line) => line.includes("doctor checks failed") && line.includes("EACCES: permission denied"))).toBe(true);
   });
 
   it("rejects a report that does not match the CLI's shape instead of passing it on", async () => {

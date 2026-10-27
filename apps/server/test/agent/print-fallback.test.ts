@@ -134,7 +134,7 @@ describe("agent services with the SDK's claude binary installed", () => {
   afterAll(() => harness.close());
 
   it("runs sessions through the SDK query", async () => {
-    expect(harness.services.agentRunner).toBe("sdk");
+    expect(await harness.services.agentRunner).toBe("sdk");
     expect((await harness.submitPrompt()).status).toBe(200);
     expect(harness.sdkCalls).toHaveLength(1);
     expect(mcpServersBuilt.count).toBe(1);
@@ -172,7 +172,7 @@ describe.skipIf(isWindows)("agent services without the SDK's claude binary", () 
     harness.server.app.request(`/api/mcp/${sessionId}/tools`, { headers: { host: TEST_HOST, authorization: `Bearer ${token}` } }, connectionFrom("127.0.0.1"));
 
   it("falls back to claude -p, whose twin calls are admitted while unknown sessions are refused", async () => {
-    expect(harness.services.agentRunner).toBe("print");
+    expect(await harness.services.agentRunner).toBe("print");
     const { status, dir } = await harness.submitPrompt();
     expect(status).toBe(200);
 

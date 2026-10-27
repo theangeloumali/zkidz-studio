@@ -28,8 +28,10 @@ function scrim(name, [x, y, w, h], at, duration, { strength = 0.55 } = {}) {
   };
 }
 
-// Two warm blobs crossing the frame on opposite diagonals over ~1.4 s from `at`.
-function lightLeak(name, at) {
+// Two warm blobs crossing the frame on opposite diagonals over ~1.4 s from `at`. `bottom` keeps them above that y, fading
+// out over LEAK_FADE px, so a hook's leak never crosses the mouth the QC hookMouth gate watches.
+const LEAK_FADE = 120;
+function lightLeak(name, at, { bottom } = {}) {
   const blob = (index, colour) =>
     `<div class="leak-blob ${name}-b${index} pre" style="background:radial-gradient(circle,${colour} 0%,rgba(255,150,60,0.18) 38%,rgba(255,150,60,0) 70%)"></div>`;
   const sweep = (index, from, mid, to, delay) => ({
@@ -44,12 +46,17 @@ function lightLeak(name, at) {
     },
   });
   return {
-    html: `<div class="leak ${name}">${blob(0, "rgba(255,206,110,0.6)")}${blob(1, "rgba(255,170,90,0.5)")}</div>`,
+    html: `<div class="leak ${name}"${bottom === undefined ? "" : ` style="${bandStyle(bottom)}"`}>${blob(0, "rgba(255,206,110,0.6)")}${blob(1, "rgba(255,170,90,0.5)")}</div>`,
     motion: [
       sweep(0, { x: -900, y: -300 }, { x: -100, y: 200 }, { x: 600, y: 700 }, 0),
       sweep(1, { x: 1100, y: 900 }, { x: 400, y: 500 }, { x: -300, y: 50 }, 0.15),
     ],
   };
+}
+
+function bandStyle(bottom) {
+  const mask = `linear-gradient(to bottom,#000 ${px(bottom - LEAK_FADE)},transparent ${px(bottom)})`;
+  return `bottom:auto;height:${px(bottom)};-webkit-mask-image:${mask};mask-image:${mask}`;
 }
 
 // A white flash over the whole frame at an impact: up in two frames, gone in five.

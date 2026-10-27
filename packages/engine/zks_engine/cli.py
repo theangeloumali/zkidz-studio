@@ -6,11 +6,12 @@ import json
 import platform
 import sys
 
-from . import __version__, backends, capabilities, ffio, join_sources, prepare, showcase, specs, theme_index, transcribe
+from . import __version__, backends, capabilities, ffio, inspect_commands, join_sources, prepare, progress, showcase, specs, theme_index, transcribe
 from .pipeline import WORK
 from .render import commands as render_commands
 from .specs.gates import GateFailed
 from .specs.paths import video_id
+from .transcribe import whispercpp
 
 EXIT_ENGINE_ERROR = 1
 EXIT_REJECTED = 3
@@ -103,11 +104,12 @@ def transcribe_payload(args):
     if not (WORK / "audio" / f"{video}.wav").exists():
         raise specs.SpecError(f"no audio/{video}.wav: ingest {video} first")
     try:
-        words, chunks = transcribe.main(f"audio/{video}.wav", f"transcripts/{video}_words.jsonl", 6, args.language, args.model)
+        with progress.job(video, "transcribing", unit="audio seconds") as stage:
+            words, chunks = transcribe.main(f"audio/{video}.wav", f"transcripts/{video}_words.jsonl", 6, args.language, args.model, stage=stage)
     except ValueError as error:  # an unpinned model name
         raise specs.SpecError(str(error)) from error
     # The server's transcript shape: a JSON array in seconds, text trimmed.
-    server_words = [{"at": word["start"] / 1000, "end": word["end"] / 1000, "text": word["text"].strip()} for word in words]
+    server_words = whispercpp.in_seconds(words)
     (WORK / "transcripts" / f"{video}.words.json").write_text(json.dumps(server_words), encoding="utf-8")
     return {"wordsPath": f"transcripts/{video}.words.json", "words": len(server_words), "chunks": chunks}
 
@@ -149,6 +151,7 @@ def parser():
     probed.set_defaults(handler=capabilities_payload)
     for command in (version, probe, probed, index, kinds, validate, ingest, transcription):
         command.add_argument("--json", action="store_true", required=True, help="print JSON (the only output format)")
+    inspect_commands.register(commands)
     render_commands.register(commands)
     return root
 

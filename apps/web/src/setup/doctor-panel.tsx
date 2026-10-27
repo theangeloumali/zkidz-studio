@@ -11,20 +11,27 @@ const STATUS_VIEW = {
   warn: { Icon: CircleAlert, word: "Check", tone: "text-copy" },
   fail: { Icon: CircleX, word: "Missing", tone: "text-danger" },
 } as const;
+const DATABASE_CHECK_ID = "database";
+
+function StatusCell({ status, failWord }: { readonly status: DoctorCheck["status"]; readonly failWord?: string }) {
+  const { Icon, word, tone } = STATUS_VIEW[status];
+  return (
+    <td className="py-3 pr-4 align-top">
+      <span className={`inline-flex items-center gap-1.5 text-ui font-semibold ${tone}`}>
+        <Icon aria-hidden="true" className="size-4 shrink-0" />
+        {status === "fail" && failWord ? failWord : word}
+      </span>
+    </td>
+  );
+}
 
 function CheckRow({ check }: { readonly check: DoctorCheck }) {
-  const { Icon, word, tone } = STATUS_VIEW[check.status];
   return (
     <tr className="border-b border-line last:border-b-0">
       <th scope="row" className="py-3 pr-4 text-left align-top text-ui font-semibold text-copy">
         {check.label}
       </th>
-      <td className="py-3 pr-4 align-top">
-        <span className={`inline-flex items-center gap-1.5 text-ui font-semibold ${tone}`}>
-          <Icon aria-hidden="true" className="size-4 shrink-0" />
-          {word}
-        </span>
-      </td>
+      <StatusCell status={check.status} />
       <td className="py-3 align-top text-ui text-copy-muted">
         <span className="break-words">{check.detail}</span>
         {check.fix ? <span className="block text-copy">Fix: {check.fix}</span> : null}
@@ -33,18 +40,24 @@ function CheckRow({ check }: { readonly check: DoctorCheck }) {
   );
 }
 
-/** Read-only by design: the backend is chosen by DATABASE_URL at launch, never from the browser. */
-function DatabaseRow() {
+/** Read-only by design: the backend is chosen by DATABASE_URL at launch, never from the browser. Names none until checked. */
+function DatabaseRow({ check }: { readonly check: DoctorCheck | undefined }) {
   return (
     <tr>
       <th scope="row" className="py-3 pr-4 text-left align-top text-ui font-semibold text-copy">
-        Data backend
+        {check?.label ?? "Data backend"}
       </th>
-      <td className="py-3 pr-4 align-top">
-        <Database aria-hidden="true" className="size-4 text-copy-muted" />
-      </td>
+      {check ? (
+        // A Postgres that runs but is unsafe is not missing: the row's fail cases are all settings to fix.
+        <StatusCell status={check.status} failWord="Fix needed" />
+      ) : (
+        <td className="py-3 pr-4 align-top">
+          <Database aria-hidden="true" className="size-4 text-copy-muted" />
+        </td>
+      )}
       <td className="py-3 align-top text-ui text-copy-muted">
-        <span className="block text-copy">Embedded database · switch in README (DATABASE_URL)</span>
+        <span className="block text-copy">{check ? `${check.detail} · ` : ""}switch in README (DATABASE_URL)</span>
+        {check?.fix ? <span className="block text-copy">Fix: {check.fix}</span> : null}
         Footage and renders always stay as files in your project folder.
       </td>
     </tr>
@@ -60,6 +73,8 @@ export function DoctorPanel() {
     onSuccess: (fresh) => queryClient.setQueryData(doctorQuery().queryKey, fresh),
   });
   const isRunning = checks.isFetching || rerun.isPending;
+  const machineChecks = checks.data?.filter((check) => check.id !== DATABASE_CHECK_ID) ?? [];
+  const databaseCheck = checks.data?.find((check) => check.id === DATABASE_CHECK_ID);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3 rounded-card border border-line bg-bg-elevated p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -85,10 +100,10 @@ export function DoctorPanel() {
             </tr>
           </thead>
           <tbody>
-            {checks.data?.map((check) => (
+            {machineChecks.map((check) => (
               <CheckRow key={check.id} check={check} />
             ))}
-            <DatabaseRow />
+            <DatabaseRow check={databaseCheck} />
           </tbody>
         </table>
       </div>

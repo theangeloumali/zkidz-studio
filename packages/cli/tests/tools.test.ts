@@ -2,9 +2,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Browser, BrowserPlatform, computeExecutablePath } from "@puppeteer/browsers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ZksContext } from "../src/context.ts";
-import { loadToolsLock, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
+import { loadToolsLock, pinnedExecutablePath, PLATFORM_KEYS, type PlatformKey } from "@zks/shared/node";
 import { chromeDownloadUrl, installTool, tarExecutable, toolExecutablePath } from "../src/tools.ts";
 
 const homes: string[] = [];
@@ -29,6 +30,21 @@ describe("tool resolution", () => {
   it.each(PLATFORM_KEYS.filter((key) => key !== "win-arm64"))("pins the chrome URL @puppeteer/browsers resolves on %s", (platform) => {
     const context = contextFor(platform);
     expect(context.lock.tools["chrome-headless-shell"].platforms[platform]).toMatchObject({ url: chromeDownloadUrl(context) });
+  });
+
+  // The server finds Chrome through @zks/shared alone, so its path must match where @puppeteer/browsers installs it.
+  it.each([
+    ["linux-x64", BrowserPlatform.LINUX],
+    ["linux-arm64", BrowserPlatform.LINUX_ARM],
+    ["mac-arm64", BrowserPlatform.MAC_ARM],
+    ["win-x64", BrowserPlatform.WIN64],
+  ] as const)("finds chrome-headless-shell on %s where @puppeteer/browsers installs it", (platform, browserPlatform) => {
+    const context = contextFor(platform);
+    const buildId = context.lock.tools["chrome-headless-shell"].version;
+    const cacheDir = path.join(context.toolsDir, "chrome-headless-shell");
+    expect(pinnedExecutablePath(context, "chrome-headless-shell")).toBe(
+      computeExecutablePath({ browser: Browser.CHROMEHEADLESSSHELL, buildId, platform: browserPlatform, cacheDir }),
+    );
   });
 
   // The server and the HyperFrames renderer use an explicit ZKS_FFMPEG or ZKS_CHROME, so the doctor checks the same binary.

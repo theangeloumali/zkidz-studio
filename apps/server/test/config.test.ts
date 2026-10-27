@@ -2,7 +2,7 @@
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { APP_PORT } from "@zks/shared";
+import { APP_PORT, PREVIEW_PORT } from "@zks/shared";
 import { isDownload, loadToolsLock, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "../src/config.ts";
@@ -20,7 +20,7 @@ describe("loadServerConfig", () => {
 
   it("defaults the port and leaves DATABASE_URL unset for PGlite", () => {
     const config = loadServerConfig({ ZKS_HOME: "/srv/zks" });
-    expect(config).toMatchObject({ studioHome: "/srv/zks", port: APP_PORT, databaseUrl: undefined, isContainer: false });
+    expect(config).toMatchObject({ studioHome: "/srv/zks", port: APP_PORT, previewPort: PREVIEW_PORT, databaseUrl: undefined, isContainer: false });
   });
 
   const pinnedFfmpeg = loadToolsLock().tools.ffmpeg.platforms[platformKey()];
@@ -46,6 +46,16 @@ describe("loadServerConfig", () => {
   it("rejects a port that is not 1..65535", () => {
     expect(() => loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PORT: "70000" })).toThrow(/ZKS_PORT/);
     expect(() => loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PORT: "abc" })).toThrow(/ZKS_PORT/);
+  });
+
+  it("reads ZKS_PREVIEW_PORT so a second studio can run beside the first", () => {
+    expect(loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PREVIEW_PORT: "5001" }).previewPort).toBe(5001);
+  });
+
+  it("rejects a preview port that is not 1..65535 or that equals the app port", () => {
+    expect(() => loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PREVIEW_PORT: "0" })).toThrow(/ZKS_PREVIEW_PORT/);
+    expect(() => loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PREVIEW_PORT: "4318.5" })).toThrow(/ZKS_PREVIEW_PORT/);
+    expect(() => loadServerConfig({ ZKS_HOME: "/srv/zks", ZKS_PORT: "5000", ZKS_PREVIEW_PORT: "5000" })).toThrow(/ZKS_PREVIEW_PORT/);
   });
 
   it("rejects a relative ZKS_HOME", () => {

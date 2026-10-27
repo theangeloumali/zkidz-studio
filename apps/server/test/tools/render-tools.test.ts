@@ -374,6 +374,8 @@ describe("qc_master", () => {
     expect(JSON.parse(argumentAfter(request, "--render-inputs"))).toEqual(RENDER_INPUTS);
     const words: unknown = JSON.parse(await readFile(argumentAfter(request, "--words"), "utf8"));
     expect(words).toEqual([{ at: 0.2, end: 0.6, text: " hello" }]);
+    // The master is re-heard in the transcript's own language and model; auto-detect on 3 s of Taglish flags kept words as missing.
+    expect([argumentAfter(request, "--language"), argumentAfter(request, "--model")]).toEqual(["en", "base"]);
   });
 
   it("keeps judging the render's own source after set_cuts points the edit at another clip", async () => {

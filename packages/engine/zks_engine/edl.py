@@ -29,21 +29,28 @@ def overlaps(start, end, ranges):
     return any(start < range_end and end > range_start for range_start, range_end in ranges)
 
 
-def find_pauses(energy_db, spec, removals):
-    """Long pauses inside kept talk get their middle removed, leaving `keep` seconds of air."""
-    rule = spec["trim_pauses"]
-    quiet = energy_db < rule["threshold_db"]
-    pauses, run_start = [], None
-    for index, is_quiet in enumerate(np.append(quiet, False)):
+def quiet_runs(energy_db, threshold_db):
+    """(first, end) energy-window indexes of each run below threshold_db, end exclusive."""
+    runs, run_start = [], None
+    for index, is_quiet in enumerate(np.append(energy_db < threshold_db, False)):
         if is_quiet and run_start is None:
             run_start = index
         elif not is_quiet and run_start is not None:
-            start, end = run_start * ENERGY_WINDOW, index * ENERGY_WINDOW
+            runs.append((run_start, index))
             run_start = None
-            if end - start < rule["min"] or overlaps(start, end, rule["exclude"] + removals):
-                continue
-            half = rule["keep"] / 2
-            pauses.append([start + half, end - half, f"pause {end - start:.2f}s"])
+    return runs
+
+
+def find_pauses(energy_db, spec, removals):
+    """Long pauses inside kept talk get their middle removed, leaving `keep` seconds of air."""
+    rule = spec["trim_pauses"]
+    pauses = []
+    for first, last in quiet_runs(energy_db, rule["threshold_db"]):
+        start, end = first * ENERGY_WINDOW, last * ENERGY_WINDOW
+        if end - start < rule["min"] or overlaps(start, end, rule["exclude"] + removals):
+            continue
+        half = rule["keep"] / 2
+        pauses.append([start + half, end - half, f"pause {end - start:.2f}s"])
     return pauses
 
 

@@ -37,6 +37,8 @@ function manualTime() {
   };
 }
 
+const PROXY_URL = "/api/projects/0b6f4f0e-7f43-4d8f-9a3c-5c9d7c1f2e11/videos/v1/proxy";
+
 describe("PreviewPlayer", () => {
   let videoFrames: Map<HTMLVideoElement, VideoFrameRequestCallback>;
 
@@ -61,10 +63,17 @@ describe("PreviewPlayer", () => {
     act(() => callback(0, { mediaTime } as VideoFrameCallbackMetadata));
   };
 
+  // Plan §8.4: the 1080 H.264 proxy, never the original, which can be a phone's 4K HEVC that Chrome cannot decode.
+  it("plays the video's proxy in both layers", () => {
+    const clock = createPlaybackClock({ durationS: 28, ...manualTime() });
+    const { container } = renderWithProviders(<PreviewPlayer cuts={CUTS} spans={SPANS} composition={null} clock={clock} footageUrl={PROXY_URL} />);
+    expect([...container.querySelectorAll("video")].map((video) => video.getAttribute("src"))).toEqual([PROXY_URL, PROXY_URL]);
+  });
+
   it("swaps proxies on the presented frame that reaches the end of a kept span", () => {
     const time = manualTime();
     const clock = createPlaybackClock({ durationS: 28, ...time });
-    const { container } = renderWithProviders(<PreviewPlayer cuts={CUTS} spans={SPANS} composition={null} clock={clock} />);
+    const { container } = renderWithProviders(<PreviewPlayer cuts={CUTS} spans={SPANS} composition={null} clock={clock} footageUrl={PROXY_URL} />);
     const [first, second] = [...container.querySelectorAll("video")];
     if (first === undefined || second === undefined) throw new Error("expected two proxies");
 

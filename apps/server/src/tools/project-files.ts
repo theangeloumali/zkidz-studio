@@ -36,3 +36,13 @@ export function assetFilePath(projectRoot: string, asset: MediaAssetRow): string
   if (asset.inPlacePath !== null) return asset.inPlacePath;
   throw new ToolError(`Asset ${asset.id} has no file`);
 }
+
+/** An asset's file for the engine, and the in-place registration it needs to accept a file outside the project. */
+export function assetEngineInput(projectRoot: string, asset: MediaAssetRow): { path: string; inPlacePaths: string[] } {
+  return { path: assetFilePath(projectRoot, asset), inPlacePaths: asset.inPlacePath === null ? [] : [asset.inPlacePath] };
+}
+
+/** The studio's own copy of an upload; undefined for anything else, an in-place original above all, which is the user's. */
+export function uploadedFilePath(projectRoot: string, asset: MediaAssetRow): string | undefined {
+  return asset.relPath?.startsWith("media/raw/") === true ? join(projectRoot, asset.relPath) : undefined;
+}

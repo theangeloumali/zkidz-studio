@@ -12,7 +12,7 @@ from zks_engine import captions
 from zks_engine.specs import validate
 
 PHRASES = [{"at": 1.0, "end": 2.0, "text": "kumusta", "reel": 0}, {"at": 2.5, "end": 3.5, "text": "salamat", "reel": 0}]
-ENTRIES = [{"ids": [1], "en": "thank you "}, {"ids": [0], "en": "hello"}]
+ENTRIES = [{"ids": [1], "en": "thank you ", "bottom": 1750}, {"ids": [0], "en": "hello"}]
 
 
 class EmitCuesTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class EmitCuesTests(unittest.TestCase):
                 cues,
                 [
                     {"kind": "caption", "at": 1.0, "end": 2.0, "text": "hello"},
-                    {"kind": "caption", "at": 2.5, "end": 3.5, "text": "thank you"},
+                    {"kind": "caption", "at": 2.5, "end": 3.5, "text": "thank you", "bottom": 1750},
                 ],
             )
 

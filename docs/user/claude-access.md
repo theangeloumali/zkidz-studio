@@ -2,7 +2,7 @@
 
 # Connecting Claude to ZKidz Studio
 
-For anyone setting up ZKidz Studio for the first time, or changing how it reaches Claude. Last reviewed 2026-10-23.
+For anyone setting up ZKidz Studio for the first time, or changing how it reaches Claude. Last reviewed 2026-10-24.
 
 ZKidz Studio needs Claude to plan and build your edits. You connect it in one of three ways on the Connect Claude screen. Mode A,
 your own API key, is the default and the one we recommend.
@@ -15,13 +15,14 @@ your own API key, is the default and the one we recommend.
 
 ## Mode A: your own API key
 
-What you need: an API key from the Claude Console. Max and Team users can create one that draws on their included API credits.
+What you need: an API key from the Claude Console. Max and Team users can create one that draws on their included API credits, as
+long as the key belongs to the Console organization linked to the plan.
 
-1. Open Setup and pick the "Claude API key" card.
+1. Open Setup and pick the "Paste an Anthropic API key" card.
 2. Paste the key and press Connect.
 
 ```text
-Connect Claude  >  Claude API key  >  [ paste key ]  >  Connect
+Connect Claude  >  Paste an Anthropic API key  >  [ paste key ]  >  Connect
 ```
 
 The app checks the key with one call to `https://api.anthropic.com/v1/models`, which costs no tokens. A good key is saved in your
@@ -57,7 +58,7 @@ How it works: the app starts the `claude` program you installed, unmodified, in 
 with Claude Code's own `/login`. The app watches the build through its own tools and hooks; it never reads the terminal text for
 meaning.
 
-1. Pick the "Terminal mode" card. It shows the `claude` version it found.
+1. Pick the "Use Claude Code in a terminal (your own sign-in)" card. It shows the `claude` version it found.
 2. Read the disclosure and tick "I understand".
 3. Open a project. Claude Code asks whether you trust the project folder. Choose "Yes, I trust this folder". The highlighted
    default exits.
@@ -68,7 +69,7 @@ meaning.
 ```
 
 There is no cost meter in mode T. Type `/usage` in the pane to see your plan usage. Stop interrupts the current turn and keeps the
-session; Kill closes the terminal. Reopening a project resumes its session.
+session. If the terminal closes, Restart opens it again. Reopening a project resumes its session.
 
 What the app never does in mode T:
 
@@ -96,7 +97,7 @@ Hand-off for `apps/web/src/copy/claude.ts` (owner: lena). Use these strings exac
 | Key                     | String                                                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `screen.title`          | Connect Claude                                                                                                                                                                                                                                                                |
-| `modeA.title`           | Claude API key                                                                                                                                                                                                                                                                |
+| `modeA.title`           | Paste an Anthropic API key                                                                                                                                                                                                                                                    |
 | `modeA.badge`           | Recommended                                                                                                                                                                                                                                                                   |
 | `modeA.body`            | Paste your own Claude Console API key. Max and Team plans can create one that uses their included API credits.                                                                                                                                                                |
 | `modeA.saved`           | Key saved. Ends in {last4}.                                                                                                                                                                                                                                                   |
@@ -106,10 +107,10 @@ Hand-off for `apps/web/src/copy/claude.ts` (owner: lena). Use these strings exac
 | `modeB.badge`           | Advanced                                                                                                                                                                                                                                                                      |
 | `modeB.body`            | Use your own Bedrock, Vertex, Foundry or Claude Platform on AWS setup. ZKidz Studio stores no cloud secret.                                                                                                                                                                   |
 | `modeB.timeout`         | Claude did not start through your provider within 30 seconds. Check your provider setup.                                                                                                                                                                                      |
-| `modeT.title`           | Terminal mode                                                                                                                                                                                                                                                                 |
+| `modeT.title`           | Use Claude Code in a terminal (your own sign-in)                                                                                                                                                                                                                              |
 | `modeT.badge`           | Opt-in · pending Anthropic approval                                                                                                                                                                                                                                           |
 | `modeT.disclosure`      | Terminal mode runs the Claude Code you installed, unmodified, in a terminal inside ZKidz Studio. You sign in there with Claude Code's own /login. ZKidz Studio never sees or stores your credentials. Usage counts against your Claude plan's limits. Read Anthropic's terms. |
-| `modeT.disclosureLinks` | https://code.claude.com/docs/en/legal-and-compliance · https://code.claude.com/docs/en/agent-sdk/overview · the Anthropic help article on subscription use                                                                                                                    |
+| `modeT.disclosureLinks` | https://code.claude.com/docs/en/legal-and-compliance · https://code.claude.com/docs/en/agent-sdk/overview · https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan                                                                    |
 | `modeT.ack`             | I understand                                                                                                                                                                                                                                                                  |
 | `modeT.version`         | Found Claude Code {version}                                                                                                                                                                                                                                                   |
 | `modeT.missing`         | Claude Code is not installed, or is older than 2.1.295. Install it, or use an API key instead.                                                                                                                                                                                |

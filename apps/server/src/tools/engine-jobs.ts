@@ -12,6 +12,7 @@ import { z } from "zod";
 import { projectDir } from "../config.ts";
 import type { JobRow } from "../dto.ts";
 import { isWithinDir } from "../fs/path-policy.ts";
+import { followEngineProgress } from "../jobs/engine-progress.ts";
 import type { JobRunner, ReportProgress } from "../jobs/job-runner.ts";
 import { readProjectTemplate } from "../onboarding/project-template.ts";
 import { writeJobResult } from "./job-results.ts";
@@ -28,6 +29,11 @@ export const ENGINE_COMMANDS = [
   "check-motion",
   "make-covers",
   "qc-status",
+  "probe",
+  "check-window",
+  "energy-profile",
+  "caption-phrases",
+  "render-preview",
 ] as const;
 type EngineCommand = (typeof ENGINE_COMMANDS)[number];
 
@@ -58,7 +64,7 @@ export interface EngineJobDeps {
 const WorkPathSchema = z.string().min(1);
 const TranscribeParamsSchema = z.object({ language: z.string(), model: z.string() });
 const TranscribeReportSchema = z.object({ wordsPath: WorkPathSchema, words: z.int().nonnegative(), chunks: z.int().positive() });
-const IngestParamsSchema = z.object({
+export const IngestParamsSchema = z.object({
   clips: z.array(z.object({ assetId: IdSchema, zoom: z.number().positive().optional() })).min(1),
   inserts: InsertSpecSchema.optional(),
 });
@@ -79,7 +85,10 @@ async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: R
   const workDir = await prepareWorkDir(projectRoot, "transcripts");
   await reportProgress({ stage: "transcribing", pct: 0 });
   const args = ["--video", job.videoId, "--language", params.language, "--model", params.model];
-  const report = TranscribeReportSchema.parse(await deps.engine.run({ command: "transcribe", args, workDir, signal }));
+  const engineReport = await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId: job.videoId }, reportProgress, () =>
+    deps.engine.run({ command: "transcribe", args, workDir, signal }),
+  );
+  const report = TranscribeReportSchema.parse(engineReport);
   const mediaAssetId = await transcribedAssetId(deps.db, job.projectId);
   await deps.db.insert(transcripts).values({
     projectId: job.projectId,

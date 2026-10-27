@@ -9,7 +9,8 @@ import type { TerminalToolDecision } from "./hook-policy.ts";
 /** Mode T never sees a credential; the session runs on whatever the user signed in with. */
 export const SIGN_IN_CREDENTIAL = "your Claude Code sign-in";
 /** Neither the launch nor the hook named a model, so Claude Code chose its own. */
-const UNNAMED_MODEL_LABEL = "default";
+const UNNAMED_MODEL_LABEL = "your default model";
+const TASK_NOTIFICATION_TAG = "<task-notification>";
 
 export interface HookEventContext {
   readonly projectId: string;
@@ -36,11 +37,12 @@ export function hookToStudioEvents(payload: HookPayload, context: HookEventConte
     case "PostToolUse":
       // Claude Code sends failures to PostToolUseFailure, so this hook only ever reports success.
       return [{ type: "tool.finished", projectId, toolUseId: toolUseIdOf(payload), ok: true, summary: `${toolLabel(payload.tool_name)} finished` }];
-    case "UserPromptSubmit":
-      return [
-        { type: "prompt.submitted", projectId, text: payload.prompt },
-        { type: "terminal.state", projectId, state: "working" },
-      ];
+    case "UserPromptSubmit": {
+      const workingEvent: NewStudioEvent = { type: "terminal.state", projectId, state: "working" };
+      // Claude Code submits a finished background MCP call as a prompt of its own; the user never typed it.
+      if (payload.prompt.trimStart().startsWith(TASK_NOTIFICATION_TAG)) return [workingEvent];
+      return [{ type: "prompt.submitted", projectId, text: payload.prompt }, workingEvent];
+    }
     case "Stop": {
       const narration = payload.last_assistant_message?.trim() ?? "";
       const readyEvent: NewStudioEvent = { type: "terminal.state", projectId, state: "ready" };

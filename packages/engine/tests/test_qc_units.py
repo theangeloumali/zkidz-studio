@@ -1,11 +1,13 @@
 # Created by The Angelo Umali.
 # The four herk QC gates and the motion gate as pure functions over arrays and specs (plan §7.6).
 import unittest
+from unittest import mock
 
 import numpy as np
 
 from support import make_edl, seconds  # first: it sets a scratch ZKS_HOME
 
+from zks_engine import qc
 from zks_engine.qc import contrast, lipsync, motion, mouth, timeline, words
 
 # Frames 0-60 kept, 60-90 cut, 90-180 kept: one cut at edited frame 60 (2.002 s).
@@ -40,17 +42,87 @@ class WordGateTests(unittest.TestCase):
         self.assertEqual(words.clipped_words([self.WORDS[0], self.WORDS[2]], EDL), [])
 
     def test_a_missing_word_fails_the_diff(self):
-        problems = words.word_diff([("so", False), ("we", False), ("ship", False)], ["so", "ship"])
-        self.assertEqual(problems, ["'we' is missing"])
+        problems = words.diff_problems([("so", False), ("we", False), ("ship", False)], ["so", "ship"])
+        self.assertEqual(problems, [("'we' is missing", 1)])
 
     def test_a_repeated_word_fails_the_diff(self):
-        self.assertEqual(words.word_diff([("so", False), ("we", False), ("ship", False)], ["so", "we", "we", "ship"]), ["'we' is repeated"])
+        self.assertEqual(words.diff_problems([("so", False), ("we", False), ("ship", False)], ["so", "we", "we", "ship"]), [("'we' is repeated", None)])
 
     def test_close_mishearings_and_optional_edge_words_pass(self):
-        self.assertEqual(words.word_diff([("edge", True), ("claude", False), ("code", False)], ["cloude", "code"]), [])
+        self.assertEqual(words.diff_problems([("edge", True), ("claude", False), ("code", False)], ["cloude", "code"]), [])
+
+    # Long-form whisper times drift: ep 12 put "kasi nga yun" at 168.37-168.98, heard alone at 169.2-169.69, wholly inside
+    # the cut. A flagged word is re-heard alone in the source, and stands only if that hearing still shows the damage.
+    ALONE = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 2.1, "end": 2.5, "text": " kasi"}, {"at": 2.5, "end": 2.8, "text": " nga"}]
+
+    def hear_alone(self, heard):
+        return lambda start, end: [word for word in heard if word["end"] > start and word["at"] < end]
+
+    def test_a_word_clipped_only_by_drifted_times_passes_once_heard_alone(self):
+        drifted = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.8, "end": 2.2, "text": " kasi"}, {"at": 2.2, "end": 2.5, "text": " nga"}]
+        self.assertEqual(words.clipped_words(drifted, EDL, self.hear_alone(self.ALONE)), [])
+        really_clipped = [{**word, "at": word["at"] - 0.25, "end": word["end"] - 0.25} for word in self.ALONE]
+        self.assertEqual(len(words.clipped_words(drifted, EDL, self.hear_alone(really_clipped))), 1)
+
+    # Maya's repro: heard alone, whisper merged the two "okay"s into one, and the clipped one took the other's time.
+    def test_a_repeated_word_the_hearing_merged_keeps_its_flag(self):
+        spoken = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.8, "end": 2.2, "text": " okay"}, {"at": 3.2, "end": 3.5, "text": " okay"}]
+        merged = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 3.2, "end": 3.5, "text": " okay"}]
+        self.assertEqual(len(words.clipped_words(spoken, EDL, self.hear_alone(merged))), 1)
+
+    def test_a_word_missing_at_two_nearby_cuts_is_heard_alone_once(self):
+        # Cuts at edited 2.00 and 3.00 s: 'kasi' at 1.78 s is required in both cuts' windows.
+        two_cuts = make_edl([(0, 60), (90, 120), (150, 240)])
+        spoken = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.78, "end": 1.98, "text": " kasi"}]
+        master = self.hear_alone([{"at": 1.2, "end": 1.5, "text": " it"}])
+        calls = []
+
+        def hear(start, end):
+            calls.append((start, end))
+            return self.hear_alone([{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.78, "end": 1.98, "text": " kasi"}])(start, end)
+
+        self.assertEqual(len(words.cut_word_problems(spoken, two_cuts, None, master, hear)), 2)
+        self.assertEqual(len(calls), 1)
+
+    def test_a_word_missing_only_by_drifted_times_passes_once_heard_alone(self):
+        spoken = [{"at": 0.78, "end": 0.95, "text": " hello"}, {"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.55, "end": 1.9, "text": " kasi"},
+                  {"at": 3.2, "end": 3.5, "text": " again"}]
+
+        # The master plays hello and it before the cut and again after it, at edited 2.2 s.
+        master = self.hear_alone([{"at": 0.78, "end": 0.95, "text": " hello"}, {"at": 1.2, "end": 1.5, "text": " it"}, {"at": 2.2, "end": 2.5, "text": " again"}])
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, master), ["cut at 2.00 s: 'kasi' is missing"])
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, master, self.hear_alone(self.ALONE)), [])
+        kept_alone = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.55, "end": 1.9, "text": " kasi"}]
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, master, self.hear_alone(kept_alone)), ["cut at 2.00 s: 'kasi' is missing"])
+
+    # The cut's window runs across the brand intro: the words before it play before the intro, not in its silence.
+    def test_a_window_across_the_intro_is_heard_on_both_sides_of_it(self):
+        heard_ranges = []
+
+        def hear(start_s, end_s):
+            heard_ranges.append((start_s, end_s))
+            return [{"text": " hello"}] if end_s <= INTRO["at"] / 29.97 + 0.01 else [{"text": " again"}]
+
+        spoken = [{"at": 0.78, "end": 0.95, "text": " hello"}, {"at": 3.2, "end": 3.5, "text": " again"}]
+        self.assertEqual(words.cut_word_problems(spoken, EDL, INTRO, hear), [])
+        intro_start, intro_end = timeline.master_seconds(INTRO["at"] - 1, EDL, INTRO), timeline.master_seconds(INTRO["at"], EDL, INTRO)
+        self.assertTrue(all(end <= intro_start + 0.05 or start >= intro_end - 0.05 for start, end in heard_ranges), heard_ranges)
 
     def test_tokens_drop_case_and_punctuation(self):
         self.assertEqual(words.token(" Hello,"), "hello")
+
+
+class TranscriberTests(unittest.TestCase):
+    # Windows are heard one after another; one thread made a turbo QC take 17 minutes, and every core ran slower than half.
+    def test_a_whisper_run_without_a_thread_count_takes_half_the_cores(self):
+        failed = mock.Mock(returncode=1, stderr="stop here")
+        with mock.patch.object(qc.whispercpp.os, "cpu_count", return_value=24), \
+                mock.patch.object(qc.whispercpp, "cli_path", return_value="whisper-cli"), \
+                mock.patch.object(qc.whispercpp.subprocess, "run", return_value=failed) as run, \
+                self.assertRaises(RuntimeError):
+            qc.whispercpp.transcribe_file("w.wav", "tl", "m.bin")
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[argv.index("-t") + 1], "12")
 
 
 class ContrastTests(unittest.TestCase):

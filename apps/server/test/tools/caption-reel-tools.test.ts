@@ -33,7 +33,7 @@ describe("set_captions", () => {
     const fixture = await fixtureWithPhrases();
     const entries = [
       { ids: [0, 1], en: "Hello, friends" },
-      { ids: [2], en: "Today" },
+      { ids: [2], en: "Today", bottom: 1750 },
     ];
     const result = await callTool(fixture, "set_captions", { entries });
     expect(result.isError).toBeUndefined();

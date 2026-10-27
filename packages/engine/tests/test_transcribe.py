@@ -32,14 +32,14 @@ class TranscribeMainTests(unittest.TestCase):
         # Named by length: chunks run in parallel, so call order is not chunk order.
         return [{"start": 10, "end": 20, "text": f" {length_ms}ms"}]
 
-    def run_main(self, chunks, points):
+    def run_main(self, chunks, points, stage=None):
         self.calls = []
         with (
             mock.patch.object(transcribe.whispercpp, "transcribe_file", side_effect=self.fake_whisper),
             mock.patch.object(transcribe.whispercpp, "model_path", return_value=Path("m.bin")),
             mock.patch.object(transcribe, "split_points", return_value=points),
         ):
-            transcribe.main("audio/v1.wav", "transcripts/v1_words.json", chunks, "tl", "tiny")
+            transcribe.main("audio/v1.wav", "transcripts/v1_words.json", chunks, "tl", "tiny", stage=stage)
         lines = (self.work / "transcripts" / "v1_words.json").read_text(encoding="utf-8").splitlines()
         return [json.loads(line) for line in lines]
 
@@ -48,6 +48,14 @@ class TranscribeMainTests(unittest.TestCase):
         self.assertEqual(words, [{"start": 10, "end": 20, "text": " 1250ms"}, {"start": 1260, "end": 1270, "text": " 1750ms"}])
         self.assertEqual(sorted(call[2] for call in self.calls), [1250, 1750])
         self.assertEqual({call[:2] for call in self.calls}, {("tl", Path("m.bin"))})
+
+    def test_stage_counts_the_audio_seconds_finished(self):
+        stage = mock.Mock()
+        self.run_main(2, [0.0, 1.25, 3.0], stage=stage)
+        stage.begin.assert_called_once_with(total=3.0, pace="transcribing m")
+        first, last = sorted(call.args[0] for call in stage.update.call_args_list)
+        self.assertIn(first, (1.25, 1.75))  # chunks finish in either order
+        self.assertEqual(last, 3.0)
 
     def test_chunk_wavs_are_cleaned_up(self):
         self.run_main(2, [0.0, 1.25, 3.0])

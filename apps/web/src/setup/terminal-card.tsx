@@ -37,7 +37,9 @@ export function TerminalControls({ connection }: { readonly connection: Connecti
     <>
       <VersionNote version={connection.claudeVersion} />
       <p className="max-w-[65ch] text-ui text-copy-muted">
-        {TERMINAL_DISCLOSURE} Read <ExternalLink href={CLAUDE_LINKS.terms}>Anthropic&apos;s terms</ExternalLink>.
+        {TERMINAL_DISCLOSURE} Read Claude Code&apos;s <ExternalLink href={CLAUDE_LINKS.legal}>legal and compliance</ExternalLink> page, the{" "}
+        <ExternalLink href={CLAUDE_LINKS.sdkOverview}>Agent SDK overview</ExternalLink> and{" "}
+        <ExternalLink href={CLAUDE_LINKS.planHelp}>using the Agent SDK with your Claude plan</ExternalLink>.
       </p>
       <label className="flex cursor-pointer items-start gap-3 text-ui text-copy">
         <input

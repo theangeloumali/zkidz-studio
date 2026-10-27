@@ -1,23 +1,16 @@
 // Created by The Angelo Umali.
-import { createServer } from "node:net";
 import { defineConfig, devices } from "@playwright/test";
+import { findFreePorts } from "./e2e/support/free-ports.ts";
 import { pinnedToolPath } from "./e2e/support/pinned-tools.ts";
 
 const LOOPBACK = "127.0.0.1";
 
-function findFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer().once("error", reject);
-    probe.listen(0, LOOPBACK, () => {
-      const address = probe.address();
-      probe.close(() => (typeof address === "object" && address !== null ? resolve(address.port) : reject(new Error("no port"))));
-    });
-  });
-}
-
 // Workers re-evaluate this file, so the harness ports are picked once and handed down through the environment.
-process.env.ZKS_E2E_PORT ??= String(await findFreePort());
-process.env.ZKS_E2E_PREVIEW_PORT ??= String(await findFreePort());
+if (process.env.ZKS_E2E_PORT === undefined || process.env.ZKS_E2E_PREVIEW_PORT === undefined) {
+  const [appPort, previewPort] = await findFreePorts(2);
+  process.env.ZKS_E2E_PORT ??= String(appPort);
+  process.env.ZKS_E2E_PREVIEW_PORT ??= String(previewPort);
+}
 const harnessOrigin = `http://${LOOPBACK}:${process.env.ZKS_E2E_PORT}`;
 // The spawned servers inherit these, so their renders and proxy videos use the pinned ffmpeg too.
 process.env.ZKS_FFMPEG = pinnedToolPath("ZKS_FFMPEG", "ffmpeg");

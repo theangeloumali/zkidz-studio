@@ -103,7 +103,7 @@ export const checkWindow = defineTool({
 });
 
 export const energyProfile = defineTool({
-  input: z.strictObject({ from: SourceSecondsSchema, to: SourceSecondsSchema }),
+  input: z.strictObject({ from: SourceSecondsSchema, to: SourceSecondsSchema }).refine((span) => span.to > span.from, { message: "to must be after from" }),
   output: z.strictObject({ stepMs: z.int().positive(), db: z.array(z.number()), quietRuns: z.array(sourceSpan({})) }),
   approval: "auto",
   isReadOnly: true,

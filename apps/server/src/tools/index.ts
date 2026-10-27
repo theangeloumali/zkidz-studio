@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 // The in-process `studio` MCP server for the SDK path (plan §6.6); canUseTool gates there, so no gate runs here.
-import { createSdkMcpServer, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
+import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
+import { loadAgentSdk } from "../agent/sdk-loader.ts";
 import { studioToolCatalog } from "./catalog.ts";
 import type { ToolContext } from "./context.ts";
 
@@ -15,7 +16,8 @@ const STUDIO_MCP_VERSION = "0.1.0";
 /** Qualified names of the tools this server registers, for allowedTools and the init assertion. */
 export const STUDIO_TOOL_NAMES: readonly string[] = studioToolCatalog().map((studioTool) => studioTool.qualifiedName);
 
-export function createStudioMcpServer(context: ToolContext): McpSdkServerConfigWithInstance {
+export async function createStudioMcpServer(context: ToolContext): Promise<McpSdkServerConfigWithInstance> {
+  const { createSdkMcpServer } = await loadAgentSdk();
   return createSdkMcpServer({
     name: STUDIO_MCP_SERVER_NAME,
     version: STUDIO_MCP_VERSION,

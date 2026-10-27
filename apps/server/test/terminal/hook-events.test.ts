@@ -46,6 +46,14 @@ describe("hookToStudioEvents", () => {
     ]);
   });
 
+  // Claude Code delivers a finished background MCP call (job_wait) as a prompt of its own; the user never typed it.
+  it("keeps a background-task notice out of the feed as a prompt", () => {
+    const notice = "<task-notification>\n<task-id>k2wn723rg</task-id>\n<status>completed</status>\n</task-notification>";
+    expect(eventsFor({ ...base, hook_event_name: "UserPromptSubmit", prompt: notice })).toEqual([
+      { type: "terminal.state", projectId: PROJECT_ID, state: "working" },
+    ]);
+  });
+
   it("maps Stop to narration then ready, skipping empty narration", () => {
     expect(eventsFor({ ...base, hook_event_name: "Stop", last_assistant_message: "Done." })).toEqual([
       { type: "narration", projectId: PROJECT_ID, text: "Done." },
@@ -68,7 +76,8 @@ describe("hookToStudioEvents", () => {
     expect(eventsFor({ ...base, hook_event_name: "SessionStart" })[0]).toMatchObject({ model: "haiku" });
   });
 
-  it('labels the model "default" when neither the hook nor the launch named one', () => {
-    expect(eventsFor({ ...base, hook_event_name: "SessionStart" }, { model: undefined })[0]).toMatchObject({ model: "default" });
+  // The feed reads "Session started with <model>"; a bare "default" there read as a missing value.
+  it("names the account's default model when neither the hook nor the launch named one", () => {
+    expect(eventsFor({ ...base, hook_event_name: "SessionStart" }, { model: undefined })[0]).toMatchObject({ model: "your default model" });
   });
 });

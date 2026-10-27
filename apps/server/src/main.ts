@@ -3,17 +3,20 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { serve } from "@hono/node-server";
 import { openDatabase } from "@zks/db";
-import { LOOPBACK_HOST, PREVIEW_PORT } from "@zks/shared";
+import { LOOPBACK_HOST } from "@zks/shared";
+import { checkDatabase } from "@zks/shared/node";
 import { WebSocketServer } from "ws";
 import { createAgentServices } from "./agent-services.ts";
+import { hasBundledClaudeBinary } from "./agent/sdk-binary.ts";
+import { lazySdkQuery } from "./agent/sdk-loader.ts";
 import { createApp } from "./app.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
+import { closeServer } from "./http/close-server.ts";
 import { createEngineProcessRunner, pinnedEngineTools } from "./jobs/engine-process.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
@@ -42,7 +45,7 @@ const CONTAINER_BIND_HOST = "0.0.0.0";
 async function main(): Promise<void> {
   const logger = createLogger();
   const config = loadServerConfig(process.env);
-  const security = createSecurity({ appPort: config.port, previewPort: PREVIEW_PORT, container: config.isContainer });
+  const security = createSecurity({ appPort: config.port, previewPort: config.previewPort, container: config.isContainer });
   const bindHost = config.isContainer ? CONTAINER_BIND_HOST : LOOPBACK_HOST;
   security.assertLoopbackBind(bindHost);
   await assertFfprobeInstalled(config.ffprobePath);
@@ -60,6 +63,10 @@ async function main(): Promise<void> {
   const runDir = join(config.studioHome, "run");
   await clearSessionFiles(runDir);
   const claudePath = await resolveClaudePath(process.env);
+  // Both probes cost ~1 s, so they wait for the listen callback (plan §9.5) and their routes await them.
+  const { promise: listening, resolve: markListening } = Promise.withResolvers<void>();
+  const claudeVersion = listening.then(() => readClaudeVersion(claudePath));
+  const hasSdkBinary = listening.then(() => hasBundledClaudeBinary());
   const engine = createEngineProcessRunner({
     executable: "uv",
     prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"],
@@ -77,9 +84,10 @@ async function main(): Promise<void> {
     pluginDir: PLUGIN_DIR,
     runDir,
     claudePath,
-    claudeVersion: await readClaudeVersion(claudePath),
+    claudeVersion,
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
-    query,
+    query: lazySdkQuery,
+    hasSdkBinary: () => hasSdkBinary,
     ffprobePath: config.ffprobePath,
     engine,
   });
@@ -108,37 +116,43 @@ async function main(): Promise<void> {
     logger,
     jobRunner,
     agent,
-    runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
+    doctor: {
+      runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
+      checkDatabase: () => checkDatabase({ databaseUrl: config.databaseUrl }),
+    },
     onboarding,
     previewService: createPreviewService({
       database: database.db,
       studioHome: config.studioHome,
       eventBus,
       logger,
-      previewPort: PREVIEW_PORT,
+      previewPort: config.previewPort,
       buildComposition: previewBuilder,
     }),
   });
   const websocket = { server: new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES }) };
   const server = serve({ fetch: app.fetch, hostname: bindHost, port: config.port, websocket }, (address) => {
-    logger.info("studio server listening", { host: bindHost, port: address.port, backend: database.backend, agentRunner: agent.agentRunner });
+    logger.info("studio server listening", { host: bindHost, port: address.port, backend: database.backend });
+    markListening();
+    agent.agentRunner.then(
+      (agentRunner) => logger.info("agent runner chosen", { agentRunner }),
+      (error: unknown) => logger.error("agent runner probe failed", { error }),
+    );
   });
-  const previewOrigin = createPreviewOrigin({ database: database.db, studioHome: config.studioHome, appPort: config.port, previewPort: PREVIEW_PORT });
-  const previewServer = serve({ fetch: previewOrigin.fetch, hostname: bindHost, port: PREVIEW_PORT }, (address) => {
+  const previewOrigin = createPreviewOrigin({ database: database.db, studioHome: config.studioHome, appPort: config.port, previewPort: config.previewPort });
+  const previewServer = serve({ fetch: previewOrigin.fetch, hostname: bindHost, port: config.previewPort }, (address) => {
     logger.info("preview origin listening", { host: bindHost, port: address.port });
   });
 
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
     agent.shutdown();
-    previewServer.close();
     previewBuilder.close();
-    server.close(() => {
-      void jobRunner
-        .idle()
-        .then(() => database.close())
-        .finally(() => process.exit(0));
-    });
+    // Settled, not all: a server that fails to close must not skip draining the jobs and closing the database.
+    void Promise.allSettled([closeServer(server, websocket.server), closeServer(previewServer)])
+      .then(() => jobRunner.idle())
+      .then(() => database.close())
+      .finally(() => process.exit(0));
   };
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));
@@ -151,5 +165,7 @@ async function readAppVersion(): Promise<string> {
 
 main().catch((error: unknown) => {
   createLogger().error("studio server failed to start", { error });
-  process.exitCode = 1;
+  // What opened before the failure (a Postgres pool) keeps the loop alive, so exitCode alone left it hanging; the empty
+  // write's callback runs once the error line has flushed, which a Windows pipe does asynchronously.
+  process.stderr.write("", () => process.exit(1));
 });

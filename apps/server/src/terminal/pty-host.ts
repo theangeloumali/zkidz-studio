@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
 // Mode T PTY host (plan §6.3): argv-only spawn of the resolved claude, never a shell, never a credential in the env.
 import { isAbsolute } from "node:path";
-import * as nodePty from "node-pty";
+import type * as nodePty from "node-pty";
+import { lazyImport } from "../lazy-import.ts";
 import { createOutputRing, OUTPUT_RING_BYTES } from "./output-ring.ts";
 import { INTERRUPT_KEY } from "./prompt-input.ts";
 import { findCredentialVariable } from "./terminal-env.ts";
@@ -10,6 +11,7 @@ import { findCredentialVariable } from "./terminal-env.ts";
 const MAX_TERMINAL_SESSIONS = 2;
 const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 32;
+const loadNodePty = lazyImport("node-pty", () => import("node-pty"));
 
 export type TerminalLaunchFailure = "claude_missing" | "wrong_binary" | "credential_env" | "session_cap" | "duplicate_session";
 
@@ -45,7 +47,7 @@ export interface TerminalPty {
 
 export interface PtyHost {
   readonly claudePath: string;
-  launch(sessionId: string, launch: PtyLaunch): TerminalPty;
+  launch(sessionId: string, launch: PtyLaunch): Promise<TerminalPty>;
   get(sessionId: string): TerminalPty | undefined;
 }
 
@@ -58,7 +60,6 @@ export interface PtyHostOptions {
 
 export function createPtyHost(options: PtyHostOptions): PtyHost {
   if (!isAbsolute(options.claudePath)) throw new Error("The claude path must be absolute.");
-  const spawn = options.spawn ?? nodePty.spawn;
   const maxSessions = options.maxSessions ?? MAX_TERMINAL_SESSIONS;
   const livePtys = new Map<string, TerminalPty>();
 
@@ -74,7 +75,9 @@ export function createPtyHost(options: PtyHostOptions): PtyHost {
 
   return {
     claudePath: options.claudePath,
-    launch(sessionId, launch) {
+    async launch(sessionId, launch) {
+      const spawn = options.spawn ?? (await loadNodePty()).spawn;
+      // Checked after the await, so two concurrent launches cannot both pass the session cap.
       assertLaunchable(sessionId, launch);
       const [file, ...args] = launch.argv as [string, ...string[]];
       const childPty = spawn(file, args, {

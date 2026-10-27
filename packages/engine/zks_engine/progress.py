@@ -26,7 +26,8 @@ EDITING_IDLE = 600  # seconds after its last spec write that an edit stops showi
 
 class Job:
     def __init__(self, video, stage, total, unit, frames, state="running"):
-        before = read_record(record_path(video)) or {}
+        # An earlier stage's pace key must not pace this one.
+        before = {key: value for key, value in (read_record(record_path(video)) or {}).items() if key != "pace"}
         self.record = {**before, "video": video, "stage": stage, "state": state, "done": 0, "total": total, "unit": unit,
                        "frames": frames or before.get("frames"), "started": time.time(), "pid": os.getpid(), "work": work_name()}
         self.written = 0.0
@@ -59,9 +60,12 @@ class Job:
         self.record["state"] = "waiting"
         self.save()
 
-    def begin(self, total=None):
-        """The slot is ours: the stage's clock starts now."""
+    def begin(self, total=None, pace=None):
+        """The slot is ours: the stage's clock starts now. pace: the history its ETA is paced by, when its speed depends on
+        more than the stage (a whisper model)."""
         self.record.update(state="running", started=time.time(), total=self.record["total"] if total is None else total)
+        if pace:
+            self.record["pace"] = pace
         self.save()
 
     def update(self, done):
@@ -74,7 +78,7 @@ class Job:
         self.record["state"] = state
         if state == "done":
             self.record["done"] = self.record["total"] or 0
-            entry = {"stage": self.record["stage"], "units": self.record["total"] or 0, "seconds": time.time() - self.record["started"]}
+            entry = {"stage": progress_eta.pace_key(self.record), "units": self.record["total"] or 0, "seconds": time.time() - self.record["started"]}
             with (progress_store.PROGRESS / "history.jsonl").open("a", encoding="utf-8") as history:
                 history.write(json.dumps(entry) + "\n")
         self.save()

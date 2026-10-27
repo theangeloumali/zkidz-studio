@@ -18,13 +18,14 @@ export interface ConnectRouteDeps {
   readonly secretStore: SecretStore;
   readonly fetch: FetchFunction;
   readonly logger: Logger;
-  readonly claudeVersion: string | null;
+  /** `claude --version` runs after the server listens, so routes await it. */
+  readonly claudeVersion: string | null | Promise<string | null>;
   /** Lets the agent manager drop sessions built on the old credential. */
   readonly onConnectionChanged?: () => void;
 }
 
 export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
-  app.get(API_ROUTES.getConnection.path, async (c) => c.json(toConnectionDto(await readConnection(deps.database), deps.claudeVersion)));
+  app.get(API_ROUTES.getConnection.path, async (c) => c.json(toConnectionDto(await readConnection(deps.database), await deps.claudeVersion)));
 
   app.post(API_ROUTES.connectApiKey.path, async (c) => {
     const { apiKey } = parseOrBadRequest(API_ROUTES.connectApiKey.body, await readJsonBody(c));
@@ -33,7 +34,7 @@ export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
     const record = { mode: "api_key", keyLast4: apiKey.slice(-KEY_LAST4_LENGTH).padStart(KEY_LAST4_LENGTH, "*") } as const;
     await writeConnection(deps.database, record);
     deps.onConnectionChanged?.();
-    return c.json(toConnectionDto(record, deps.claudeVersion));
+    return c.json(toConnectionDto(record, await deps.claudeVersion));
   });
 
   app.post(API_ROUTES.connectCloud.path, async (c) => {
@@ -43,7 +44,7 @@ export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
     // One credential at a time: a stale key must not resurface if mode A is picked again later.
     await deps.secretStore.deleteApiKey();
     deps.onConnectionChanged?.();
-    return c.json(toConnectionDto(record, deps.claudeVersion));
+    return c.json(toConnectionDto(record, await deps.claudeVersion));
   });
 
   app.post(API_ROUTES.connectTerminal.path, async (c) => {
@@ -52,7 +53,7 @@ export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
     await writeConnection(deps.database, record);
     await deps.secretStore.deleteApiKey();
     deps.onConnectionChanged?.();
-    return c.json(toConnectionDto(record, deps.claudeVersion));
+    return c.json(toConnectionDto(record, await deps.claudeVersion));
   });
 
   app.get(API_ROUTES.getSettings.path, async (c) => c.json(await readSettings(deps.database)));

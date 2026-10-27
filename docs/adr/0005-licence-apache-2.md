@@ -14,7 +14,7 @@ talks to Claude but is not an Anthropic product.
 ## Decision
 
 - Licence: Apache-2.0. Third-party notices live in `THIRD_PARTY.md`.
-- Product name: "ZKidz Studio". The UI says "Powered by Claude" and "runs Claude Code on your computer" in plain text; no Claude
+- Product name: "ZKidz Studio". The UI names Claude only in plain text ("Use Claude Code in a terminal"); no Claude
   logos, no Claude Code mascot, and no "Claude Code" in a product or feature name.
 - Every source file that can hold a comment starts with `Created by The Angelo Umali.` in its own comment syntax.
   `scripts/check-attribution.mjs` enforces it in `pnpm verify` and CI; JSON, lockfiles, licence texts and binaries are exempt.

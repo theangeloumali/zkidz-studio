@@ -1,0 +1,61 @@
+# Created by The Angelo Umali.
+# packages/db on both backends (plan §8): migrations up → down → up, backup/restore and reset, on PGlite and on the local Supabase stack
+# started the way users start it (supabase/compose.yml through db:supabase:start). Actions are pinned by commit SHA; bump with the tag comment.
+# GitHub's macOS and Windows runners cannot run Linux containers, so Docker Desktop runs on those are recorded by hand with
+# `pnpm db:supabase:check` in supabase/port-evidence.md.
+name: db
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  matrix:
+    name: db on PGlite and local Supabase
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The package's own typecheck covers src and tests; the scripts have their own tsconfig.
+      - run: pnpm exec tsc -p packages/db/scripts
+      - name: Use a fresh ZKS_HOME
+        run: echo "ZKS_HOME=$RUNNER_TEMP/zks" >> "$GITHUB_ENV"
+      - name: Start local Supabase Postgres
+        run: pnpm db:supabase:start
+      - name: Only 127.0.0.1:45322 is published
+        run: |
+          published="$(docker ps --filter label=com.docker.compose.project=zks-studio-supabase --format '{{.Ports}}')"
+          echo "published: $published"
+          test "$published" = '127.0.0.1:45322->5432/tcp'
+      - name: Postgres answers on no non-loopback address
+        run: node packages/db/scripts/supabase.ts check
+      - name: The start script generated an owner-only password, and the default one is refused
+        run: |
+          test "$(stat -c %a "$ZKS_HOME/db/supabase.env")" = 600
+          if PGPASSWORD=postgres PGCONNECT_TIMEOUT=5 psql -h 127.0.0.1 -p 45322 -U postgres -d postgres -c 'select 1'; then
+            echo "the default postgres password was accepted"
+            exit 1
+          fi
+      - name: Migrations and tests on both backends
+        run: pnpm db:test:matrix
+      - name: Stop local Supabase
+        if: always()
+        run: pnpm db:supabase:stop

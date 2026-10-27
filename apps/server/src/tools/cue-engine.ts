@@ -5,9 +5,8 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CUE_TIERS, CueSchema, type Cue } from "@zks/shared";
 import { z } from "zod";
-import { EngineReportedError } from "../jobs/engine-process.ts";
 import type { ToolContext } from "./context.ts";
-import { loadProject, projectRootOf } from "./project-files.ts";
+import { projectWorkDir, runEngineCheck } from "./engine-check.ts";
 import { ToolError } from "./result.ts";
 import { readLatestWords } from "./transcript-store.ts";
 
@@ -70,19 +69,4 @@ export async function validateCueWithEngine(context: ToolContext, check: CueChec
   } finally {
     await rm(scratchDir, { recursive: true, force: true });
   }
-}
-
-async function runEngineCheck(runCheck: () => Promise<unknown>): Promise<unknown> {
-  try {
-    return await runCheck();
-  } catch (error) {
-    if (error instanceof EngineReportedError) throw new ToolError(error.reason);
-    throw error;
-  }
-}
-
-async function projectWorkDir(context: ToolContext): Promise<string> {
-  const workDir = join(projectRootOf(context, await loadProject(context)), "work");
-  await mkdir(workDir, { recursive: true });
-  return workDir;
 }

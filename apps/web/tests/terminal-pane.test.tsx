@@ -6,15 +6,18 @@ import { TerminalPane } from "../src/terminal/TerminalPane.tsx";
 import { jsonResponse } from "./fakes.ts";
 import { stubFetch } from "./render.tsx";
 
-const xterm = vi.hoisted(() => ({ written: [] as unknown[], onData: null as ((data: string) => void) | null, opened: 0 }));
+const xterm = vi.hoisted(() => ({ written: [] as unknown[], onData: null as ((data: string) => void) | null, opened: 0, steps: [] as string[] }));
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
-    loadAddon(): void {}
+    loadAddon(addon: object): void {
+      xterm.steps.push(addon.constructor.name);
+    }
     open(): void {
       xterm.opened += 1;
+      xterm.steps.push("open");
     }
     write(data: unknown): void {
       xterm.written.push(data);
@@ -31,8 +34,16 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({
-  FitAddon: class {
+  FitAddon: class FitAddon {
     fit(): void {}
+  },
+}));
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: class WebglAddon {
+    onContextLoss() {
+      return { dispose: () => undefined };
+    }
+    dispose(): void {}
   },
 }));
 
@@ -94,6 +105,15 @@ describe("TerminalPane", () => {
     xterm.written.length = 0;
     xterm.onData = null;
     xterm.opened = 0;
+  });
+
+  // The app's style-src 'self' blocks the DOM renderer's <style> elements and style attributes; WebGL draws on a canvas.
+  it("loads the WebGL renderer before it opens the terminal", async () => {
+    xterm.steps = [];
+    renderPane();
+    await waitFor(() => expect(xterm.steps).toContain("open"));
+    expect(xterm.steps.indexOf("WebglAddon")).toBeGreaterThanOrEqual(0);
+    expect(xterm.steps.indexOf("WebglAddon")).toBeLessThan(xterm.steps.indexOf("open"));
   });
 
   it("opens the terminal, then the socket with a fresh ticket, and writes its output", async () => {

@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
-import { redactReport, redactText, type PathRoots } from "@zks/shared";
+import { ENV, redactReport, redactText, type PathRoots } from "@zks/shared";
+import { checkDatabase } from "@zks/shared/node";
 import { writeCapabilities } from "./capabilities.ts";
 import type { ZksContext } from "./context.ts";
 import {
@@ -23,9 +24,10 @@ export type { CheckResult } from "./checks.ts";
 
 const STATUS_MARK = { ok: "ok  ", warn: "WARN", fail: "FAIL" } as const;
 
-export async function runDoctor(context: ZksContext): Promise<CheckResult[]> {
-  const ffmpegCheck = await checkFfmpeg(context);
-  const ffmpegPath = ffmpegCheck.data?.path;
+/** `render` adds the slow checks: a test encode per listed encoder, not just the first that works. */
+export async function runDoctor(context: ZksContext, { render = false } = {}): Promise<CheckResult[]> {
+  const [ffmpegCheck, ...encoderChecks] = await checkFfmpeg(context, { everyEncoder: render });
+  const ffmpegPath = ffmpegCheck?.data?.path;
   const checks: (CheckResult | undefined)[] = [
     checkNode(),
     checkBootstrapTool(context, "pnpm"),
@@ -33,13 +35,15 @@ export async function runDoctor(context: ZksContext): Promise<CheckResult[]> {
     checkPython(context),
     ffmpegCheck,
     typeof ffmpegPath === "string" ? writeCapabilities(context, ffmpegPath) : undefined,
+    ...encoderChecks,
     checkWhisper(context),
     checkChromeRender(context),
     checkModels(context),
     checkClaude(),
     checkNodePty(),
     checkDisk(context),
-    await checkPort(),
+    // Each can wait out a probe timeout on an interface that never answers, so they wait together.
+    ...(await Promise.all([checkPort(), checkDatabase({ databaseUrl: process.env[ENV.databaseUrl] })])),
     checkWslMount(context),
   ];
   return checks.filter((check): check is CheckResult => check !== undefined);
@@ -49,7 +53,19 @@ export function doctorExitCode(checks: CheckResult[]): 0 | 1 {
   return checks.some((check) => check.required && check.status === "fail") ? 1 : 0;
 }
 
-const DEFAULT_ROOTS: PathRoots = { homeDir: os.homedir() };
+/** What a public report must not name: paths, this machine and its user. */
+export function reportRoots(zksHome?: string): PathRoots {
+  // userInfo() throws for a uid with no passwd entry, as in some containers.
+  let userName: string | undefined;
+  try {
+    userName = os.userInfo().username;
+  } catch {
+    userName = undefined;
+  }
+  return { ...(zksHome ? { zksHome } : {}), homeDir: os.homedir(), hostName: os.hostname(), userName };
+}
+
+const DEFAULT_ROOTS: PathRoots = reportRoots();
 
 export function formatDoctorJson(checks: CheckResult[], roots: PathRoots = DEFAULT_ROOTS): string {
   return JSON.stringify(redactReport({ ok: doctorExitCode(checks) === 0, checks }, roots), null, 2);

@@ -45,5 +45,25 @@ class CheckWindowTests(unittest.TestCase):
         self.assertEqual(list((self.work / "transcripts").iterdir()), [])
 
 
+    def test_windows_heard_side_by_side_split_the_cores_between_them(self):
+        # ep 12, a 3 s window on turbo: 46.6 s on 1 thread, 7.4 s on 12, 16.9 s on all 24. The same words each time.
+        threads = []
+
+        def fake_whisper(window_wav, language, model, thread_count):
+            threads.append(thread_count)
+            return []
+
+        with (
+            mock.patch.object(check_windows.whispercpp, "transcribe_file", side_effect=fake_whisper),
+            mock.patch.object(check_windows.whispercpp, "model_path", return_value=Path("m.bin")),
+            mock.patch.object(check_windows.whispercpp.os, "cpu_count", return_value=8),
+            mock.patch.object(check_windows, "MAX_JOBS", 2),
+        ):
+            check_windows.transcribe_all("audio/v1.wav", [(0.7, 1.2)], "en")
+            self.assertEqual(threads, [4])
+            threads.clear()
+            check_windows.transcribe_all("audio/v1.wav", [(0.1, 0.4), (0.7, 1.2), (1.5, 1.9)], "en")
+            self.assertEqual(threads, [4, 4, 4])
+
 if __name__ == "__main__":
     unittest.main()

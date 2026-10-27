@@ -4,33 +4,12 @@ import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import type { Cue } from "@zks/shared";
 import { describe, expect, it, vi } from "vitest";
-import { editedDuration, type TimeSpan } from "../src/editor/edl.ts";
-import { createPlaybackClock } from "../src/editor/playback-clock.ts";
-import { Timeline } from "../src/editor/timeline.tsx";
-import { buildTimelineTracks } from "../src/editor/timeline-items.ts";
-import { renderWithProviders } from "./render.tsx";
+import type { TimeSpan } from "../src/editor/edl.ts";
+import { BULK_DURATION_S, bulkCues, renderTimeline, zoomButton } from "./timeline-fixture.tsx";
 
 const NODE_CAP = 600;
 // The test bounds DOM nodes, not speed; re-rendering 2,000 cues overran waitFor's 1 s default at load 25+ in ci:local.
 const BULK_RERENDER_TIMEOUT_MS = 5_000;
-const BULK_DURATION_S = 600;
-/** The e2e bulk fixture (harness/serve.ts): 2,000 cues 0.3 s apart, each 80% of its slot. */
-const bulkCues = Array.from({ length: 2000 }, (_, index): Cue => {
-  const at = (index * BULK_DURATION_S) / 2000;
-  return { kind: "keyword", at, end: at + 0.24, text: `Cue ${index}` };
-});
-
-function renderTimeline(cueSheet: readonly Cue[], durationS: number, keptSpans: readonly TimeSpan[] = [{ at: 0, end: durationS }]) {
-  const clock = createPlaybackClock({ durationS: editedDuration(keptSpans) });
-  const view = renderWithProviders(
-    <Timeline tracks={buildTimelineTracks(null, [...cueSheet])} sourceDurationS={durationS} keptSpans={keptSpans} clock={clock} />,
-  );
-  const scroller = view.container.querySelector<HTMLElement>(".timeline-scroll");
-  if (scroller === null) throw new Error("no timeline scroller");
-  return { clock, scroller, nodeCount: () => scroller.querySelectorAll("*").length };
-}
-
-const zoomButton = (name: "Zoom in" | "Zoom out" | "Fit") => screen.getByRole("button", { name });
 
 describe("Timeline windowing", () => {
   it("keeps 2,000 blocks out of the DOM except the ones near the viewport", () => {
@@ -158,6 +137,20 @@ describe("Timeline zoom", () => {
     fireEvent.wheel(scroller, { deltaY: 300, ctrlKey: true });
     fireEvent.wheel(scroller, { deltaY: 300, ctrlKey: true });
     await waitFor(() => expect(zoomButton("Zoom in")).toBeEnabled());
+  });
+
+  it("commits a Ctrl + wheel zoom inside its animation frame, before that frame paints", () => {
+    const { scroller } = renderTimeline(bulkCues, BULK_DURATION_S);
+    const timeline = document.querySelector<HTMLElement>(".timeline");
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+
+    fireEvent.wheel(scroller, { deltaY: 300, ctrlKey: true });
+    const widthBefore = timeline?.style.width;
+    frames.forEach((callback) => callback(0));
+    requestFrame.mockRestore();
+
+    expect(timeline?.style.width).not.toBe(widthBefore);
   });
 
   it("disables every zoom control with no media", () => {

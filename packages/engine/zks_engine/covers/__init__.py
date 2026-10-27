@@ -7,9 +7,8 @@ import subprocess
 from pathlib import Path
 
 from .. import ffio, pipeline
-from ..pipeline import HF_DIR
 from ..qc import inputs, timeline
-from ..render import cue_sheet_names
+from ..render import cue_sheet_names, render_stills
 from ..specs import gates
 from ..specs.gates import GateFailed
 
@@ -60,10 +59,10 @@ def blur_still(still, out, boxes):
     subprocess.run(command, check=True)
 
 
-def draw_stills(video, times, names, work):
-    """hf/render.js --stills of those cue sheets, composited on the proxy: {time: png}."""
-    subprocess.run(["node", str(HF_DIR / "render.js"), f"{video}:{'+'.join(names)}", "--stills", *[f"{at:g}" for at in times]], check=True)
-    folder = work / "stills" / f"{'+'.join(names)}.hf"
+def draw_stills(video, times, names):
+    """{time: png} of those cue sheets. --settled refuses a time that catches a title still animating in (a half-drawn rule
+    and its ring read as a second node)."""
+    folder = render_stills(video, names, [f"{at:g}" for at in times], "--settled")
     return {at: folder / f"t{at:g}.png" for at in times}
 
 
@@ -79,7 +78,7 @@ def make_covers(video, times, cover_sheet=None, draw_stills=draw_stills, work=No
         copy = pipeline.derived_file(work, f"cues/{video}-cover.json")
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(cover_sheet, copy)
-    stills = draw_stills(video, times, names, work)
+    stills = draw_stills(video, times, names)
     edl = inputs.read_json(work / "edl" / f"{video}.json")
     (work / "covers").mkdir(exist_ok=True)
     made = []

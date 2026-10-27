@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,7 @@ from unittest import mock
 
 from support import has_ffmpeg, make_edl  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends, cli, ffio, qc, render
+from zks_engine import backends, cli, ffio, qc, render, render_final
 from zks_engine.pipeline import frame_to_sample
 from zks_engine.specs.gates import GateFailed
 
@@ -87,9 +88,40 @@ class MasterPlanTests(unittest.TestCase):
         calls = []
         with self.assertRaises(FileNotFoundError):  # no master is written by the stand-in encode
             render.render_master("v1", "4k", "media/source.mkv", Backend("nvidia"), edit=lambda video, source: calls.append(("edit", video, source)),
-                                 overlays=lambda video: calls.append(("overlays", video)),
+                                 preflight=lambda video: calls.append(("preflight", video)), overlays=lambda video: calls.append(("overlays", video)),
                                  encode=lambda video, draft, uhd: calls.append(("encode", video, draft, uhd)), work=Path(tempfile.mkdtemp()))
-        self.assertEqual(calls, [("edit", "v1", "media/source.mkv"), ("overlays", "v1"), ("encode", "v1", False, True)])
+        self.assertEqual(calls, [("edit", "v1", "media/source.mkv"), ("preflight", "v1"), ("overlays", "v1"), ("encode", "v1", False, True)])
+
+    def test_a_refused_route_stops_before_the_overlay_frames(self):
+        calls = []
+
+        def refuse(video):
+            sys.exit(f"{video}: refused")
+
+        with self.assertRaises(SystemExit):
+            render.render_master("v1", "4k", "media/source.mkv", Backend("nvidia"), edit=lambda video, source: None, preflight=refuse,
+                                 overlays=lambda video: calls.append("overlays"), encode=lambda video, draft, uhd: calls.append("encode"))
+        self.assertEqual(calls, [])
+
+
+class PreflightTests(unittest.TestCase):
+    def preflight(self, edl, on_gpu):
+        route = render_final.Route(Backend("nvidia"), on_gpu, "", (2160, 3840))
+        with mock.patch.object(render_final, "load_edl", return_value=edl), mock.patch.object(render_final, "load_cuts", return_value={}), \
+                mock.patch.object(render_final, "source_path", return_value=Path("s.mkv")), \
+                mock.patch.object(render_final, "route_for", return_value=route) as route_for:
+            render_final.preflight("v1")
+        return route_for
+
+    def test_zooms_off_the_gpu_composite_are_refused_up_front(self):
+        with self.assertRaisesRegex(SystemExit, "animated zooms"):
+            self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=False)
+
+    def test_zooms_on_the_gpu_composite_pass(self):
+        self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=True)
+
+    def test_an_edl_without_zooms_or_matte_never_probes_the_route(self):
+        self.preflight({"zooms": [], "matte": []}, on_gpu=False).assert_not_called()
 
 
 class CliTests(unittest.TestCase):

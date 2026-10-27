@@ -13,6 +13,8 @@ which source ranges it keeps.
 ## Choose the keeps
 
 - Keeps are `{ at, end, pin? }` in source seconds, in source order, never overlapping. `set_reel` replaces the whole list.
+- `pin: true` keeps both edges of a keep where you put them. Without it the engine snaps each edge up to 0.15 s to the
+  quietest point, which can land inside a word. Pin an edge you placed with `check_window`.
 - Open on the strongest hook in the video. It need not be the full edit's opening line.
 - Each keep starts and ends between words: check the edges with `read_transcript` (`format: "words"`).
 - Keep the story whole. A viewer who never sees the full edit should still follow it.

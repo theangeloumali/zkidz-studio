@@ -36,7 +36,8 @@ field you want to keep.
   addresses, phone numbers, emails). Do not blur the creator's own family or home unless the user asks, and then exactly
   as asked.
 - `zooms`: a preset (`snap`, `push`, `reveal`, `through-out`, `through-in`, `portal`) over a span. Jump cuts already get an
-  alternating punch-in; add zooms for emphasis only.
+  alternating punch-in; add zooms for emphasis only. Every preset is animated: when `get_capabilities` reports
+  `zoomExpr: false`, leave `zooms` empty and let the jump-cut punch-ins carry the emphasis.
 - `cutaways`: a title card `{ title, sub?, style? }` over a span, for a chapter change.
 - `faceCamRanges` and `matteRanges`: spans where the speaker's face is the subject.
 

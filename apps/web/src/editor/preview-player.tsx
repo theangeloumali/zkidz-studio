@@ -23,6 +23,8 @@ interface PreviewPlayerProps {
   readonly spans: readonly TimeSpan[];
   readonly composition: PreviewComposition | null;
   readonly clock: PlaybackClock;
+  /** The video's 1080 H.264 proxy; the original may be HEVC, which Chrome cannot decode (plan §8.4). */
+  readonly footageUrl: string | undefined;
 }
 
 const percentOf = (value: number, total: number) => `${(value / total) * 100}%`;
@@ -57,7 +59,7 @@ function useOverlayLoadedSeek(overlayRef: React.RefObject<HTMLIFrameElement | nu
  * happens on the playing proxy's last presented frame of its span (requestVideoFrameCallback), and that proxy leads
  * the clock, so the overlay follows the picture instead of the wall clock.
  */
-export function PreviewPlayer({ cuts, spans, composition, clock }: PreviewPlayerProps) {
+export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: PreviewPlayerProps) {
   const durationS = editedDuration(spans);
   const [isPlaying, setIsPlaying] = useState(false);
   const playerRef = useRef<HTMLDivElement>(null);
@@ -155,7 +157,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock }: PreviewPlayer
     };
   }, [clock, cuts, spans, durationS]);
 
-  const mediaUrl = cuts === null ? undefined : `/api/media/${encodeURIComponent(cuts.sourceAssetId)}`;
+  const mediaUrl = cuts === null ? undefined : footageUrl;
   return (
     <div className="flex flex-col gap-3">
       <div ref={playerRef} className="player" data-punch="false">

@@ -20,12 +20,12 @@ import { implementTool } from "./define-tool.ts";
 import { prepareWorkDir, projectAsset, projectRootOfJob, workRelativePath, type EngineJobDeps } from "./engine-jobs.ts";
 import { fenceJobError } from "./job-error-fence.ts";
 import { readJobResult, writeJobResult } from "./job-results.ts";
-import { assetFilePath, findProjectAsset, loadProject, projectRootOf } from "./project-files.ts";
+import { assetEngineInput, findProjectAsset, loadProject, projectRootOf } from "./project-files.ts";
 import { ToolError } from "./result.ts";
 import { confinePath } from "../security/confine-path.ts";
 import { specRelPath } from "../specs/spec-files.ts";
 import { readCurrentSpec, writeAgentSpec } from "./spec-store.ts";
-import { readLatestWords } from "./transcript-store.ts";
+import { readLatestTranscriptSettings, readLatestWords } from "./transcript-store.ts";
 
 const RenderTargetSchema = STUDIO_TOOLS.render_master.input.shape.target;
 type RenderTarget = z.infer<typeof RenderTargetSchema>;
@@ -41,6 +41,7 @@ const QcParamsSchema = z.object({
   masterSha256: Sha256Schema,
   renderInputs: MasterRenderResultSchema.shape.inputs,
   wordsRelPath: z.string().min(1),
+  transcript: z.object({ language: z.string(), model: z.string() }).optional(),
 });
 const MotionParamsSchema = z.object({
   stage: z.enum(["source", "master"]),
@@ -106,6 +107,7 @@ const qcMaster = implementTool("qc_master", {
       masterSha256: render.sha256,
       renderInputs: render.inputs,
       wordsRelPath,
+      transcript: await readLatestTranscriptSettings(context, render.source.assetId),
     };
     const result = await runJobForResult(context, { kind: "qc_master", lane: "whisper", params }, signal);
     return { output: STUDIO_TOOLS.qc_master.output.parse(result) };
@@ -166,7 +168,7 @@ const exportDeliverable = implementTool("export_deliverable", {
 
 export const renderTools = [renderMaster, qcMaster, checkMotion, makeCovers, exportDeliverable];
 
-async function cutSourceAssetId(context: ToolContext, videoId: string): Promise<string> {
+export async function cutSourceAssetId(context: ToolContext, videoId: string): Promise<string> {
   const parsedCuts = CutSpecSchema.safeParse(await readCurrentSpec(context, { videoId, kind: "cuts" }));
   if (!parsedCuts.success) throw new ToolError(`${videoId} has no valid cut spec yet: call set_cuts first`);
   await findProjectAsset(context, parsedCuts.data.sourceAssetId);
@@ -247,10 +249,9 @@ export function registerRenderJobHandlers(jobRunner: JobRunner, deps: EngineJobD
   jobRunner.registerHandler("make_covers", (job, reportProgress, signal) => reportStage(reportProgress, "covers", () => runMakeCovers(deps, job, signal)));
 }
 
-/** An asset's file for --source, and the in-place registration the engine needs to accept a file outside the project. */
 async function assetInput(deps: EngineJobDeps, job: JobRow, assetId: string) {
   const asset = await projectAsset(deps.db, { projectId: job.projectId, assetId });
-  return { asset, path: assetFilePath(await projectRootOfJob(deps, job), asset), inPlacePaths: asset.inPlacePath === null ? [] : [asset.inPlacePath] };
+  return { asset, ...assetEngineInput(await projectRootOfJob(deps, job), asset) };
 }
 
 function requireSnapshotDir(job: JobRow): string {
@@ -292,6 +293,8 @@ async function runQcMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal
   const master = params.masterRelPath.slice("work/".length);
   const args = ["--video", targetVideoId(job.videoId, params.target), "--master", master, "--source", source.path];
   args.push("--specs", params.specsSnapshot, "--words", join(projectRoot, params.wordsRelPath), "--render-inputs", JSON.stringify(params.renderInputs));
+  // Re-heard in the transcript's language and model: auto-detect on 3 s of Taglish turns kept words into "missing" ones.
+  if (params.transcript !== undefined) args.push("--language", params.transcript.language, "--model", params.transcript.model);
   const report = EngineQcReportSchema.parse(await deps.engine.run({ command: "qc-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
   if (report.master.relPath !== master) throw new Error(`qc-master judged ${report.master.relPath}, not ${master}`);
   assertRenderedBytes(params.masterRelPath, { sha256: params.masterSha256 }, report.master.sha256);

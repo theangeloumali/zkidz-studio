@@ -80,8 +80,8 @@ const browserPost = (path: string) => send(path, { method: "POST", headers: { or
 const projectPath = (path: string, projectId: string) => path.replace(":projectId", projectId);
 
 describe("createApp with the Phase 2 services", () => {
-  it("runs agent sessions through the SDK", () => {
-    expect(services.agentRunner).toBe("sdk");
+  it("runs agent sessions through the SDK", async () => {
+    expect(await services.agentRunner).toBe("sdk");
   });
 
   it("serves the connect screen with the resolved claude version", async () => {

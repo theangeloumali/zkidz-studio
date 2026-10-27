@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { loadToolsLock, pinnedExecutablePath, platformKey } from "@zks/shared/node";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createEngineProcessRunner, EngineReportedError, pinnedEngineTools } from "../../src/jobs/engine-process.ts";
@@ -187,6 +188,17 @@ describe("pinnedEngineTools", () => {
       ffmpegPath: "/opt/ff/ffmpeg",
       chromePath: "/opt/chrome/headless",
     });
+  });
+
+  it("finds the Chrome that zks setup installed, with no ZKS_CHROME override", async () => {
+    const studioHome = join(scratchDir, "set-up-home");
+    const chromePath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, "chrome-headless-shell");
+    if (chromePath === undefined) throw new Error("test setup: no pinned chrome for this platform");
+    await mkdir(dirname(chromePath), { recursive: true });
+    await writeFile(chromePath, "");
+
+    expect(pinnedEngineTools({ ZKS_FFMPEG: "/opt/ff/ffmpeg" }, studioHome).chromePath).toBe(chromePath);
+    expect(chromePath).toContain(join("chrome-headless-shell", "chrome-headless-shell"));
   });
 
   it("refuses to fall back to PATH when a pinned tool is missing", () => {

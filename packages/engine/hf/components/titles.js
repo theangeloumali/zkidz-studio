@@ -6,12 +6,13 @@ const { exit, pop, hide } = require("../fx/motion");
 const { tracking } = require("../fx/kinetic");
 const { scrim, lightLeak } = require("../fx/light");
 const { spring, springAlpha } = require("../fx/springs");
-const { k, drawn, join, NOTHING, card, goldRule, lineWithNode, risingWords, risingText, kicker, written, zMark, typed } = require("./parts");
+const { k, drawn, join, NOTHING, card, goldRule, lineLanded, lineWithNode, risingWords, risingText, kicker, written, zMark, typed } = require("./parts");
 
 // Opening title: a light leak sweeps the frame and a scrim dims the band; the kicker tab rises, the serif lines punch in
 // word by word, and one gold rule draws on under them. With `intro: true` the brand intro goes in when this hook ends.
+// `settled` (a cover) rings the rule's node once instead of pulsing it, so no cover catches a ring.
 const hookTitle = {
-  render(cue, { duration }) {
+  render(cue, { duration, settled }) {
     const { HOOK } = k;
     const layout = k.hookLayout(cue);
     const block = join(
@@ -19,10 +20,16 @@ const hookTitle = {
       ...layout.lines.map(({ text, start, baseline, color }, index) =>
         risingWords(cue, `line${index}`, text, k.SAFE.left, baseline, layout.font, start, { outline: layout.outline, color, step: HOOK.step }),
       ),
-      goldRule(cue, "rule", k.SAFE.left, layout.rule.y, layout.rule.width, HOOK.rule, { onFootage: true, pulseUntil: duration }),
+      goldRule(cue, "rule", k.SAFE.left, layout.rule.y, layout.rule.width, HOOK.rule, { onFootage: true, pulseUntil: settled ? undefined : duration }),
     );
     const band = [k.SAFE.left, layout.top, layout.rule.width, layout.rule.y - layout.top + 30];
-    return join(lightLeak("leak", 0), scrim("dim", band, 0, duration, { strength: 0.6 }), block);
+    return join(lightLeak("leak", 0, { bottom: k.SAFE.columnTop }), scrim("dim", band, 0, duration, { strength: 0.6 }), block);
+  },
+  // Seconds from the cue's start until its last word and its rule have landed.
+  landed(cue) {
+    const last = k.hookLayout(cue).lines.at(-1);
+    const lastWord = last.start + (last.text.split(" ").length - 1) * k.HOOK.step;
+    return Math.max(lastWord + spring().duration, lineLanded(k.HOOK.rule));
   },
 };
 

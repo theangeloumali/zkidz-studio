@@ -14,7 +14,8 @@ import { findProjectAsset, loadProject, projectRootOf } from "../project-files.t
 import { ToolError } from "../result.ts";
 
 const DEFAULT_LANGUAGE = "auto";
-const DEFAULT_WHISPER_MODEL = "base";
+// Plan §7.4: the pinned whisper-cli is a CPU build, and on CPU the quantised turbo is the model; base mishears Taglish.
+const DEFAULT_WHISPER_MODEL = "turbo";
 const MS_PER_S = 1000;
 const OPEN_STATUSES: ReadonlySet<JobStatus> = new Set(["queued", "running"]);
 

@@ -57,6 +57,13 @@ class JobTests(ProgressCase):
         history = [json.loads(line) for line in (self.dir / "history.jsonl").read_text(encoding="utf-8").splitlines()]
         self.assertEqual((history[-1]["stage"], history[-1]["units"]), ("master", 300))
 
+    def test_a_paced_stage_feeds_the_history_under_its_pace(self):
+        with progress.job("v1", "transcribing", unit="audio seconds") as stage:
+            stage.begin(total=270, pace="transcribing turbo")
+        history = [json.loads(line) for line in (self.dir / "history.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual((history[-1]["stage"], history[-1]["units"]), ("transcribing turbo", 270))
+        self.assertEqual(self.records()["v1"]["stage"], "transcribing")
+
     def test_a_failure_is_recorded_toasted_once_and_raised(self):
         with self.assertRaises(RuntimeError), progress.job("v1", "frames", total=100):
             raise RuntimeError("hyperframes render failed")
@@ -351,6 +358,14 @@ class EtaSecondsTests(unittest.TestCase):
         history = [{"stage": "join", "units": 0, "seconds": 330}]
         record = {"stage": "join", "state": "running", "done": 0, "total": None, "started": NOW - 30}
         self.assertEqual(progress_eta.eta_seconds(record, history, NOW), 300)
+
+    def test_a_stage_paced_per_model_reads_only_that_models_history(self):
+        # ep 12: 6 chunks paced by base runs and 3 s fixtures said "about 1 min left" for a 27 min turbo transcription.
+        history = [{"stage": "transcribing", "units": 6, "seconds": 60}, {"stage": "transcribing base", "units": 270, "seconds": 60}]
+        record = {"stage": "transcribing", "pace": "transcribing turbo", "state": "running", "done": 0, "total": 270, "started": NOW}
+        self.assertIsNone(progress_eta.eta_seconds(record, history, NOW))
+        history.append({"stage": "transcribing turbo", "units": 270, "seconds": 1080})
+        self.assertEqual(progress_eta.eta_seconds(record, history, NOW), 1080)
 
     def test_unknown_or_not_running_has_no_eta(self):
         self.assertIsNone(progress_eta.eta_seconds({"stage": "join", "state": "running", "total": None, "started": NOW}, [], NOW))

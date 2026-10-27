@@ -74,8 +74,8 @@ ASSUMPTIONS (not asked):
 - [x] Phase 3: GitHub Pages site, deploy workflow, social preview (axe clean, CSP hash test)
 - [x] Phase 4: UI captures of the real studio (12 shots, 2560x1440)
 - [x] Phase 5: launch film (80.0 s, -14.1 LUFS, web encode 42 MB for the site)
-- [ ] Phase 6: integrate, gates, review, PRs, enable and deploy Pages, repo About
-- [ ] Phase 7: close
+- [x] Phase 6: integrate, gates, review (ci:local 9/9; Maya + Kai findings fixed; film in site/assets)
+- [x] Phase 7: close (checklist, site walkthrough recorded and frame-checked, vault capture)
 
 Phases 2, 3 and 4 run in parallel after Phase 1 (disjoint files; at most 3 agents at once because captures and renders share the GPU). Phase 5 needs Phases 1 and 4. Phase 6 needs Phases 2, 3 and 5.
 
@@ -170,6 +170,18 @@ Verify: `curl -sfI https://theangeloumali.github.io/zkidz-studio/ && curl -sfI h
 - Vault learning capture; ticket table; HANDOFF.md updated; the gauge vs last push.
 
 Verify: the checklist has no unresolved rows; `ffprobe` on the walk-through.
+
+## Deploy (this plan's approval authorizes it)
+
+After the PR is open with every phase above ticked:
+
+1. Squash-merge the PR into `develop`.
+2. Open a PR from `develop` to `main` and merge it with `--merge`.
+3. Enable Pages (`build_type=workflow`).
+4. Dispatch `pages.yml` on `develop`.
+5. Check with curl that the site and the film return 200.
+6. Set the repo homepage and topics.
+7. Add a branch policy to the `github-pages` environment: develop and main only.
 
 ## Agents (BUDGET: T3 active=5 total=12)
 

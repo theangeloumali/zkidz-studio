@@ -5,11 +5,11 @@
 **Drop in your footage, say what you want, and watch Claude edit it on your own computer.**
 
 <p align="center">
-  <a href="https://theangeloumali.github.io/zkidz-studio/"><img src="docs/assets/launch-poster.jpg" width="720" alt="Watch the ZKidz Studio launch film"></a>
+  <a href="https://theangeloumali.github.io/zkidz-studio/"><img src="site/assets/launch-poster.jpg" width="720" alt="Watch the ZKidz Studio launch film"></a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/launch-teaser.webp" width="720" alt="An 8-second teaser of ZKidz Studio editing a short">
+  <img src="site/assets/launch-teaser.webp" width="720" alt="An 8-second teaser of ZKidz Studio editing a short">
 </p>
 
 [Website](https://theangeloumali.github.io/zkidz-studio/) · [Docs](docs/user/README.md) · [Install](#install)
@@ -27,7 +27,7 @@ ZKidz Studio is not affiliated with, endorsed by, or sponsored by Anthropic.
 - **Versions.** Every spec the agent writes is a saved version; restore an older one at any time.
 - **11 quality checks on the export**, including `cutWords`, `hookMouth`, `lipSync`, `captionContrast` and `loudness`. Only a master
   that passed is exported.
-- **Deliverables.** A 4K master (on the `nvidia` backend; other backends make 1080), the second vertical cut and covers, each file
+- **Deliverables.** A 4K master (on the `nvidia` backend; other backends make 1080), the Reels cut and covers, each file
   listed with its SHA-256.
 - **Local-first, bring your own Claude.** Use an API key, your cloud, or your installed Claude Code.
 
@@ -54,22 +54,22 @@ came from it.
 
 <table>
   <tr>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/11-claude-edits-my-videos-now.jpg" width="180" alt="Claude edits my videos now"></a><br>Claude edits my videos now</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/48-zkidz-studio-build.jpg" width="180" alt="Building ZKidz Studio in the open"></a><br>Building ZKidz Studio in the open</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/49-codex-vs-claude.jpg" width="180" alt="Codex vs Claude Opus 5.5"></a><br>Codex vs Claude Opus 5.5</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/29-claude-mods.jpg" width="180" alt="Claude Code mods"></a><br>Claude Code mods</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/11-claude-edits-my-videos-now.jpg" width="180" alt="Claude edits my videos now"></a><br>Claude edits my videos now</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/48-zkidz-studio-build.jpg" width="180" alt="Building ZKidz Studio in the open"></a><br>Building ZKidz Studio in the open</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/49-codex-vs-claude.jpg" width="180" alt="Codex vs Claude Opus 5.5"></a><br>Codex vs Claude Opus 5.5</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/29-claude-mods.jpg" width="180" alt="Claude Code mods"></a><br>Claude Code mods</td>
   </tr>
   <tr>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/39-zkidz-publisher.jpg" width="180" alt="ZKidz Publisher"></a><br>ZKidz Publisher</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/07-my-coding-is-100-ai-now.jpg" width="180" alt="My coding is 100% AI now"></a><br>My coding is 100% AI now</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/06-claude-set-up-my-whole-nas.jpg" width="180" alt="Claude set up my whole NAS"></a><br>Claude set up my whole NAS</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/30-gpt-6-1-video-editor.jpg" width="180" alt="GPT-6.1 as a video editor"></a><br>GPT-6.1 as a video editor</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/39-zkidz-publisher.jpg" width="180" alt="ZKidz Publisher"></a><br>ZKidz Publisher</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/07-my-coding-is-100-ai-now.jpg" width="180" alt="My coding is 100% AI now"></a><br>My coding is 100% AI now</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/06-claude-set-up-my-whole-nas.jpg" width="180" alt="Claude set up my whole NAS"></a><br>Claude set up my whole NAS</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/30-gpt-6-1-video-editor.jpg" width="180" alt="GPT-6.1 Sol as an alternative video editor"></a><br>GPT-6.1 Sol as an alternative video editor</td>
   </tr>
   <tr>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/15-are-software-engineers-still-needed.jpg" width="180" alt="Are software engineers still needed?"></a><br>Are software engineers still needed?</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/17-rog-rapture-gt-be98-unboxing.jpg" width="180" alt="ROG Rapture GT-BE98 unboxing"></a><br>ROG Rapture GT-BE98 unboxing</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/26-camera-bag.jpg" width="180" alt="Inside my camera bag"></a><br>Inside my camera bag</td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/13-how-to-start-a-freelance-career.jpg" width="180" alt="How to start a freelance career"></a><br>How to start a freelance career</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/15-are-software-engineers-still-needed.jpg" width="180" alt="Are software engineers still needed?"></a><br>Are software engineers still needed?</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/17-rog-rapture-gt-be98-unboxing.jpg" width="180" alt="ROG Rapture GT-BE98 unboxing"></a><br>ROG Rapture GT-BE98 unboxing</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/26-camera-bag.jpg" width="180" alt="Inside my camera bag"></a><br>Inside my camera bag</td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/13-how-to-start-a-freelance-career.jpg" width="180" alt="How to start a freelance career"></a><br>How to start a freelance career</td>
   </tr>
 </table>
 
@@ -77,12 +77,12 @@ came from it.
 
 <table>
   <tr>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/studio-ep12-cover-A.jpg" width="180" alt="Cover of the master edited in ZKidz Studio"></a></td>
-    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="docs/assets/showcase/studio-ep12-short-cover-A.jpg" width="180" alt="Cover of the second vertical cut edited in ZKidz Studio"></a></td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/studio-ep12-cover-A.jpg" width="180" alt="Cover of the master edited in ZKidz Studio"></a></td>
+    <td align="center"><a href="https://www.youtube.com/@theangeloumali"><img src="site/assets/showcase/studio-ep12-reels-cover.jpg" width="180" alt="Cover of the Reels cut edited in ZKidz Studio"></a></td>
   </tr>
 </table>
 
-The studio's first real edit: a 4K master and a second vertical cut that passed all 11 checks, made by Claude in terminal mode.
+The studio's first real edit: a 4K master and a Reels cut that passed all 11 checks, made by Claude in terminal mode.
 
 ## Requirements
 

@@ -615,6 +615,11 @@ h1 .accent {
   }
 }
 
+.wall.paused .row,
+.wall:focus-within .row {
+  animation-play-state: paused;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .wall:hover .row {
     animation-play-state: paused;
@@ -622,7 +627,19 @@ h1 .accent {
 }
 
 .wall-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   margin-top: 2rem;
+}
+
+/* The pause button needs the script, and has nothing to pause under reduced motion. */
+.wall-toggle {
+  display: none;
+}
+
+.js .wall-toggle {
+  display: inline-flex;
 }
 
 .edited {
@@ -957,6 +974,10 @@ h1 .accent {
   }
 
   .row [aria-hidden="true"] {
+    display: none;
+  }
+
+  .js .wall-toggle {
     display: none;
   }
 

@@ -61,6 +61,11 @@ describe(".gitignore media rules", () => {
     expect(ignoredPaths(mediaPaths).sort()).toEqual([...mediaPaths].sort());
   });
 
+  it("tracks only the launch film among site media", () => {
+    expect(ignoredPaths(["site/assets/zkidz-studio-launch.mp4"])).toEqual([]);
+    expect(ignoredPaths(["site/assets/other.mp4"])).toEqual(["site/assets/other.mp4"]);
+  });
+
   it("keeps design images tracked", () => {
     expect(ignoredPaths(["design/mockup/screens/home.png", "design/logo.jpg"])).toEqual([]);
   });

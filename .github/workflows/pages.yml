@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Only reviewed branches publish; the github-pages environment has no branch policy until set by hand.
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:

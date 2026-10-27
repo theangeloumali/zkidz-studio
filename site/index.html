@@ -9,7 +9,13 @@
       name="description"
       content="ZKidz Studio is an open-source video editor that runs on your own computer. Drop in footage, say what you want, and an AI agent cuts, captions and renders it."
     />
-    <meta name="theme-color" content="#0c1117" />
+    <meta name="theme-color" content="#0c1117" id="theme-color" />
+    <!-- Pages cannot send headers. The script hash must be recomputed whenever the inline script changes. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'sha256-2O2VRtqMa7l2+IVl2XD5ocx+Kgo3K78OveIpOkbjOdQ='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="canonical" href="https://theangeloumali.github.io/zkidz-studio/" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
 
@@ -40,17 +46,25 @@
       // Theme first (no flash), then copy buttons and scroll reveal once the DOM exists.
       (function () {
         var root = document.documentElement;
+        var themeColor = document.getElementById("theme-color");
+        function applyTheme(theme) {
+          root.dataset.theme = theme;
+          themeColor.content = theme === "light" ? "#f3efe8" : "#0c1117";
+        }
+        var saved = null;
         try {
-          var saved = localStorage.getItem("zks-theme");
-          if (saved === "light" || saved === "dark") root.dataset.theme = saved;
+          saved = localStorage.getItem("zks-theme");
         } catch (e) {}
+        // No saved choice: follow the system setting.
+        if (saved === "light" || saved === "dark") applyTheme(saved);
+        else if (window.matchMedia("(prefers-color-scheme: light)").matches) applyTheme("light");
         root.classList.add("js");
 
         document.addEventListener("DOMContentLoaded", function () {
           var toggle = document.getElementById("theme-toggle");
           toggle.addEventListener("click", function () {
             var next = root.dataset.theme === "light" ? "dark" : "light";
-            root.dataset.theme = next;
+            applyTheme(next);
             toggle.setAttribute("aria-pressed", String(next === "light"));
             try {
               localStorage.setItem("zks-theme", next);
@@ -75,6 +89,13 @@
                 },
               );
             });
+          });
+
+          var wall = document.getElementById("cover-wall");
+          var wallToggle = document.getElementById("wall-toggle");
+          wallToggle.addEventListener("click", function () {
+            var paused = wall.classList.toggle("paused");
+            wallToggle.setAttribute("aria-pressed", String(paused));
           });
 
           var items = document.querySelectorAll(".reveal");
@@ -253,7 +274,7 @@
             <p class="lede">ZKidz Studio grew out of a pipeline that has shipped 40+ edits. These are the covers from that channel.</p>
           </div>
         </div>
-        <div class="wall reveal" role="group" aria-label="Video covers from the YouTube channel">
+        <div class="wall reveal" id="cover-wall" role="group" aria-label="Video covers from the YouTube channel" tabindex="0">
           <div class="row">
             <img src="assets/showcase/01-gpt-astra-vs-claude-opus-5-5.jpg" alt="Cover: GPT Astra vs Claude Opus 5.5" width="480" height="854" loading="lazy" />
             <img
@@ -369,6 +390,7 @@
         </div>
         <div class="wrap">
           <p class="wall-link">
+            <button class="btn btn-ghost wall-toggle" id="wall-toggle" type="button" aria-controls="cover-wall" aria-pressed="false">Pause covers</button>
             <a class="btn btn-ghost" href="https://www.youtube.com/@theangeloumali">Watch the channel on YouTube</a>
           </p>
           <div class="edited reveal">
@@ -383,8 +405,8 @@
               </figure>
               <figure>
                 <img
-                  src="assets/showcase/studio-ep12-short-cover-A.jpg"
-                  alt="Cover A for the episode 12 Reels cut, made in ZKidz Studio"
+                  src="assets/showcase/studio-ep12-reels-cover.jpg"
+                  alt="Cover for the episode 12 Reels cut, made in ZKidz Studio"
                   width="480"
                   height="854"
                   loading="lazy"

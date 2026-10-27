@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { encodePrompt, INTERRUPT_KEY } from "../../src/terminal/prompt-input.ts";
+import { encodePrompt, eraseInput, INTERRUPT_KEY } from "../../src/terminal/prompt-input.ts";
 
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
@@ -24,5 +24,11 @@ describe("encodePrompt", () => {
 describe("INTERRUPT_KEY", () => {
   it("is a bare Esc, which interrupts the turn and keeps the session", () => {
     expect(INTERRUPT_KEY).toBe("\x1b");
+  });
+});
+
+describe("eraseInput", () => {
+  it("is one Backspace per character Claude Code received, line breaks included", () => {
+    expect(eraseInput("a\x07b\r\nc")).toBe("\x7f".repeat(4));
   });
 });

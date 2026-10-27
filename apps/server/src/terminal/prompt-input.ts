@@ -12,7 +12,17 @@ export const INTERRUPT_KEY = "\x1b";
 // eslint-disable-next-line no-control-regex -- matching control characters is the point
 const UNSAFE_CONTROLS = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
 
+const BACKSPACE = "\x7f";
+
+function pastedText(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(UNSAFE_CONTROLS, "");
+}
+
 export function encodePrompt(text: string): string {
-  const pastedText = text.replace(/\r\n?/g, "\n").replace(UNSAFE_CONTROLS, "");
-  return `${PASTE_START}${pastedText}${PASTE_END}${ENTER}`;
+  return `${PASTE_START}${pastedText(text)}${PASTE_END}${ENTER}`;
+}
+
+/** Deletes a prompt Claude Code put back in its input after an interrupt; extra Backspaces on an empty input do nothing. */
+export function eraseInput(text: string): string {
+  return BACKSPACE.repeat(pastedText(text).length);
 }

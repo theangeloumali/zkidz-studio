@@ -41,7 +41,6 @@ async function main(argv: string[]): Promise<number> {
       console.log(flags.has("--json") ? formatDoctorJson(checks, roots) : formatDoctorText(checks, roots));
       return doctorExitCode(checks);
     }
-    case "--help":
     case "help":
       console.log(USAGE);
       return 0;

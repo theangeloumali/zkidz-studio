@@ -4,7 +4,7 @@ import type { HookPayload, HookResponse } from "@zks/shared";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import { hookToStudioEvents } from "./hook-events.ts";
 import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
-import { encodePrompt } from "./prompt-input.ts";
+import { encodePrompt, eraseInput } from "./prompt-input.ts";
 import { removeSessionFiles } from "./session-files.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
 
@@ -136,7 +136,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
           return {};
         }
         record.hasStarted = true;
-        for (const text of record.queuedPrompts.splice(0)) record.pty.write(encodePrompt(text));
+        for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
       }
       await publishAll(hookToStudioEvents(payload, eventContext(record)));
       return {};
@@ -144,13 +144,14 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     // Before SessionStart the folder-trust dialog may own the pane, and the prompt's Enter would pick its "No, exit" default.
     submitPrompt: (projectId, text) =>
       withProjectRecord(projectId, (record) => {
-        if (record.hasStarted) record.pty.write(encodePrompt(text));
+        if (record.hasStarted) writePrompt(record, text);
         else record.queuedPrompts.push(text);
       }),
     // Claude Code fires no Stop hook on a user interrupt, so the turn's end is reported here.
     stop: (projectId) =>
       withProjectRecord(projectId, (record) => {
         record.pty.interrupt();
+        record.promptToErase = record.lastPrompt;
         publishInBackground([{ type: "terminal.state", projectId, state: "ready" }]);
       }),
     kill: (projectId) => withProjectRecord(projectId, killRecord),
@@ -158,6 +159,14 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       for (const record of records.values()) killRecord(record);
     },
   };
+}
+
+/** Erases the prompt a Stop put back in Claude Code's input, so the next paste is not appended to it. */
+function writePrompt(record: SessionRecord, text: string): void {
+  const erase = record.promptToErase === undefined ? "" : eraseInput(record.promptToErase);
+  record.promptToErase = undefined;
+  record.lastPrompt = text;
+  record.pty.write(erase + encodePrompt(text));
 }
 
 function preToolUseAnswer(decision: TerminalToolDecision): HookResponse {

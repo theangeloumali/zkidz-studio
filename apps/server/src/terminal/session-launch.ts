@@ -53,6 +53,9 @@ export interface SessionRecord extends TerminalSession {
   wasKilled: boolean;
   /** Prompts sent before SessionStart; they die with the record. */
   readonly queuedPrompts: string[];
+  lastPrompt?: string;
+  /** Set by Stop: an interrupt before Claude answers puts the prompt back in its input. */
+  promptToErase?: string;
   sessionStartTimer?: NodeJS.Timeout;
 }
 

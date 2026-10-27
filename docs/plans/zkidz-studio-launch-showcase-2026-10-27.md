@@ -69,11 +69,11 @@ ASSUMPTIONS (not asked):
 
 ## Phase ledger
 
-- [ ] Phase 1: pre-production (research brief, script, beat sheet, shot list)
-- [ ] Phase 2: README, docs and the zkidz-films showcase
-- [ ] Phase 3: GitHub Pages site, deploy workflow, social preview
-- [ ] Phase 4: UI captures of the real studio
-- [ ] Phase 5: launch film (motion graphics, VO, music, render, frame-verify)
+- [x] Phase 1: pre-production (research brief, script, beat sheet, shot list; 80 s, 10 beats, VO by Gemini)
+- [x] Phase 2: README, docs and the zkidz-films showcase (12-cover gallery + the studio ep 12 edit)
+- [x] Phase 3: GitHub Pages site, deploy workflow, social preview (axe clean, CSP hash test)
+- [x] Phase 4: UI captures of the real studio (12 shots, 2560x1440)
+- [x] Phase 5: launch film (80.0 s, -14.1 LUFS, web encode 42 MB for the site)
 - [ ] Phase 6: integrate, gates, review, PRs, enable and deploy Pages, repo About
 - [ ] Phase 7: close
 

@@ -58,3 +58,10 @@ Run from a WSL2 Ubuntu shell against Docker Desktop 4.96.1 (Engine 29.9.2), with
 | `docker compose -f docker/compose.yml down -v`                                              | exit 0; container, network and `zkidz-studio_zks-home` removed                                                                                        |
 
 `pnpm db:reset` was not run here: the machine's destructive-command guard blocks it, and it was not bypassed.
+
+## Cross-OS setup, 2026-10-27
+
+`setup-e2e.yml` on bare GitHub runners: the README's single setup command, then `127.0.0.1:4317` must answer. Ubuntu 24.04 and
+macOS 15 passed on the first run (40475933705). Windows (windows-2025) failed there because `setup.cmd`, started from
+PowerShell 7, gave Windows PowerShell pwsh's module path; with that fixed, all three passed (40478846077), Windows answering
+after about 90 s.

@@ -2,7 +2,7 @@
 
 # The editor
 
-For anyone working on a project. The editor is where you prompt the agent and watch it build. Last reviewed 2026-10-24.
+For anyone working on a project. The editor is where you prompt the agent and watch it build. Last reviewed 2026-10-27.
 
 ```text
 ┌ media bin ┬──────── 9:16 preview ────────┬ agent pane ───────────┐
@@ -27,8 +27,10 @@ project.
 
 ## Live preview
 
-The preview plays a 1080×1920 proxy of your footage with the edit applied: removed parts are skipped, punch-ins and blur boxes
-are drawn live, and titles and captions render on top. Nothing is rendered to a file. When the agent changes a spec, the preview
+The preview plays a 1080×1920 H.264 proxy of your footage (`work/mezz/<video>.mp4`), not the original file, with the edit
+applied: removed parts are skipped, punch-ins and blur boxes
+are drawn live, and titles and captions render on top. Captions sit in a band near the bottom; the agent can
+move a single caption up to keep it off the speaker's mouth. Nothing is rendered to a file. When the agent changes a spec, the preview
 rebuilds and returns to the same moment, usually within a few seconds.
 
 ## Timeline

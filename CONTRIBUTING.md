@@ -3,7 +3,7 @@
 # Contributing to ZKidz Studio
 
 For developers sending a pull request. Covers setup, the local CI gate, tests, attribution and worktrees. Last reviewed
-2026-10-24.
+2026-10-27.
 
 ## Setup
 
@@ -31,8 +31,9 @@ pnpm ci:local --release   # adds a fresh setup.sh and the doctor (develop -> mai
 ```
 
 It runs `actionlint`, `gitleaks` and the install in turn, then `engine`, `lint`, `test-server`, `typecheck`, `test-other` and
-`format` side by side. Every step runs even after one fails. `ZKS_CI_JOBS` caps the workers per test lane (default 6) and
-`ZKS_CI_LANES` caps the lanes. It is Linux x64 only, because the pinned scanners are Linux builds; on Windows use WSL.
+`format` side by side. Every step runs even after one fails. `ZKS_CI_JOBS` caps the workers per test lane (default 6;
+vitest uses at most 4 of them). `ZKS_CI_LANES` sets the lane count, which otherwise is every lane at once, or 2 on a machine
+busier than its cores or a checkout under WSL's `/mnt`. It is Linux x64 only, because the pinned scanners are Linux builds; on Windows use WSL.
 
 `pnpm verify` is the quicker inner loop: attribution, prettier, lint, typecheck and tests.
 

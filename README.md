@@ -79,7 +79,7 @@ The app never offers "Sign in with Claude" and never accepts a pasted token or c
 ## Your first edit
 
 No footage needed. On Home, choose **Try the demo project**. The app generates a 6-second test clip, applies a ready-made cut and
-cue sheet, and opens the Editor so you can render it. Then try a template (talking-head short, vlog or screen-recording
+cue sheet, renders it, and opens the result in the Editor. Then try a template (talking-head short, vlog or screen-recording
 showcase) with your own clips. Walkthrough: [docs/user/getting-started.md](docs/user/getting-started.md).
 
 ## Database

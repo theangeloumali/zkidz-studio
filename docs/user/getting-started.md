@@ -2,7 +2,7 @@
 
 # Getting started
 
-For first-time users. You go from a fresh clone to a rendered demo video. Last reviewed 2026-10-24.
+For first-time users. You go from a fresh clone to a rendered demo video. Last reviewed 2026-10-27.
 
 ## 1. Install
 
@@ -11,8 +11,8 @@ git clone https://github.com/theangeloumali/zkidz-studio && cd zkidz-studio && .
 ```
 
 On Windows run `setup.cmd`, or `powershell -ExecutionPolicy Bypass -File .\setup.ps1`. The script fetches pinned, hash-checked
-copies of pnpm and uv, installs the packages, then runs `pnpm zks setup`, which downloads ffmpeg, Chrome and the small whisper
-models. When it finishes it starts the app. Add `--no-start` to stop before that.
+copies of pnpm and uv, installs the packages, then runs `pnpm zks setup`, which downloads ffmpeg, Chrome and three whisper
+models (`tiny`, `base` and `large-v3-turbo-q5_0`, about 800 MB together; transcription uses the turbo one). When it finishes it starts the app. Add `--no-start` to stop before that.
 
 Everything lands in one data folder, `ZKS_HOME`:
 

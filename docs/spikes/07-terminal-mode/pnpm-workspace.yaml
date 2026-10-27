@@ -1,0 +1,4 @@
+# Created by The Angelo Umali.
+# Standalone spike: node-pty compiles with node-gyp on Linux, so its build script is allowed here.
+allowBuilds:
+  node-pty: true

@@ -1,0 +1,21 @@
+{
+  "variant": "default-1",
+  "claude_code_version": "2.1.308",
+  "apiKeySource": "none",
+  "output_style": "Explanatory",
+  "builtInTools": [
+    "Read"
+  ],
+  "mcpToolCount": 289,
+  "mcpServerCount": 38,
+  "claudeAiConnectorCount": 4,
+  "builtinPluginCount": 3,
+  "userOrInlinePluginCount": 44,
+  "skillCount": 366,
+  "agentCount": 86,
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "text": "ready"
+  }
+}

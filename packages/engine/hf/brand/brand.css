@@ -1,0 +1,108 @@
+/* Created by The Angelo Umali. */
+/* The brand overlay: every visible mark is canvas-geometry SVG (brand/canvas.js) inside animatable units (brand/html.js).
+   The page renders with no footage behind it; the PNGs composite over the edit in render_final.py. */
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+#root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.cue-out {
+  position: absolute;
+  inset: 0;
+}
+.u {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+.box {
+  position: absolute;
+}
+/* Hidden until a keyframed tween shows it (a glow ring, a thrown particle). */
+.pre {
+  opacity: 0;
+}
+svg.ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+/* The warm glow a card sits in, filling its box. --glow is the theme's goldBright (build.js pageCss). */
+.glow {
+  position: absolute;
+  inset: 0;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.45),
+    0 0 56px color-mix(in srgb, var(--glow) 30%, transparent);
+}
+.glow.on-ink {
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.5),
+    0 0 70px color-mix(in srgb, var(--glow) 45%, transparent);
+}
+/* The cinematic layer (fx/light.js): a dimming scrim behind a card, light leaks, the impact flash. */
+.scrim {
+  position: absolute;
+}
+.leak,
+.flash {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.leak-blob {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1100px;
+  height: 1100px;
+  border-radius: 50%;
+}
+.flash {
+  background: #fff;
+}
+/* Laid out but unseen, so every face loads before HyperFrames reads document.fonts.ready. */
+.fontwarm {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.guides div {
+  position: absolute;
+  border: 2px dashed rgba(255, 64, 64, 0.8);
+  box-sizing: border-box;
+}
+/* The brand intro (components/intro.js): the full-frame field, its hairlines, and the two halves of the Z-split. */
+.intro-bg,
+.intro-glow,
+.intro-grain,
+.intro-half {
+  position: absolute;
+  inset: 0;
+}
+.intro-grain {
+  opacity: 0.05;
+}
+.intro-rule {
+  position: absolute;
+  height: 2px;
+}
+.intro-logo {
+  position: absolute;
+}

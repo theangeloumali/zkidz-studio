@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "vlog",
+  "name": "Vlog",
+  "description": "Joins many clips in order, keeps the moments with speech, adds music beds and SFX.",
+  "ingestMode": "join",
+  "prompt": "Make a 45-second vlog from these clips in order. Keep the moments where I talk, add light sound effects on the cuts, and caption every line in English."
+}

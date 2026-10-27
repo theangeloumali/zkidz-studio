@@ -1,0 +1,5 @@
+{
+  "name": "zkidz-studio",
+  "version": "0.0.0",
+  "description": "Spike plugin: proves a local plugin and its skill load under settingSources: []"
+}

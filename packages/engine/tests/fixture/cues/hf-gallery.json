@@ -1,0 +1,398 @@
+[
+  {
+    "kind": "hookTitle",
+    "at": 0.5,
+    "end": 3.5,
+    "kicker": "How I ask for a raise",
+    "lines": ["From $12", "to $25."],
+    "accentLine": 1
+  },
+  {
+    "kind": "lowerThird",
+    "at": 3.6,
+    "end": 6,
+    "name": "Sam Rivera",
+    "sub": "Example Studio",
+    "y": 300
+  },
+  {
+    "kind": "chapterCard",
+    "at": 6.1,
+    "end": 8.4,
+    "index": "01",
+    "kicker": "Track 01",
+    "title": "Clients",
+    "sub": "OnlineJobs · LinkedIn"
+  },
+  {
+    "kind": "keyword",
+    "at": 8.5,
+    "end": 10,
+    "text": "Here's what I do",
+    "tone": "footage",
+    "accent": true,
+    "y": 480
+  },
+  {
+    "kind": "keyword",
+    "at": 10.1,
+    "end": 11.6,
+    "text": "Different ways to ask",
+    "tone": "paper",
+    "accent": true,
+    "y": 480
+  },
+  {
+    "kind": "keyword",
+    "at": 11.7,
+    "end": 13,
+    "text": "Rule 2: new role",
+    "tone": "chip",
+    "accent": true,
+    "y": 340
+  },
+  {
+    "kind": "handNote",
+    "at": 13.1,
+    "end": 14.8,
+    "text": "not happy with\nyour pay?",
+    "y": 380
+  },
+  {
+    "kind": "slamStamp",
+    "at": 14.9,
+    "end": 16.6,
+    "text": "INDISPENSABLE",
+    "sub": "then ask",
+    "x": 540,
+    "y": 420,
+    "size": 84,
+    "color": "#172230",
+    "rot": -0.06
+  },
+  {
+    "kind": "statTile",
+    "at": 16.7,
+    "end": 19.4,
+    "value": 25,
+    "prefix": "$",
+    "label": "After 1–2 years",
+    "sub": "now my minimum rate",
+    "subAt": 1.6
+  },
+  {
+    "kind": "criteriaCard",
+    "at": 19.5,
+    "end": 23,
+    "title": "Rule 1: earn it, then ask",
+    "rows": [
+      {
+        "text": "Contribute first",
+        "at": 0.5
+      },
+      {
+        "text": "Produce good work",
+        "at": 1.3
+      },
+      {
+        "text": "Become indispensable",
+        "at": 2.1
+      }
+    ],
+    "y": 270
+  },
+  {
+    "kind": "pills",
+    "at": 23.1,
+    "end": 25.9,
+    "text": "As a contractor, no",
+    "items": [
+      {
+        "text": "13TH MONTH",
+        "at": 0.6,
+        "tone": "negative"
+      },
+      {
+        "text": "BONUS",
+        "at": 1.2
+      },
+      {
+        "text": "MINE: AFTER A YEAR",
+        "at": 1.8,
+        "tone": "gold"
+      }
+    ],
+    "y": 270
+  },
+  {
+    "kind": "chips",
+    "at": 26,
+    "end": 28.4,
+    "text": "they gave us",
+    "items": [
+      {
+        "text": "Laptop",
+        "at": 0.5
+      },
+      {
+        "text": "Monitor",
+        "at": 0.9
+      },
+      {
+        "text": "Two phones",
+        "hot": true,
+        "at": 1.4
+      }
+    ],
+    "y": 340
+  },
+  {
+    "kind": "timeline",
+    "at": 28.5,
+    "end": 32,
+    "text": "One client, since 2020",
+    "steps": [
+      {
+        "label": "$12",
+        "sub": "starting rate",
+        "at": 0.4
+      },
+      {
+        "label": "$13",
+        "sub": "1 month in",
+        "at": 0.9
+      },
+      {
+        "label": "$15",
+        "sub": "3 months",
+        "at": 1.4
+      },
+      {
+        "label": "$17",
+        "sub": "3 more",
+        "at": 1.9
+      },
+      {
+        "label": "$18–19",
+        "sub": "then",
+        "at": 2.3,
+        "hot": true
+      }
+    ],
+    "y": 270
+  },
+  {
+    "kind": "flowRow",
+    "at": 32.1,
+    "end": 34.6,
+    "text": "What happened next",
+    "items": ["Colleague resigned", "Higher role", "Rate up"],
+    "step": 0.6
+  },
+  {
+    "kind": "vsCard",
+    "at": 34.7,
+    "end": 36.6,
+    "left": {
+      "text": "New role",
+      "sub": "or new job"
+    },
+    "right": {
+      "text": "Same pay?",
+      "sub": "I won't agree"
+    },
+    "y": 290
+  },
+  {
+    "kind": "titleSwap",
+    "at": 36.7,
+    "end": 38.8,
+    "label": "My promotion",
+    "old": "Software engineer",
+    "new": "CTO",
+    "swapAt": 0.9
+  },
+  {
+    "kind": "endCard",
+    "at": 38.9,
+    "end": 41.5,
+    "cta": "Follow for more",
+    "y": 270
+  },
+  {
+    "kind": "checklist",
+    "at": 45,
+    "end": 48.5,
+    "text": "Every edit needs",
+    "rows": [
+      {
+        "text": "A 4K video",
+        "ok": true,
+        "at": 0.5
+      },
+      {
+        "text": "A thumbnail (unused)",
+        "ok": false,
+        "at": 1.4
+      }
+    ],
+    "y": 270
+  },
+  {
+    "kind": "comment",
+    "at": 48.6,
+    "end": 50.8,
+    "text": "May mali ba? Let me know"
+  },
+  {
+    "kind": "pipeline",
+    "at": 50.9,
+    "end": 54.4,
+    "text": "What it does",
+    "labels": ["Opens tab", "Searches", "Applies"],
+    "y": 290
+  },
+  {
+    "kind": "splitFlow",
+    "at": 54.5,
+    "end": 57.6,
+    "text": "2 pathways",
+    "left": {
+      "text": "AI-powered\nengineer"
+    },
+    "right": {
+      "text": "Specialized\nIT"
+    },
+    "y": 290
+  },
+  {
+    "kind": "keyword",
+    "at": 57.7,
+    "end": 59.4,
+    "text": "Subtitles in one pass",
+    "tone": "chip",
+    "accent": true,
+    "y": 335
+  },
+  {
+    "kind": "chapterCard",
+    "at": 59.5,
+    "end": 61.8,
+    "index": "02",
+    "kicker": "What it made",
+    "title": "What the edit delivers"
+  },
+  {
+    "kind": "hookTitle",
+    "at": 61.9,
+    "end": 64.9,
+    "kicker": "No time to edit",
+    "lines": ["The studio edits", "my videos now"],
+    "accentLine": 1
+  },
+  {
+    "kind": "chatCard",
+    "at": 65,
+    "end": 70.5,
+    "title": "Asking the editor",
+    "stream": true,
+    "typing": true,
+    "accentPhrase": "every skill",
+    "messages": [
+      {
+        "from": "me",
+        "text": "Use every skill you have for a better video",
+        "at": 0.5
+      },
+      {
+        "from": "editor",
+        "text": "Loading the design skills now",
+        "at": 1.8
+      }
+    ]
+  },
+  {
+    "kind": "headlineStack",
+    "at": 70.6,
+    "end": 76,
+    "final": "So I built my own",
+    "finalAt": 2.6,
+    "items": [
+      {
+        "text": "Facebook: slow upload",
+        "at": 0.3
+      },
+      {
+        "text": "Then I still schedule",
+        "at": 1.4
+      }
+    ]
+  },
+  {
+    "kind": "lineChart",
+    "at": 76.1,
+    "end": 80.5,
+    "kicker": "Home server dashboard",
+    "title": "CPU while ffmpeg runs",
+    "suffix": "%",
+    "focus": 2,
+    "note": "busy for 45 min",
+    "points": [
+      ["0m", 12],
+      ["15m", 48],
+      ["30m", 95],
+      ["45m", 60]
+    ]
+  },
+  {
+    "kind": "phoneFrame",
+    "at": 80.6,
+    "end": 84.5,
+    "tilt": -6
+  },
+  {
+    "kind": "backdrop",
+    "at": 84.6,
+    "end": 88.5,
+    "src": "media/fixture/backdrop.png",
+    "fit": "cover"
+  },
+  {
+    "kind": "paperCutout",
+    "at": 88.6,
+    "end": 92.5,
+    "src": "media/fixture/cutout.png",
+    "x": 700,
+    "y": 1000,
+    "scale": 0.5,
+    "rot": 5
+  },
+  {
+    "kind": "frameEscape",
+    "at": 92.6,
+    "end": 96.5,
+    "x": 140,
+    "y": 420,
+    "w": 800,
+    "h": 900,
+    "tilt": -4
+  },
+  {
+    "kind": "caption",
+    "at": 0.5,
+    "end": 4,
+    "text": "Hey, everyone! Sam Rivera from Example Studio."
+  },
+  {
+    "kind": "caption",
+    "at": 4,
+    "end": 8,
+    "text": "We're here to talk about money, about salary."
+  },
+  {
+    "kind": "caption",
+    "at": 20,
+    "end": 24,
+    "text": "If I've produced good work and I'm indispensable, then I ask for a raise."
+  }
+]

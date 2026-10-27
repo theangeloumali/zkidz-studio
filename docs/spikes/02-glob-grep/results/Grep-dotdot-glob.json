@@ -1,0 +1,22 @@
+{
+  "scenario": "Grep-dotdot-glob",
+  "confined": false,
+  "initTools": ["Glob", "Grep", "Read"],
+  "toolUses": [
+    {
+      "name": "Grep",
+      "input": {
+        "pattern": "ZKS_SPIKE_MARKER",
+        "glob": "../outside/*.txt",
+        "output_mode": "content"
+      }
+    }
+  ],
+  "toolResults": [
+    {
+      "is_error": false,
+      "content": "\"No matches found\""
+    }
+  ],
+  "error": "Claude Code returned an error result: Reached maximum number of turns (1)"
+}

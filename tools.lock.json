@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "ffmpeg": {
+      "version": "n8.1.3-9-g29e619e767 (BtbN autobuild-2026-09-30-13-08, gpl)",
+      "license": "GPL-3.0-or-later",
+      "platforms": {
+        "linux-x64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-8.1.tar.xz",
+          "sha256": "97ce978979194b5cf7e06a5e68020dbdaa7a4f3294c5452b6a1bc347100dbb79",
+          "size": 150360944,
+          "executable": "ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-8.1/bin/ffmpeg"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-linuxarm64-gpl-8.1.tar.xz",
+          "sha256": "10523d1e0be6b3ce62a9708cc50815c4b5eb5f36ae147fbe2afeecda6f2d6845",
+          "size": 126468728,
+          "executable": "ffmpeg-n8.1.3-9-g29e619e767-linuxarm64-gpl-8.1/bin/ffmpeg"
+        },
+        "win-x64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-win64-gpl-8.1.zip",
+          "sha256": "7b801cdd3a1a0bb54ae6f572187e68b4ed54f52086cfee133fab2180bfb429fa",
+          "size": 193109593,
+          "executable": "ffmpeg-n8.1.3-9-g29e619e767-win64-gpl-8.1/bin/ffmpeg.exe"
+        },
+        "win-arm64": {
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-winarm64-gpl-8.1.zip",
+          "sha256": "061a770557c30bbf8e0b6ca3810288a60f72b85088378b84be03277746f34f17",
+          "size": 133871683,
+          "executable": "ffmpeg-n8.1.3-9-g29e619e767-winarm64-gpl-8.1/bin/ffmpeg.exe"
+        },
+        "mac-arm64": {
+          "homebrew": "ffmpeg"
+        }
+      }
+    },
+    "whisper-cpp": {
+      "version": "b5454 (1.9.5)",
+      "license": "MIT",
+      "platforms": {
+        "linux-x64": {
+          "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-x64.tar.gz",
+          "sha256": "a72becf15d7917f990f6313867a52638b82b7f9ef237fb0c980dac56a135781c",
+          "size": 10364195,
+          "executable": "whisper-bin-ubuntu-x64/whisper-cli"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-arm64.tar.gz",
+          "sha256": "6b95ebfc60447df48e70ef00a73bdc3f41679ed2d01ef465827206a2ff325149",
+          "size": 4608377,
+          "executable": "whisper-bin-ubuntu-arm64/whisper-cli"
+        },
+        "win-x64": {
+          "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip",
+          "sha256": "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb",
+          "size": 8928640,
+          "executable": "Release/whisper-cli.exe"
+        },
+        "win-arm64": {
+          "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cpu-arm64.zip",
+          "sha256": "28c37e7b598c3d9bbfef94f3bd67f2ee6f12b7c86f3da5edcf5e4308d615ff6d",
+          "size": 4371193,
+          "executable": "Release/whisper-cli.exe"
+        },
+        "mac-arm64": {
+          "homebrew": "whisper-cpp",
+          "executable": "whisper-cli"
+        }
+      }
+    },
+    "chrome-headless-shell": {
+      "version": "155.0.8059.39",
+      "license": "BSD-3-Clause",
+      "platforms": {
+        "linux-x64": {
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux64/chrome-headless-shell-linux64.zip",
+          "sha256": "39dcb8c46550632a3d911850ab3b8af840b4e3f6d8622faa2018eb8756278786",
+          "size": 124203329
+        },
+        "linux-arm64": {
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/linux-arm64/chrome-headless-shell-linux-arm64.zip",
+          "sha256": "9fb86f7c0b2734c5febc0bbb4e85f37da43553f3f8a7970949828c5713e87e94",
+          "size": 124553121
+        },
+        "win-x64": {
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/win64/chrome-headless-shell-win64.zip",
+          "sha256": "20798f7c51a22def0b3d02e526a8f52e7ee2c7eddcde9d81a4c23f618e8b5436",
+          "size": 124737213
+        },
+        "mac-arm64": {
+          "url": "https://storage.googleapis.com/chrome-for-testing-public/155.0.8059.39/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+          "sha256": "b3e093c06001c41e68decbc8dd4a62f9efe4bf4e4dd247a686ea531863448d75",
+          "size": 102429510
+        }
+      }
+    }
+  },
+  "models": {
+    "tiny": {
+      "file": "ggml-tiny.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin",
+      "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+      "size": 77691713,
+      "license": "MIT",
+      "fetchOnSetup": true
+    },
+    "base": {
+      "file": "ggml-base.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin",
+      "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+      "size": 147951465,
+      "license": "MIT",
+      "fetchOnSetup": true
+    },
+    "small": {
+      "file": "ggml-small.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin",
+      "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+      "size": 487601967,
+      "license": "MIT",
+      "fetchOnSetup": false
+    },
+    "tiny.en": {
+      "file": "ggml-tiny.en.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin",
+      "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+      "size": 77704715,
+      "license": "MIT",
+      "fetchOnSetup": false
+    },
+    "large-v3-turbo-q5_0": {
+      "file": "ggml-large-v3-turbo-q5_0.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
+      "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+      "size": 574041195,
+      "license": "MIT",
+      "fetchOnSetup": true
+    },
+    "large-v3-turbo": {
+      "file": "ggml-large-v3-turbo.bin",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin",
+      "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+      "size": 1624555275,
+      "license": "MIT",
+      "fetchOnSetup": false
+    }
+  }
+}

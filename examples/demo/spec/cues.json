@@ -1,0 +1,6 @@
+[
+  { "kind": "hookTitle", "at": 0.1, "end": 2.6, "kicker": "ZKIDZ STUDIO", "lines": ["Your first", "edit"], "accentLine": 1 },
+  { "kind": "caption", "at": 0.2, "end": 2.6, "text": "This video was made on your machine.", "bottom": 1750 },
+  { "kind": "keyword", "at": 3.4, "end": 5.9, "text": "No footage needed", "tone": "chip" },
+  { "kind": "caption", "at": 3.4, "end": 5.9, "text": "Cuts, cards and captions from one spec.", "bottom": 1750 }
+]

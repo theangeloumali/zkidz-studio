@@ -1,0 +1,4 @@
+# Created by The Angelo Umali.
+.venv/
+__pycache__/
+*.pyc

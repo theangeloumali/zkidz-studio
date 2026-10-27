@@ -1,0 +1,108 @@
+# Created by The Angelo Umali.
+# release-please (plan §16): the release PR targets develop; the tag and GitHub Release come after Angelo merges develop into main.
+# It never pushes to main. Actions are pinned by commit SHA; bump the SHA and the tag comment together.
+# release-please acts through a repo-scoped GitHub App (contents, issues, pull-requests: write), because a PR or tag made
+# with GITHUB_TOKEN starts no workflow runs: the release PR would get no CI. Setup: repo variable RELEASE_APP_CLIENT_ID and
+# secret RELEASE_APP_PRIVATE_KEY. Until both exist each job passes with a warning and opens nothing (no GITHUB_TOKEN fallback).
+name: release
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: release PR into develop
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Secrets cannot appear in a job-level `if`, so presence is checked in a step and gates the rest.
+      - name: Check the release GitHub App is configured
+        id: app-config
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_KEY_SET: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -n "$RELEASE_APP_CLIENT_ID" ] && [ "$RELEASE_APP_KEY_SET" = "true" ]; then echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "::warning::release-please skipped: set repo variable RELEASE_APP_CLIENT_ID and secret RELEASE_APP_PRIVATE_KEY for the release GitHub App"
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+      - id: app-token
+        if: steps.app-config.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+      - if: steps.app-config.outputs.configured == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          target-branch: develop
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+
+  github-release:
+    name: tag and GitHub Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Secrets cannot appear in a job-level `if`, so presence is checked in a step and gates the rest.
+      - name: Check the release GitHub App is configured
+        id: app-config
+        env:
+          RELEASE_APP_CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          RELEASE_APP_KEY_SET: ${{ secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -n "$RELEASE_APP_CLIENT_ID" ] && [ "$RELEASE_APP_KEY_SET" = "true" ]; then echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "::warning::release-please skipped: set repo variable RELEASE_APP_CLIENT_ID and secret RELEASE_APP_PRIVATE_KEY for the release GitHub App"
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+      - id: app-token
+        if: steps.app-config.outputs.configured == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+      # The merged release PR lives on develop, so the release is looked up there; its merge commit reached main via --merge.
+      - id: release
+        if: steps.app-config.outputs.configured == 'true'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          target-branch: develop
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-pull-request: true
+      - name: Check out main's history
+        if: steps.release.outputs.release_created == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm the tagged commit is on main
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          TAGGED_SHA: ${{ steps.release.outputs.sha }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+        run: |
+          if git merge-base --is-ancestor "$TAGGED_SHA" "$GITHUB_SHA"; then echo "$TAG_NAME ($TAGGED_SHA) is on main"; exit 0; fi
+          echo "::error::$TAG_NAME points at $TAGGED_SHA, which is not in main's history; delete the release and re-run after the develop -> main merge"
+          exit 1

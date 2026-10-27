@@ -1,0 +1,98 @@
+{
+  "systeminfo": "recorded",
+  "model": {
+    "type": "tiny",
+    "multilingual": true,
+    "vocab": 51865,
+    "audio": {
+      "ctx": 1500,
+      "state": 384,
+      "head": 6,
+      "layer": 4
+    },
+    "text": {
+      "ctx": 448,
+      "state": 384,
+      "head": 6,
+      "layer": 4
+    },
+    "mels": 80,
+    "ftype": 1
+  },
+  "params": {
+    "model": "ggml-tiny.bin",
+    "language": "en",
+    "translate": false
+  },
+  "result": {
+    "language": "en"
+  },
+  "transcription": [
+    {
+      "timestamps": {
+        "from": "00:00:00,000",
+        "to": "00:00:00,100"
+      },
+      "offsets": {
+        "from": 0,
+        "to": 100
+      },
+      "text": ""
+    },
+    {
+      "timestamps": {
+        "from": "00:00:00,100",
+        "to": "00:00:00,330"
+      },
+      "offsets": {
+        "from": 100,
+        "to": 330
+      },
+      "text": " And"
+    },
+    {
+      "timestamps": {
+        "from": "00:00:00,330",
+        "to": "00:00:00,680"
+      },
+      "offsets": {
+        "from": 330,
+        "to": 680
+      },
+      "text": " so,"
+    },
+    {
+      "timestamps": {
+        "from": "00:00:00,680",
+        "to": "00:00:00,730"
+      },
+      "offsets": {
+        "from": 680,
+        "to": 730
+      },
+      "text": " my"
+    },
+    {
+      "timestamps": {
+        "from": "00:00:00,730",
+        "to": "00:00:01,220"
+      },
+      "offsets": {
+        "from": 730,
+        "to": 1220
+      },
+      "text": " fellow"
+    },
+    {
+      "timestamps": {
+        "from": "00:00:01,220",
+        "to": "00:00:02,000"
+      },
+      "offsets": {
+        "from": 1220,
+        "to": 2000
+      },
+      "text": " Americans!"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "scenario": "signed-in",
+  "claudeVersion": "2.1.308 (Claude Code)",
+  "args": [
+    "--session-id",
+    "4faa2fd4-d0c8-4d63-b464-09f305678eb3",
+    "--restricted",
+    "--settings",
+    "<run>/settings.json",
+    "--mcp-config",
+    "<run>/mcp.json",
+    "--strict-mcp-config",
+    "--tools",
+    "Read",
+    "--allowedTools",
+    "mcp__studio__ping",
+    "--permission-mode",
+    "default",
+    "--model",
+    "haiku"
+  ],
+  "steps": {
+    "trustDialog": " Accessing workspace:\n\n <run>/project\n\n Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source\n project, or work from your team). If not, take a moment to review what's in this folder first.\n\n Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel",
+    "trustYesSelected": true,
+    "sessionStartArrived": true,
+    "sessionStartMs": 3196,
+    "mcpStartedBeforePrompt": false,
+    "startupScreen": "▐▛███▛█   Claude Code v2.1.308\n▝▜██████▀  Haiku 5.5 · <subscription plan>\n ▝▝   ▝▝   <run>/project\n\n                                                                                                    ◐ medium · /effort\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ Try \"edit <filepath> to...\"\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents",
+    "loginMenuScreen": "▝▜██████▀  Haiku 5.5 · <subscription plan>\n ▝▝   ▝▝   <run>/project\n\n  ❯ /login                      Sign in with your Anthropic account\n    /design-login               Authorize design-system access for /design-sync with your claude.ai account\n    /plugin-authoring           Write a mod: a live pane, view or behaviour change in Claude Code\n    /plugin                     Manage Claude Code plugins\n    /reload-plugins             Activate pending plugin changes in the current session\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ /login\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on",
+    "loginListed": true,
+    "stopAfterPrompt": true,
+    "promptScreen": "▐▛███▛█   Claude Code v2.1.308\n▝▜██████▀  Haiku 5.5 · <subscription plan>\n ▝▝   ▝▝   <run>/project\n\n❯ Call the mcp__studio__ping tool once. Then use the Read tool on hello.txt. Then reply with exactly one word: done.    \n\n  Read 1 file, called studio \n\n● The ping returned pong, but the Read of hello.txt failed. A PreToolUse hook rejected it with \"spike policy denies\n  Read,\" so I did not read the file. I haven't tried another way around the block. Since the read didn't succeed, I'm\n  not replying with just \"done.\"\n\n✻ Worked for 6s · done 11:39 PM\n\n                                                                                      \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts",
+    "pingsWhileBridgeDown": 0,
+    "bridgeDownScreen": "  Read,\" so I did not read the file. I haven't tried another way around the block. Since the read didn't succeed, I'm\n  not replying with just \"done.\"\n\n✻ Worked for 6s · done 11:39 PM\n\n❯ Call the mcp__studio__ping tool once more, then reply with exactly one word: done.                                    \n  ⎿  UserPromptSubmit hook error\n  ⎿  connect ECONNREFUSED 127.0.0.1:38237\n\n  Called studio \n\n● The ping did not go through. A PreToolUse hook at 127.0.0.1:38237 refused the connection (ECONNREFUSED), and the hook\n  is set to block on failure. The studio server's hook endpoint doesn't seem to be running. I haven't retried or tried\n  to work around the hook, so I'm not replying \"done.\"\n\n● Ran 1 stop hook\n  ⎿  Stop hook error: connect ECONNREFUSED 127.0.0.1:38237\n\n✻ Brewed for 3s · done 11:39 PM\n\n                                                                              \n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯ call the ping tool again\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts",
+    "bridgeDownElapsedMs": 45298
+  },
+  "hookEvents": [
+    {
+      "event": "SessionStart",
+      "authorized": true,
+      "source": "startup",
+      "via": "node",
+      "model": "claude-haiku-5-5",
+      "msAfterSpawn": 3196
+    },
+    {
+      "event": "UserPromptSubmit",
+      "authorized": true,
+      "via": "axios",
+      "permission_mode": "default",
+      "msAfterSpawn": 9441
+    },
+    {
+      "event": "PreToolUse",
+      "authorized": true,
+      "tool": "Read",
+      "via": "axios",
+      "permission_mode": "default",
+      "msAfterSpawn": 11738
+    },
+    {
+      "event": "PreToolUse",
+      "authorized": true,
+      "tool": "mcp__studio__ping",
+      "via": "axios",
+      "permission_mode": "default",
+      "msAfterSpawn": 13095
+    },
+    {
+      "event": "PostToolUse",
+      "authorized": true,
+      "tool": "mcp__studio__ping",
+      "via": "axios",
+      "permission_mode": "default",
+      "msAfterSpawn": 13142
+    },
+    {
+      "event": "Stop",
+      "authorized": true,
+      "via": "axios",
+      "permission_mode": "default",
+      "last_assistant_message": "The ping returned `pong`, but the Read of `hello.txt` failed. A PreToolUse hook ",
+      "msAfterSpawn": 15389
+    }
+  ],
+  "mcpLog": [
+    {
+      "event": "started",
+      "tokenPresent": true,
+      "msAfterSpawn": 10616
+    },
+    {
+      "event": "ping",
+      "tokenPresent": true,
+      "msAfterSpawn": 13119
+    }
+  ],
+  "exitInfo": null
+}

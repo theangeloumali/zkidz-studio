@@ -1,0 +1,70 @@
+// Created by The Angelo Umali.
+// One valid cue per kind, shaped after the engine's documented examples (engine docs cues-brand, cues-restyled).
+export const sampleCueByKind = {
+  hookTitle: {
+    kind: "hookTitle",
+    at: 4.4,
+    end: 7.6,
+    kicker: "Job hunting in the AI age",
+    lines: ["How I landed", "a client in a week"],
+    accentLine: 1,
+    intro: true,
+  },
+  lowerThird: { kind: "lowerThird", at: 0.3, end: 4.8, name: "Sam Rivera", sub: "Independent studio" },
+  chapterCard: { kind: "chapterCard", at: 20.1, end: 22.8, index: "02", kicker: "The pipeline", title: "How the leads come in", sub: "Found and scored" },
+  keyword: { kind: "keyword", at: 31.2, end: 33, text: "September 21", tone: "chip", accent: true, y: 520 },
+  comment: { kind: "comment", at: 540, end: 543.5, text: "What do you think?" },
+  handNote: { kind: "handNote", at: 41.2, end: 44, text: "within a week", strike: "months", y: 470, arrow: [760, 400, 880, 640] },
+  slamStamp: { kind: "slamStamp", at: 12, end: 14, text: "HIRED", sub: "within a week", x: 540, y: 470 },
+  censor: { kind: "censor", at: 15, end: 16, x: 540, y: 600 },
+  statTile: { kind: "statTile", at: 81.7, end: 86, value: 237, suffix: " leads", label: "Pipeline", sub: "all applied to", subAt: 2.4 },
+  timeline: {
+    kind: "timeline",
+    at: 300,
+    end: 306,
+    text: "Applied to signed in a week",
+    steps: [
+      { label: "Sep 14", sub: "applied", at: 0.4 },
+      { label: "Sep 21", sub: "signed", at: 3, hot: true },
+    ],
+  },
+  titleSwap: { kind: "titleSwap", at: 212, end: 216.5, label: "How I get paid", old: "Every two weeks", new: "Every week", swapAt: 1.4 },
+  pills: {
+    kind: "pills",
+    at: 60,
+    end: 65,
+    text: "The pipeline today",
+    items: [
+      { text: "APPLIED 156", at: 0.5 },
+      { text: "WON 1", at: 2, tone: "gold" },
+    ],
+  },
+  criteriaCard: { kind: "criteriaCard", at: 140, end: 146.5, kicker: "My criteria", title: "High priority means", rows: [{ text: "Remote, always", at: 1.1 }] },
+  checklist: {
+    kind: "checklist",
+    at: 88,
+    end: 92,
+    text: "My 3 criteria",
+    rows: [
+      { text: "Remote", ok: true, at: 0.5 },
+      { text: "On-site only", ok: false, at: 1.7 },
+    ],
+  },
+  flowRow: { kind: "flowRow", at: 160, end: 164, text: "How it applies", items: ["Lead", "Pitch", "Apply", "Signed"], step: 0.3 },
+  chips: {
+    kind: "chips",
+    at: 95,
+    end: 99,
+    text: "What I filter on",
+    items: [
+      { text: "Remote", hot: true },
+      { text: "Paid weekly", tag: "1", note: "must!" },
+    ],
+  },
+  vsCard: { kind: "vsCard", at: 300, end: 304, left: { text: "Old\nresume", sub: "Word to PDF" }, right: { text: "ATS\nresume", sub: "HTML to PDF" } },
+  splitFlow: { kind: "splitFlow", at: 310, end: 314, text: "same resume", left: { text: "Rejected" }, right: { text: "Interview" } },
+  pipeline: { kind: "pipeline", at: 150, end: 154, labels: ["lead", "agent team", "applied"] },
+  endCard: { kind: "endCard", at: 555, end: 571, cta: "Follow for part 2", sign: "good luck", y: 270, scale: 0.72, signY: 1228 },
+  caption: { kind: "caption", at: 8.84, end: 11.19, text: "As an avid collector", bottom: 1750 },
+  cutaway: { kind: "cutaway", at: 109.15, end: 110.4, title: "Cloud roles", sub: "Hardcore roles", style: "wipe" },
+} as const;

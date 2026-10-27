@@ -1,0 +1,50 @@
+{
+  "name": "@zks/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/check-bundle-size.mjs",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc -p . && tsc -p tests/real-server && tsc -p e2e && tsc -p e2e/harness",
+    "test": "vitest run",
+    "e2e": "vite build && playwright test",
+    "perf": "tsc -p perf && vite build && playwright test -c perf"
+  },
+  "dependencies": {
+    "@fontsource-variable/archivo": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@tanstack/react-query": "^5.90.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "@zks/shared": "workspace:*",
+    "lucide-react": "^1.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router": "^7.9.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/test": "1.64.1",
+    "@tailwindcss/vite": "^4.1.14",
+    "@testing-library/jest-dom": "^6.9.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "axe-core": "^4.11.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "jsdom": "^27.0.0",
+    "tailwindcss": "^4.1.14",
+    "vite": "^7.1.9",
+    "vitest": "^5.0.4"
+  }
+}

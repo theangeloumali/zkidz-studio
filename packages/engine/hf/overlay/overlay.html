@@ -1,0 +1,35 @@
+<!-- Created by The Angelo Umali. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Overlay drawing scripts</title>
+  </head>
+  <body>
+    <!-- The brand drawing code in load order: one shared global scope, so order matters. hf/brand/canvas.js runs these
+         in a Node vm with an SVG recorder for a context; zks_engine/doctor.py checks they all exist. -->
+    <script src="../kit/sketch.js"></script>
+    <script src="../kit/zmark.js"></script>
+    <script src="../kit/props.js"></script>
+    <script src="../kit/terminal.js"></script>
+    <script src="cue-rules.js"></script>
+    <script src="brand.js"></script>
+    <script src="ui.js"></script>
+    <script src="motion.js"></script>
+    <script src="brand-draw.js"></script>
+    <script src="components/labels.js"></script>
+    <script src="components/banners.js"></script>
+    <script src="components/diagrams.js"></script>
+    <script src="components/meters.js"></script>
+    <script src="components/chips.js"></script>
+    <script src="components/fx.js"></script>
+    <script src="components/cover.js"></script>
+    <script src="components/chart.js"></script>
+    <script src="components/brand-parts.js"></script>
+    <script src="components/brand-titles.js"></script>
+    <script src="components/brand-data.js"></script>
+    <script src="components/brand-flow.js"></script>
+    <script src="components/rows.js"></script>
+    <script src="components/captions.js"></script>
+  </body>
+</html>

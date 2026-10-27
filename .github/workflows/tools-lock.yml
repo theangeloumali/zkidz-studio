@@ -1,0 +1,54 @@
+# Created by The Angelo Umali.
+# Drift check, started by hand: downloads every pinned URL in tools.lock.json and re-checks its SHA-256 against upstream.
+# A mismatch means upstream re-published bytes under a pinned URL; investigate before anyone runs setup again.
+name: tools-lock
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-lock-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recheck:
+    name: re-check tools.lock.json
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Re-check every pinned SHA-256
+        env:
+          LOCK_FILE: tools.lock.json
+        run: |
+          set -euo pipefail
+          download="$RUNNER_TEMP/tools-lock-download"
+          checked=0
+          failed=0
+          # One TSV row per pinned download; Homebrew-only entries have no URL and are skipped.
+          while IFS=$'\t' read -r entry url expected; do
+            checked=$((checked + 1))
+            if ! curl -fsSL --retry 3 --proto "${TOOLS_LOCK_PROTOCOLS:-=https}" -o "$download" "$url"; then
+              echo "UNREACHABLE $entry $url"
+              failed=$((failed + 1))
+              continue
+            fi
+            actual="$(sha256sum "$download" | cut -d' ' -f1)"
+            rm -f "$download"
+            if [ "$actual" = "$expected" ]; then echo "ok $entry"; else echo "MISMATCH $entry expected $expected got $actual"; failed=$((failed + 1)); fi
+          done < <(jq -r '
+            (.tools | to_entries[] | .key as $tool | .value.platforms | to_entries[] | select(.value.url)
+              | ["tools.\($tool).\(.key)", .value.url, .value.sha256]),
+            (.models | to_entries[] | ["models.\(.key)", .value.url, .value.sha256])
+            | @tsv' "$LOCK_FILE")
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::$failed of $checked pinned download(s) no longer match tools.lock.json"
+            exit 1
+          fi
+          echo "$checked pinned download(s) match tools.lock.json"

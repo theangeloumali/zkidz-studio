@@ -1,0 +1,90 @@
+// Created by The Angelo Umali.
+// The Hono app: Kai's security middleware first, then the API, then the built web UI with an SPA fallback.
+import { readFile } from "node:fs/promises";
+import { join, relative } from "node:path";
+import { serveStatic } from "@hono/node-server/serve-static";
+import type { StudioDatabase } from "@zks/db";
+import { Hono } from "hono";
+import type { AgentServices } from "./agent-services.ts";
+import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
+import type { EventBus } from "./events/event-bus.ts";
+import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
+import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
+import { registerDeliverableRoutes, type FolderOpener } from "./jobs/deliverable-routes.ts";
+import { registerJobControlRoutes } from "./jobs/job-control-routes.ts";
+import type { JobRunner } from "./jobs/job-runner.ts";
+import { registerRenderStatusRoutes } from "./jobs/render-status-routes.ts";
+import type { Logger } from "./logging/logger.ts";
+import type { OnboardingServices } from "./onboarding/onboarding-services.ts";
+import type { UploadLimits } from "./media-io/store.ts";
+import type { PreviewService } from "./preview/preview-service.ts";
+import { registerEventRoutes } from "./routes/events.ts";
+import { registerFsRoutes } from "./routes/fs.ts";
+import { registerJobRoutes } from "./routes/jobs.ts";
+import { registerMediaStreamRoute } from "./routes/media-stream.ts";
+import { registerMediaRoutes } from "./routes/media.ts";
+import { registerProjectRoutes } from "./routes/projects.ts";
+import { registerRuleRoutes } from "./rules/routes.ts";
+import type { Security } from "./security/index.ts";
+import { registerSpecRoutes } from "./specs/spec-routes.ts";
+
+export interface AppDependencies {
+  readonly database: StudioDatabase;
+  readonly studioHome: string;
+  readonly security: Pick<Security, "middleware" | "confinePath">;
+  readonly eventBus: EventBus;
+  readonly ffprobePath: string;
+  readonly uploadLimits: UploadLimits;
+  readonly webDistDir: string;
+  readonly logger: Logger;
+  readonly jobRunner: Pick<JobRunner, "resume">;
+  /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
+  readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
+  /** GET /api/doctor; main.ts always passes it. */
+  readonly doctor?: Omit<DoctorRouteDeps, "logger">;
+  /** Phase 6 style, presets, template-start and demo routes; main.ts always passes it. */
+  readonly onboarding?: OnboardingServices;
+  /** The player EDL and the composition rebuild loop; main.ts always passes it. */
+  readonly previewService?: PreviewService;
+  /** Tests replace the OS file manager the reveal route opens. */
+  readonly openFolder?: FolderOpener;
+}
+
+export function createApp(deps: AppDependencies): Hono {
+  const app = new Hono();
+  app.use("*", deps.security.middleware);
+  registerJsonBodyLimit(app);
+
+  registerProjectRoutes(app, deps);
+  registerMediaRoutes(app, deps);
+  registerMediaStreamRoute(app, { ...deps, confinePath: deps.security.confinePath });
+  registerFsRoutes(app, deps);
+  registerJobRoutes(app, deps.database);
+  registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
+  registerRuleRoutes(app, deps);
+  deps.agent?.registerRoutes(app);
+  if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });
+  deps.onboarding?.registerRoutes(app);
+  registerSpecRoutes(app, deps);
+  deps.previewService?.registerRoutes(app);
+  registerDeliverableRoutes(app, deps);
+  registerJobControlRoutes(app, deps);
+  registerRenderStatusRoutes(app, deps);
+  app.all("/api/*", () => {
+    throw notFound();
+  });
+
+  // serveStatic resolves `root` against cwd, so the dist path is made relative to it.
+  app.use("*", serveStatic({ root: relative(process.cwd(), deps.webDistDir) }));
+  app.get("*", async (c) => {
+    const indexHtml = await readFile(join(deps.webDistDir, "index.html"), "utf8").catch(() => null);
+    return indexHtml === null ? c.json({ error: "Not found" }, 404) : c.html(indexHtml);
+  });
+
+  app.onError((error, c) => {
+    const httpError = toHttpError(error);
+    if (httpError.status >= 500) deps.logger.error("request failed", { method: c.req.method, path: c.req.path, error });
+    return c.json(errorBody(httpError), httpError.status);
+  });
+  return app;
+}

@@ -1,0 +1,31 @@
+diff --git a/dist/chunks/index.1TqnEahn.js b/dist/chunks/index.1TqnEahn.js
+index 50dd001b7b24be2eac6f37eeb1929ad4645aa1a9..0c071f50575af8383b4bde778cc84e1d15f21b99
+--- a/dist/chunks/index.1TqnEahn.js
++++ b/dist/chunks/index.1TqnEahn.js
+@@ -5140,7 +5140,7 @@ var RunnerState = /* @__PURE__ */ function(RunnerState) {
+ 	RunnerState["STOPPED"] = "stopped";
+ 	return RunnerState;
+ }(RunnerState || {});
+-const START_TIMEOUT = 6e4;
++const START_TIMEOUT = 18e4;
+ const STOP_TIMEOUT = 6e4;
+ /** @experimental */
+ class PoolRunner {
+@@ -5844,7 +5844,7 @@ class VmThreadsPoolWorker extends ThreadsPoolWorker {
+ 	}
+ }
+ 
+-const WORKER_START_TIMEOUT = 9e4;
++const WORKER_START_TIMEOUT = 27e4;
+ class Pool {
+ 	options;
+ 	logger;
+@@ -5929,7 +5929,7 @@ class Pool {
+ 			await resolver.promise.catch((error) => span?.recordException(error)).finally(() => span?.end());
+ 			const index = this.activeTasks.indexOf(activeTask);
+ 			if (index !== -1) this.activeTasks.splice(index, 1);
+-			if (!task.isolate && !runner.isTerminated && !isMemoryLimitReached && this.queue[0]?.task.isolate === false && isEqualRunner(runner, this.queue[0].task)) {
++			if (!task.isolate && !resolver.isRejected && !runner.isTerminated && !isMemoryLimitReached && this.queue[0]?.task.isolate === false && isEqualRunner(runner, this.queue[0].task)) {
+ 				this.sharedRunners.push(runner);
+ 				return this.schedule();
+ 			}

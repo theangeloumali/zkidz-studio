@@ -1,0 +1,14 @@
+{
+  "name": "zks-spike-07-terminal-mode",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "spike": "node harness.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@xterm/headless": "6.0.0",
+    "node-pty": "1.1.0",
+    "zod": "4.6.7"
+  }
+}

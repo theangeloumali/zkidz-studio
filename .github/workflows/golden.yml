@@ -1,0 +1,67 @@
+# Created by The Angelo Umali.
+# The CPU golden render and tiny.en speech check (plan §10.3) on every desktop OS, with the ffmpeg `zks setup` pins, plus videotoolbox parity on macOS.
+name: golden
+
+on:
+  # Manual only: CI runs locally before every merge (pnpm ci:local); per-push runs spammed every failure by email.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DO_NOT_TRACK: "1"
+  HYPERFRAMES_NO_TELEMETRY: "1"
+  # A missing ffmpeg fails the parity tests instead of skipping them.
+  ZKS_REQUIRE_GOLDEN: "1"
+
+jobs:
+  golden:
+    name: golden render (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The runner context is not available in job-level env, so ZKS_HOME is set from the first step.
+      - run: echo "ZKS_HOME=$RUNNER_TEMP/zks" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: pnpm install --frozen-lockfile
+      # tools.lock.json pins ffmpeg and whisper-cpp as Homebrew formulas on macOS; `zks setup` downloads the other builds itself.
+      - if: runner.os == 'macOS'
+        run: brew install ffmpeg whisper-cpp
+      - run: pnpm zks setup
+      # tiny.en is not fetched on setup; the speech leg of §10.3 transcribes with it.
+      - run: pnpm zks models fetch tiny.en
+      - name: Point the engine at the pinned ffmpeg and Chrome
+        run: |
+          ffmpeg="$(pnpm -s zks tools path ffmpeg)"
+          chrome="$(pnpm -s zks tools path chrome-headless-shell)"
+          { echo "ZKS_FFMPEG=$ffmpeg"; echo "ZKS_CHROME=$chrome"; } >> "$GITHUB_ENV"
+      - run: uv sync --project packages/engine --locked
+      - name: CPU golden render
+        run: uv run --project packages/engine python -m unittest discover -v -s packages/engine/tests/parity -t packages/engine/tests
+      - name: videotoolbox parity
+        if: runner.os == 'macOS'
+        # Skips, printing why, when the runner VM has no usable hardware encoder.
+        run: uv run --project .. python -m unittest -v parity.test_backend_parity
+        working-directory: packages/engine/tests
+        env:
+          ZKS_PARITY_BACKEND: videotoolbox

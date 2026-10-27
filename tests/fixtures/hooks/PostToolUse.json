@@ -1,0 +1,19 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000002",
+  "transcript_path": "/studio/.claude/projects/-studio-projects-demo/00000000-0000-4000-8000-000000000002.jsonl",
+  "cwd": "/studio/projects/demo",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__studio__render_master",
+  "tool_input": {
+    "target": "full",
+    "quality": "4k"
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\"jobId\":\"00000000-0000-4000-8000-0000000b0005\"}"
+    }
+  ],
+  "tool_use_id": "toolu_0000000000000000000hook"
+}

@@ -1,0 +1,48 @@
+{
+  "name": "zkidz-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24.17.0 <27",
+      "onFail": "download"
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.15.0",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "start": "pnpm -F @zks/web build && pnpm -F @zks/server build && pnpm -F @zks/server start",
+    "dev": "pnpm -r --parallel --filter @zks/web --filter @zks/server dev",
+    "zks": "node packages/cli/src/main.ts",
+    "verify": "node scripts/check-attribution.mjs && prettier --check . && pnpm -r lint && pnpm -r typecheck && pnpm -r --workspace-concurrency=1 test",
+    "ci:local": "bash scripts/ci-local.sh",
+    "verify:gpu": "node scripts/verify-gpu.mjs",
+    "db:test:matrix": "node scripts/db-test-matrix.mjs",
+    "db:supabase:start": "node packages/db/scripts/supabase.ts start",
+    "db:supabase:stop": "node packages/db/scripts/supabase.ts stop",
+    "db:supabase:studio": "node packages/db/scripts/supabase.ts studio",
+    "db:supabase:url": "node packages/db/scripts/supabase.ts url",
+    "db:supabase:check": "node packages/db/scripts/supabase.ts check",
+    "db:backup": "node packages/db/scripts/db.ts backup",
+    "db:restore": "node packages/db/scripts/db.ts restore",
+    "db:reset": "node packages/db/scripts/db.ts reset",
+    "db:rollback": "node packages/db/scripts/db.ts rollback",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@opentelemetry/api": "1.9.1",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
+  }
+}

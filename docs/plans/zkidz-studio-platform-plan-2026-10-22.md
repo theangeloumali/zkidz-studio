@@ -30,7 +30,8 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
       render jobs report stage, percent and ETA from the engine's progress record)
 - [x] Phase 6: Bundled skills, rules panel, style onboarding, demo project (done 2026-10-24, PR #14; also added the engine
       `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
-- [ ] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker
+- [x] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker (done 2026-10-27; also edited a real 4K
+      phone clip end to end to a QC-passing export; the 3-OS `setup-e2e.yml` run follows on `develop`, where GitHub can dispatch it)
 - [ ] Phase 8: Docs and the v1.0 release (policy re-check; terminal mode removed before release if Anthropic replies "no")
 
 Run decisions (Angelo, 2026-10-23, build-to-Phase-8 grill):

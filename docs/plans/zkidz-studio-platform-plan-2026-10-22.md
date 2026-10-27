@@ -32,7 +32,10 @@ with the Phase 0 spike results (`docs/spikes/`, §17).
       `ingest`/`transcribe` commands and kept join/showcase on CUDA where WSL has no Vulkan device)
 - [x] Phase 7: Supabase option, security hardening, performance, cross-OS CI, Docker (done 2026-10-27; also edited a real 4K
       phone clip end to end to a QC-passing export; the 3-OS `setup-e2e.yml` run follows on `develop`, where GitHub can dispatch it)
-- [ ] Phase 8: Docs and the v1.0 release (policy re-check; terminal mode removed before release if Anthropic replies "no")
+- [x] Phase 8: Docs and the v1.0 release (done 2026-10-27; docs, release-day policy re-check and the release QA checklist
+      `docs/release/v1.0-checklist.md`; no Anthropic reply, so terminal mode ships opt-in and labelled pending. The 3-OS
+      `setup-e2e.yml` run follows on `develop`, then `develop` → `main`. Held for Angelo: the v1.0.0 tag and GitHub Release (F2,
+      the Commercial Terms date) and the live mode A/B edits (an API key, a cloud account))
 
 Run decisions (Angelo, 2026-10-23, build-to-Phase-8 grill):
 

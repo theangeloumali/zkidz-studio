@@ -145,8 +145,9 @@ The Connect Claude screen offers three modes. Pick one; you can switch later.
 - Mode B uses your cloud CLI's own sign-in. The app stores no cloud secret.
 - Mode T (terminal mode) is off until you turn it on. It runs the `claude` program you installed, unmodified, in a terminal pane
   in the Editor. You sign in there with its own `/login`; the app never sees your credentials. The first time you open a project,
-  Claude Code asks whether you trust the folder: choose "Yes, I trust this folder" (the highlighted default exits). Anthropic's terms
-  let you sign in to your own, unmodified Claude Code with your own subscription, and that is all mode T does.
+  Claude Code asks whether you trust the folder: choose "Yes, I trust this folder" (the highlighted default exits). Anthropic's legal
+  page does not prevent you from signing in to your own, unmodified Claude Code with your own subscription; the app never offers a
+  login and never touches your credentials.
 
 The app never offers "Sign in with Claude" and never accepts a pasted token or credential file. Full details:
 [docs/user/claude-access.md](docs/user/claude-access.md).

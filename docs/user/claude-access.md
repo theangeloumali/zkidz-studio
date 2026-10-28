@@ -52,9 +52,9 @@ What you need: Claude Code 2.1.295 or newer, installed by you ([setup guide](htt
 subscription or any other sign-in Claude Code offers.
 
 Terminal mode is off until you turn it on. Anthropic's
-[legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance) lets "an end user" sign in "to the unmodified
-Claude Code binary with their own Claude subscription", and that is all mode T does: the app never offers a login and never touches
-your credentials.
+[legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance) does not prevent "an end user from signing in to
+the unmodified Claude Code binary with their own Claude subscription". Mode T relies on that: the app never offers a login and never
+touches your credentials.
 
 How it works: the app starts the `claude` program you installed, unmodified, in a terminal pane inside the Editor. You sign in there
 with Claude Code's own `/login`. The app watches the build through its own tools and hooks; it never reads the terminal text for

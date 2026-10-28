@@ -7,11 +7,11 @@ For anyone setting up ZKidz Studio for the first time, or changing how it reache
 ZKidz Studio needs Claude to plan and build your edits. You connect it in one of three ways on the Connect Claude screen. Mode A,
 your own API key, is the default and the one we recommend.
 
-| Mode | You bring                                          | Who pays                                   | Status                                       |
-| ---- | -------------------------------------------------- | ------------------------------------------ | -------------------------------------------- |
-| A    | A Claude Console API key                           | Your Console account (or included credits) | Recommended, first card                      |
-| B    | Your own Bedrock, Vertex, Foundry or Claude on AWS | Your cloud account                         | Advanced, second card                        |
-| T    | Claude Code installed on this computer, signed in  | Your Claude plan's usage limits            | Opt-in, pending Anthropic's written approval |
+| Mode | You bring                                          | Who pays                                   | Status                  |
+| ---- | -------------------------------------------------- | ------------------------------------------ | ----------------------- |
+| A    | A Claude Console API key                           | Your Console account (or included credits) | Recommended, first card |
+| B    | Your own Bedrock, Vertex, Foundry or Claude on AWS | Your cloud account                         | Advanced, second card   |
+| T    | Claude Code installed on this computer, signed in  | Your Claude plan's usage limits            | Opt-in                  |
 
 ## Mode A: your own API key
 
@@ -51,8 +51,10 @@ the provider's setup guide.
 What you need: Claude Code 2.1.295 or newer, installed by you ([setup guide](https://code.claude.com/docs/en/setup)), and a Claude
 subscription or any other sign-in Claude Code offers.
 
-Terminal mode is off until you turn it on. Anthropic's terms do not plainly cover this setup, so we asked Anthropic for written
-approval. The request is still open. If Anthropic says no, mode T is removed before the next release, and modes A and B keep working.
+Terminal mode is off until you turn it on. Anthropic's
+[legal and compliance page](https://code.claude.com/docs/en/legal-and-compliance) lets "an end user" sign in "to the unmodified
+Claude Code binary with their own Claude subscription", and that is all mode T does: the app never offers a login and never touches
+your credentials.
 
 How it works: the app starts the `claude` program you installed, unmodified, in a terminal pane inside the Editor. You sign in there
 with Claude Code's own `/login`. The app watches the build through its own tools and hooks; it never reads the terminal text for
@@ -108,7 +110,7 @@ Hand-off for `apps/web/src/copy/claude.ts` (owner: lena). Use these strings exac
 | `modeB.body`            | Use your own Bedrock, Vertex, Foundry or Claude Platform on AWS setup. ZKidz Studio stores no cloud secret.                                                                                                                                                                   |
 | `modeB.timeout`         | Claude did not start through your provider within 30 seconds. Check your provider setup.                                                                                                                                                                                      |
 | `modeT.title`           | Use Claude Code in a terminal (your own sign-in)                                                                                                                                                                                                                              |
-| `modeT.badge`           | Opt-in · pending Anthropic approval                                                                                                                                                                                                                                           |
+| `modeT.badge`           | Opt-in                                                                                                                                                                                                                                                                        |
 | `modeT.disclosure`      | Terminal mode runs the Claude Code you installed, unmodified, in a terminal inside ZKidz Studio. You sign in there with Claude Code's own /login. ZKidz Studio never sees or stores your credentials. Usage counts against your Claude plan's limits. Read Anthropic's terms. |
 | `modeT.disclosureLinks` | https://code.claude.com/docs/en/legal-and-compliance · https://code.claude.com/docs/en/agent-sdk/overview · https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan                                                                    |
 | `modeT.ack`             | I understand                                                                                                                                                                                                                                                                  |

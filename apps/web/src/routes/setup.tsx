@@ -5,7 +5,6 @@ import { Link } from "react-router";
 import type { Connection } from "../api/agent-client.ts";
 import { connectionQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
-import { TERMINAL_PENDING_LABEL } from "../copy/claude.ts";
 import { ROUTE_PATHS } from "../lib/routes.ts";
 import { ApiKeyControls } from "../setup/api-key-card.tsx";
 import { ChoiceCard } from "../setup/choice-card.tsx";
@@ -31,7 +30,7 @@ const CARDS: readonly { mode: Mode; title: string; badges: readonly string[]; de
   {
     mode: "terminal",
     title: "Use Claude Code in a terminal (your own sign-in)",
-    badges: ["Opt-in", TERMINAL_PENDING_LABEL],
+    badges: ["Opt-in"],
     description: "Uses the Claude Code you installed and your own Claude plan.",
   },
 ];

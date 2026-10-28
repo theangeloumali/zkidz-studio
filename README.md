@@ -134,19 +134,20 @@ Open <http://127.0.0.1:4317>. The server listens on loopback only.
 
 The Connect Claude screen offers three modes. Pick one; you can switch later.
 
-| Mode | You bring                                          | Who pays                  | Label in the app                    |
-| ---- | -------------------------------------------------- | ------------------------- | ----------------------------------- |
-| A    | A Claude Console API key                           | Your Console account      | Recommended                         |
-| B    | Your own Bedrock, Vertex, Foundry or Claude on AWS | Your cloud account        | Advanced                            |
-| T    | Claude Code installed on this computer, signed in  | Your Claude plan's limits | Opt-in · pending Anthropic approval |
+| Mode | You bring                                          | Who pays                  | Label in the app |
+| ---- | -------------------------------------------------- | ------------------------- | ---------------- |
+| A    | A Claude Console API key                           | Your Console account      | Recommended      |
+| B    | Your own Bedrock, Vertex, Foundry or Claude on AWS | Your cloud account        | Advanced         |
+| T    | Claude Code installed on this computer, signed in  | Your Claude plan's limits | Opt-in           |
 
 - Mode A stores the key in your OS keychain and only ever shows its last four characters. The app estimates cost per turn; your
   Console usage page is the real bill.
 - Mode B uses your cloud CLI's own sign-in. The app stores no cloud secret.
 - Mode T (terminal mode) is off until you turn it on. It runs the `claude` program you installed, unmodified, in a terminal pane
   in the Editor. You sign in there with its own `/login`; the app never sees your credentials. The first time you open a project,
-  Claude Code asks whether you trust the folder: choose "Yes, I trust this folder" (the highlighted default exits). We have asked
-  Anthropic for written approval of this mode; if the answer is no, mode T is removed and modes A and B keep working.
+  Claude Code asks whether you trust the folder: choose "Yes, I trust this folder" (the highlighted default exits). Anthropic's legal
+  page does not prevent you from signing in to your own, unmodified Claude Code with your own subscription; the app never offers a
+  login and never touches your credentials.
 
 The app never offers "Sign in with Claude" and never accepts a pasted token or credential file. Full details:
 [docs/user/claude-access.md](docs/user/claude-access.md).

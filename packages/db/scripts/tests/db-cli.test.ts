@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 const DB_CLI = fileURLToPath(new URL("../db.ts", import.meta.url));
-const TEST_TIMEOUT_MS = 120_000;
+// Four cold CLI starts in a row: 20–40 s each on a busy /mnt checkout (128–142 s measured), so 120 s timed out.
+const TEST_TIMEOUT_MS = 240_000;
 const scratchDirs: string[] = [];
 
 afterEach(async () => {

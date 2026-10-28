@@ -277,6 +277,8 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     fixture = await createTerminalFixture({ promptRetryMs: 150 });
     const session = await openSession();
     await waitFor(() => session.pty.snapshot().includes("READY"));
+    // The stub's startup relay prints when its cold node exits; let it land before the snapshots below are compared.
+    await waitFor(() => session.pty.snapshot().includes("RELAY"));
     await startSession(session);
     const resent = (text: string) => JSON.stringify(`${eraseInput(`${text}\n`)}${encodePrompt(text)}`).slice(1, -1);
 

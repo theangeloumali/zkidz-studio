@@ -56,7 +56,8 @@ describe("SetupRoute", () => {
     expect(options.map((option) => option.getAttribute("value"))).toEqual(["api_key", "cloud", "terminal"]);
     expect(within(group).getByText("Recommended")).toBeInTheDocument();
     expect(within(group).getByText("Advanced")).toBeInTheDocument();
-    expect(within(group).getByText("Pending Anthropic approval")).toBeInTheDocument();
+    expect(within(group).getByText("Opt-in")).toBeInTheDocument();
+    expect(within(group).queryByText(/approval/i)).not.toBeInTheDocument();
   });
 
   it("selects no way in on a fresh install", async () => {

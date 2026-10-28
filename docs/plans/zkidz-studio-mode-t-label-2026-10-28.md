@@ -49,7 +49,7 @@ ASSUMPTIONS (not asked):
 
 - [x] Phase 1: remove the label from the app, README, docs and site; record the decision
 - [x] Phase 2: launch film without the badge (S11 re-shot, re-rendered, web copy replaced)
-- [ ] Phase 3: review, ship, deploy, close
+- [x] Phase 3: review, ship, deploy, close
 
 The phases run in order: Phase 2 shoots the UI that Phase 1 builds.
 

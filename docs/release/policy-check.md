@@ -7,15 +7,15 @@ the SDK query options (§6.6). It also records the risk row "flags re-checked ag
 
 ## Verdict
 
-| Item                                 | Result                                                                                                                                      |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Policy text since 2026-10-22         | Unchanged in meaning. Every quote in plan §6.1 still matches word for word. Two sentences the plan does not quote now bear on us (S6, S7).  |
-| Anthropic reply                      | None recorded: `docs/legal/anthropic-reply.md` does not exist. Mode T stays opt-in and labelled pending. Nothing is removed before the tag. |
-| Requirements (§3)                    | 14 PASS, 3 FIX (applied in this commit), 0 FAIL                                                                                             |
-| CLI flags (§4)                       | 23 of 23 flags the code passes are documented as used; 3 deliberately unused flags still documented as the plan assumes                     |
-| SDK options, env vars, hook fields   | 19 of 19 query options, 13 of 13 env vars and 4 of 4 hook checks documented                                                                 |
-| FOUND, outside this file's ownership | F1 (lena), F2 (Angelo), F3 (marcus). F1 and F3 are fixed on this branch; F2 must close before the tag.                                      |
-| Release gate                         | Secure enough to ship modes A and B. Mode T ships opt-in (F1 fixed). Tag v1.0.0 only after F2 is recorded.                                  |
+| Item                                 | Result                                                                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Policy text since 2026-10-22         | Unchanged in meaning. Every quote in plan §6.1 still matches word for word. Two sentences the plan does not quote now bear on us (S6, S7). |
+| Anthropic reply                      | Not needed: the owner withdrew the request before it was sent (§11). Mode T stays opt-in, with no pending label.                           |
+| Requirements (§3)                    | 14 PASS, 3 FIX (applied in this commit), 0 FAIL                                                                                            |
+| CLI flags (§4)                       | 23 of 23 flags the code passes are documented as used; 3 deliberately unused flags still documented as the plan assumes                    |
+| SDK options, env vars, hook fields   | 19 of 19 query options, 13 of 13 env vars and 4 of 4 hook checks documented                                                                |
+| FOUND, outside this file's ownership | F1 (lena), F2 (Angelo), F3 (marcus). F1 and F3 are fixed on this branch; F2 must close before the tag.                                     |
+| Release gate                         | Secure enough to ship modes A and B. Mode T ships opt-in (F1 fixed). Tag v1.0.0 only after F2 is recorded.                                 |
 
 ## 1. Sources
 
@@ -140,11 +140,11 @@ the required `apiKeySource` field that `apps/server/src/agent/init-assertion.ts:
 
 ## 8. FOUND (outside this file's ownership)
 
-| #   | Finding                                                                                                                                                                                                                                    | Evidence                                                                                                  | Owner  | Must close before                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
-| F1  | The mode T card links only the Consumer Terms. Plan §6.4, the hand-off table and the approval email all promise the legal page, the SDK overview and the help article. Low severity: disclosure completeness, not a security gap.          | `apps/web/src/copy/claude.ts:6`, `apps/web/src/setup/terminal-card.tsx:40`                                | lena   | Fixed on feat/p8-policy: the card links all three      |
-| F2  | No record that the publisher accepted the Commercial Terms. S5 and S9 require it; plan §6.1 and §15 put the date in `docs/legal/commercial-terms.md`, which does not exist, and the email keeps its acceptance paragraph as a placeholder. | `docs/legal/` holds only `drafts/`                                                                        | Angelo | Tag v1.0.0                                             |
-| F3  | The plan's record has drifted. §6.1 lacks S6 and elides the endorsement clause of S7. D9 says "UI says 'Powered by Claude'", but the UI never shows it; TRADEMARKS.md's "may say" is accurate. Saying less than allowed is compliant.      | `docs/plans/zkidz-studio-platform-plan-2026-10-22.md:132,276-331`, `docs/adr/0005-licence-apache-2.md:17` | marcus | Fixed on feat/p8-policy: D9, ADR 0005 and §6.1 updated |
+| #   | Finding                                                                                                                                                                                                                               | Evidence                                                                                                  | Owner  | Must close before                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------ |
+| F1  | The mode T card links only the Consumer Terms. Plan §6.4, the hand-off table and the approval email all promise the legal page, the SDK overview and the help article. Low severity: disclosure completeness, not a security gap.     | `apps/web/src/copy/claude.ts:6`, `apps/web/src/setup/terminal-card.tsx:40`                                | lena   | Fixed on feat/p8-policy: the card links all three      |
+| F2  | No record that the publisher accepted the Commercial Terms. S5 and S9 require it; plan §6.1 and §15 put the date in `docs/legal/commercial-terms.md`, which does not exist.                                                           | `docs/legal/` does not exist; no acceptance date is recorded                                              | Angelo | Tag v1.0.0                                             |
+| F3  | The plan's record has drifted. §6.1 lacks S6 and elides the endorsement clause of S7. D9 says "UI says 'Powered by Claude'", but the UI never shows it; TRADEMARKS.md's "may say" is accurate. Saying less than allowed is compliant. | `docs/plans/zkidz-studio-platform-plan-2026-10-22.md:132,276-331`, `docs/adr/0005-licence-apache-2.md:17` | marcus | Fixed on feat/p8-policy: D9, ADR 0005 and §6.1 updated |
 
 ## 9. Mode T decision for this release
 
@@ -165,3 +165,15 @@ P1–P4 fetched again on 2026-10-27, and the mode T flags checked against `claud
 | Mode T flags    | All 14 flags `launch-args.ts` passes are in the 2.1.311 help (`--append-system-prompt-file` under the `--append-system-prompt[-file]` note)                                                                                                                                                                                                                                                                                               |
 | Anthropic reply | Still none; `docs/legal/anthropic-reply.md` does not exist. Mode T ships opt-in and labelled pending, as in §9.                                                                                                                                                                                                                                                                                                                           |
 | F2              | Still open. It blocks only the v1.0.0 tag and GitHub Release.                                                                                                                                                                                                                                                                                                                                                                             |
+
+## 11. Owner decision (2026-10-28)
+
+Angelo dropped the approval request: "we are only leveraging a cli that the user alreadyh logged in, we are just a frontend that sees
+the editing in the platform". The request in `docs/legal/drafts/` was never sent, and it is deleted (git history keeps it).
+
+| Item              | Result                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Basis             | S3: the legal page does not prevent "an end user from signing in to the unmodified Claude Code binary with their own Claude subscription". Mode T offers no login and handles no credential (R1–R4). S5 still applies; F2 covers it. |
+| Label             | Removed from the setup card, README, user guide and site. Mode T stays opt-in, behind the disclosure that links Anthropic's terms.                                                                                                   |
+| R12, R17, §9, §10 | Superseded: no card claims approval is pending, mode T has no removal plan tied to a reply, and there is no statement to Anthropic left to keep true.                                                                                |
+| F2                | Unchanged. It still blocks only the v1.0.0 tag and GitHub Release.                                                                                                                                                                   |

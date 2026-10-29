@@ -9,7 +9,7 @@ const setProjectStyle = implementTool("set_project_style", {
     "Set the project's style over its theme: theme, colour tokens, bundled faces per role, boil, captions, sfx and pace. Tokens the theme lacks are dropped with a warning.",
   handler: async (input, context) => {
     const project = await loadProject(context);
-    const written = await writeProjectStyle({ database: context.db, studioHome: context.studioHome }, project, input.style);
+    const written = await writeProjectStyle({ database: context.db, studioHome: context.studioHome, eventBus: context.events }, project, input.style);
     // The input is never null, so neither is what is written back.
     return { output: { style: written.style ?? input.style, warnings: written.warnings } };
   },

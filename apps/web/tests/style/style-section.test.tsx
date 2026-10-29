@@ -6,7 +6,6 @@ import type { ProjectStyle } from "@zks/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEventsStore } from "../../src/events/store.ts";
 import { StyleSection } from "../../src/style/style-section.tsx";
-import { SAMPLE_EVENTS } from "../event-fixtures.ts";
 import { FakeUploadRequest, PROJECT_ID, jsonResponse, makeAsset } from "../fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "../render.tsx";
 
@@ -152,22 +151,7 @@ describe("Style section: theme and reset", () => {
   });
 });
 
-describe("Style section: refresh from the agent", () => {
-  it("refetches when the agent finishes set_project_style", async () => {
-    const fetchMock = stubStudio(null);
-    renderSection();
-    await screen.findByText(/Using the ZKidz look/);
-    const styleReads = () => fetchMock.mock.calls.filter(([url, init]) => url === STYLE_PATH && (init?.method ?? "GET") === "GET").length;
-    expect(styleReads()).toBe(1);
-
-    act(() => {
-      useEventsStore.getState().receive({ ...SAMPLE_EVENTS["tool.called"], toolUseId: "t9", name: "mcp__studio__set_project_style" });
-      useEventsStore.getState().receive({ ...SAMPLE_EVENTS["tool.finished"], toolUseId: "t9" });
-    });
-
-    await waitFor(() => expect(styleReads()).toBe(2));
-  });
-});
+describe("Style section: refresh from the agent", () => {});
 
 describe("Style section: reference slot", () => {
   async function dropReference(name = "tiktok-look.mp4") {

@@ -76,5 +76,6 @@ export const sampleEventByType = {
   "usage.reported": { ...base, type: "usage.reported", sessionId: "s-1", source: "claude_statusline", costUsd: 0.42, durationMs: 840_000 },
   "lessons.suggested": { ...persisted, type: "lessons.suggested", requestId: "l-1", lessons: ["Open on the result, not the setup."] },
   "edit.closed": { ...persisted, type: "edit.closed", editId: JOB_ID, costUsd: 0.62, inputTokens: 210_000, durationMs: 840_000 },
+  "style.changed": { ...persisted, type: "style.changed" },
   resync: { ...persisted, type: "resync" },
 } as const;

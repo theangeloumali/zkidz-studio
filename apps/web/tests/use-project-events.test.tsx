@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "../src/api/queries.ts";
 import { useProjectEvents } from "../src/events/use-project-events.ts";
+import { styleQueryKey } from "../src/style/style-client.ts";
 import { renderQueryKeys } from "../src/render/render-api.ts";
 import { sampleEvent } from "./event-fixtures.ts";
 import { FakeEventSource, PROJECT_ID } from "./fakes.ts";
@@ -39,6 +40,13 @@ describe("useProjectEvents", () => {
     source.emit(JSON.stringify(sampleEvent(type)), "7");
 
     expect(invalidatedKeys()).toEqual([renderQueryKeys.jobs(PROJECT_ID)]);
+    hook.unmount();
+  });
+
+  it("refetches the project's style when it changes", () => {
+    const { hook, invalidatedKeys, source } = connectProjectEvents();
+    source.emit(JSON.stringify(sampleEvent("style.changed")), "9");
+    expect(invalidatedKeys()).toEqual([styleQueryKey(PROJECT_ID)]);
     hook.unmount();
   });
 

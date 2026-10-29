@@ -131,6 +131,22 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     await rm(pidFile, { force: true });
   });
 
+  it("fails the open at once when the companion dies before it answers", async () => {
+    const adapter: AgentAdapter = {
+      ...baseAdapter("opencode"),
+      async prepare(request, tokens, binaryPath) {
+        const launch = await baseAdapter("opencode").prepare(request, tokens, binaryPath);
+        const isReady = (signal: AbortSignal) => new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+        return { ...launch, companion: { file: process.execPath, args: ["-e", "process.exit(3)"], env: { PATH: process.env.PATH ?? "" }, isReady } };
+      },
+      events: { kind: "stream", subscribe: () => () => undefined },
+    };
+    const startedAt = Date.now();
+    await expect(openAgent("opencode", adapter)).rejects.toThrow(/exited \(code 3\)/);
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+    expect(fixture.sessions.findByProject(PROJECT_ID)).toBeUndefined();
+  });
+
   it("reports a missing agent instead of starting claude in its place", async () => {
     stubDir = await mkdtemp(join(tmpdir(), "zks-agent-stub-"));
     fixture = await createTerminalFixture();

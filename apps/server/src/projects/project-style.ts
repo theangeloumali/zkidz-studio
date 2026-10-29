@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
+import type { NewStudioEvent } from "../events/event-bus.ts";
 import { PROJECT_STYLE_REL_PATH } from "../jobs/spec-snapshot.ts";
 import { writeFileAtomically } from "../specs/spec-files.ts";
 
@@ -21,6 +22,7 @@ const ThemeTokensSchema = z.object({ tokens: z.record(z.string(), z.string()) })
 export interface StyleStore {
   readonly database: StudioDatabase;
   readonly studioHome: string;
+  readonly eventBus: { publish(event: NewStudioEvent): Promise<unknown> };
 }
 
 export interface StyleWrite {
@@ -52,6 +54,7 @@ export async function writeProjectStyle(store: StyleStore, project: ProjectRow, 
     await writeLook(filePath, previousLook);
     throw error;
   }
+  await store.eventBus.publish({ type: "style.changed", projectId: project.id });
   return checked;
 }
 

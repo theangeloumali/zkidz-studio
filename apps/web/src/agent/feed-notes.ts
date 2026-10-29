@@ -71,6 +71,8 @@ export function describeNote(event: StudioEvent): FeedNote | null {
       return { tone: "info", text: "Older conversation was summarized to make room." };
     case "terminal.state":
       return { tone: event.state === "exited" ? "warn" : "info", text: describeTerminal(event) };
+    case "style.changed":
+      return { tone: "info", text: "Updated the project's look." };
     case "edit.closed": {
       const totals = formatUsage(event);
       return { tone: "info", text: totals === "" ? "Edit finished." : `Edit finished: ${totals}.` };

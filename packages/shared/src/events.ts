@@ -139,6 +139,8 @@ const studioEventSchemas = [
   studioEvent("usage.reported", { sessionId: z.string().min(1), source: UsageSourceSchema, ...UsageFiguresSchema.shape }),
   studioEvent("lessons.suggested", { requestId: z.string().min(1), lessons: z.array(LessonTextSchema).min(1).max(MAX_SUGGESTED_LESSONS) }),
   studioEvent("edit.closed", { editId: IdSchema, ...UsageFiguresSchema.shape }),
+  /** The project's look changed (Style panel or set_project_style); the preview rebuilds and the panel refetches. */
+  studioEvent("style.changed", {}),
   studioEvent("resync", {}),
 ] as const;
 

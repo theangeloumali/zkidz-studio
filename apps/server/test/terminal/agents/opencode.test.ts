@@ -144,9 +144,7 @@ describe("opencode adapter: launch", () => {
 });
 
 describe("opencode adapter: events", () => {
-  async function subscribeWith(
-    streams: Response[][],
-  ): Promise<{
+  async function subscribeWith(streams: Response[][]): Promise<{
     readonly events: NewStudioEvent[];
     readonly calls: FetchCall[];
     readonly launch: PreparedLaunch;

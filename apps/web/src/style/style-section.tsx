@@ -1,34 +1,22 @@
 // Created by The Angelo Umali.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { THEME_IDS, ThemeIdSchema, type ProjectStyle } from "@zks/shared";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { mediaQuery } from "../api/queries.ts";
 import { FIELD_CLASS } from "../components/field-class.ts";
-import { useEventsStore } from "../events/store.ts";
 import { ReferenceSlot } from "./reference-slot.tsx";
 import { projectStyleQuery, saveProjectStyle, styleQueryKey } from "./style-client.ts";
 import { StyleLook, THEME_LABELS } from "./style-look.tsx";
-import { latestFinishedStyleToolId } from "./style-tool-events.ts";
 
 const EMPTY_TEXT = "Using the ZKidz look. Drop a reference video and ask Claude to match it.";
 const MISSING_REFERENCE_TEXT = "Matched from a reference that is no longer in this project";
-
-/** The agent changes the look through a tool, so its finish is the only signal that the saved style moved. */
-function useRefetchWhenAgentRestyles(projectId: string): void {
-  const queryClient = useQueryClient();
-  const restyleId = useEventsStore((state) => latestFinishedStyleToolId(state.feeds[projectId]?.events ?? []));
-  useEffect(() => {
-    if (restyleId !== null) void queryClient.invalidateQueries({ queryKey: styleQueryKey(projectId) });
-  }, [projectId, queryClient, restyleId]);
-}
 
 export function StyleSection({ projectId }: { readonly projectId: string }) {
   const queryClient = useQueryClient();
   const style = useQuery(projectStyleQuery(projectId));
   const media = useQuery(mediaQuery(projectId));
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
-  useRefetchWhenAgentRestyles(projectId);
 
   const save = useMutation({
     mutationFn: (next: ProjectStyle | null) => saveProjectStyle(projectId, next),

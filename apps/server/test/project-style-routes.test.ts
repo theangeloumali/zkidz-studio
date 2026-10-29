@@ -58,6 +58,16 @@ describe("project style routes", () => {
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ theme: "minimal", tokens: { ink: "#101820" }, type: { body: "Newsreader" } });
   });
 
+  it("announces every saved change, so the preview and the Style panel follow it", async () => {
+    const project = await insertProject(server);
+    const announced: string[] = [];
+    const unsubscribe = server.eventBus.subscribe([project.id], (event) => void announced.push(event.type));
+    expect((await putStyle(project.id, { style: { theme: "minimal" } })).status).toBe(200);
+    expect((await putStyle(project.id, { style: null })).status).toBe(200);
+    unsubscribe();
+    expect(announced).toEqual(["style.changed", "style.changed"]);
+  });
+
   it("switches back to no style: the column clears and the renderer's file goes", async () => {
     const project = await insertProject(server);
     await putStyle(project.id, { style: { theme: "zkidz", boil: false } });

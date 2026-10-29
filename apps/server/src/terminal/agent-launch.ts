@@ -92,13 +92,24 @@ export async function launchAgentSession(deps: TerminalSessionsDeps, request: Op
   }
 }
 
+// A companion that dies before it answers fails the launch at once, so whatever answers later on its port is never trusted.
 async function startCompanion(companion: NonNullable<PreparedLaunch["companion"]>, cwd: string): Promise<ChildProcess> {
   const child = spawn(companion.file, [...companion.args], { cwd, env: { ...companion.env }, stdio: "ignore", shell: false });
+  const readiness = new AbortController();
+  const died = new Promise<never>((_resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) =>
+      reject(new TerminalLaunchError("agent_missing", `The agent's companion server exited (code ${code ?? "none"}) before it was ready.`)),
+    );
+  });
   try {
-    await companion.isReady(AbortSignal.timeout(COMPANION_READY_TIMEOUT_MS));
+    await Promise.race([companion.isReady(AbortSignal.any([readiness.signal, AbortSignal.timeout(COMPANION_READY_TIMEOUT_MS)])), died]);
     return child;
   } catch (error) {
+    readiness.abort();
     child.kill();
     throw error;
+  } finally {
+    died.catch(() => undefined);
   }
 }

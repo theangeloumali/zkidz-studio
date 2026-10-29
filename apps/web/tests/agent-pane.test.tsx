@@ -26,7 +26,7 @@ const OPEN_TERMINAL = `/api/projects/${PROJECT_ID}/terminal`;
 // The shared contract types sessionId as a UUID, so a free-form id fails the response parse.
 const TERMINAL_SESSION_ID = "6f1d2c3b-4a5e-4f60-8a71-92b3c4d5e6f7";
 
-function renderPane(events: readonly StudioEvent[], mode: "api_key" | "terminal" = "api_key") {
+function renderPane(events: readonly StudioEvent[], mode: "api_key" | "terminal" | "codex_terminal" | "opencode_terminal" = "api_key") {
   return renderWithProviders(<AgentPane projectId={PROJECT_ID} events={events} mode={mode} />);
 }
 
@@ -182,6 +182,12 @@ describe("AgentPane", () => {
     renderPane([], "terminal");
     await userEvent.click(await screen.findByText(`Terminal ${TERMINAL_SESSION_ID}`, {}, { timeout: 2000 }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === OPEN_TERMINAL)).toHaveLength(2));
+  });
+
+  it.each(["codex_terminal", "opencode_terminal"] as const)("offers the Terminal tab when %s runs the agent", (mode) => {
+    stubAgentApi();
+    renderPane([], mode);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
   });
 
   it("sends a terminal-mode prompt through the server, which writes it to the PTY", async () => {

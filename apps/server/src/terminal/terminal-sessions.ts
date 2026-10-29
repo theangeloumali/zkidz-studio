@@ -6,6 +6,7 @@ import { hookToStudioEvents, QUESTION_TOOL_NAME } from "./hook-events.ts";
 import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
 import { encodePrompt, eraseInput } from "./prompt-input.ts";
 import { QUESTION_HOOK_TIMEOUT_S, removeSessionFiles } from "./session-files.ts";
+import type { AgentRuntime } from "./agent-launch.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
 import { isSessionTranscript, readTranscriptUsage } from "./transcript-usage.ts";
 
@@ -73,6 +74,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       clearTimeout(record.sessionStartTimer);
       clearTimeout(record.promptRetryTimer);
       dismissQuestions(record);
+      record.agent?.unsubscribe?.();
+      record.agent?.companion?.kill();
       records.delete(record.sessionId);
       const isUnexpected = !record.wasKilled && exitCode !== 0;
       const exitEvents: NewStudioEvent[] = [{ type: "terminal.state", projectId, state: "exited", exitCode }];
@@ -222,13 +225,67 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     return preToolUseAnswer(decision);
   };
 
+  const reportAgentUsage = (record: SessionRecord, agent: AgentRuntime) => {
+    const { usageSource, kind } = agent.adapter;
+    if (usageSource === undefined || agent.agentSessionId === undefined || kind === "claude") return;
+    usageSource(agent.agentSessionId)
+      .then((figures) =>
+        figures === null
+          ? undefined
+          : publishAll([{ type: "usage.reported", projectId: record.projectId, sessionId: record.sessionId, source: kind, ...figures }]),
+      )
+      .catch((error: unknown) => deps.logger.warn("terminal agent usage not read", { error }));
+  };
+
+  // Codex posts Claude-shaped hooks to the same bridge; its adapter maps them and the studio's policy decides its tools.
+  const handleAgentHook = async (record: SessionRecord, agent: AgentRuntime, payload: HookPayload): Promise<HookResponse> => {
+    const { events } = agent.adapter;
+    if (events.kind !== "hooks")
+      return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This agent sends no hooks." }) : {};
+    const context = eventContext(record);
+    switch (payload.hook_event_name) {
+      case "PreToolUse": {
+        const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
+        const decide = agent.adapter.decideTool ?? decideTerminalTool;
+        const decision = await decide(payload.tool_name, payload.tool_input, scope).catch((error: unknown): TerminalToolDecision => {
+          deps.logger.error("terminal agent policy failed", { error });
+          return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
+        });
+        await publishAll(events.mapHook(payload, { ...context, decision })).catch((error: unknown) =>
+          deps.logger.error("terminal tool event not published", { error }),
+        );
+        return preToolUseAnswer(decision);
+      }
+      case "SessionStart":
+        clearTimeout(record.sessionStartTimer);
+        record.hasStarted = true;
+        agent.agentSessionId = payload.session_id;
+        for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+        break;
+      case "UserPromptSubmit":
+        clearTimeout(record.promptRetryTimer);
+        record.isWorking = true;
+        break;
+      case "Stop":
+        record.isWorking = false;
+        reportAgentUsage(record, agent);
+        break;
+      default:
+        break;
+    }
+    await publishAll(events.mapHook(payload, context));
+    return {};
+  };
+
   // Erases a prompt a Stop put back in Claude Code's input first, so the paste is not appended to it.
   const writePrompt = (record: SessionRecord, text: string) => {
     const erase = record.promptToErase === undefined ? "" : eraseInput(record.promptToErase);
     record.promptToErase = undefined;
     record.lastPrompt = text;
     record.pty.write(erase + encodePrompt(text));
-    if (!record.isWorking) retryUntilSubmitted(record, text, 1);
+    // Only a UserPromptSubmit hook can confirm the prompt landed; a stream-driven agent sends none to stop the retries.
+    const confirmsPrompts = record.agent === undefined || record.agent.adapter.events.kind === "hooks";
+    if (!record.isWorking && confirmsPrompts) retryUntilSubmitted(record, text, 1);
   };
 
   // Resent until UserPromptSubmit confirms it; the erase covers the text and the newline a swallowed Enter left behind.
@@ -258,6 +315,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       const record = await launchSession(deps, request);
       records.set(record.sessionId, record);
       watchLifecycle(record);
+      const { agent } = record;
+      if (agent?.adapter.events.kind === "stream") agent.unsubscribe = agent.adapter.events.subscribe(agent.launch, eventContext(record), publishInBackground);
       await publishAll([{ type: "terminal.state", projectId: request.projectId, state: "starting" }]);
       return record;
     },
@@ -277,6 +336,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       if (record === undefined) {
         return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This Claude session has ended." }) : {};
       }
+      if (record.agent !== undefined) return handleAgentHook(record, record.agent, payload);
       switch (payload.hook_event_name) {
         case "PreToolUse":
           return answerPreToolUse(record, payload, signal);

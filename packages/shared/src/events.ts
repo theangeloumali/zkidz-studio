@@ -18,6 +18,7 @@ export const CutCandidateSchema = sourceSpan({ id: z.string().min(1), kind: z.en
 /** Plan §6.14 failure states. */
 export const SESSION_ERROR_KINDS = [
   "claude_missing",
+  "agent_missing",
   "sdk_binary_missing",
   "auth_failed",
   "billing_error",

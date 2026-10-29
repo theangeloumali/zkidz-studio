@@ -2,8 +2,9 @@
 // Turns the event stream into edit rows: open on the first agent activity, close on a delivered export (plan 2026-10-29, slice E).
 import type { StudioDatabase } from "@zks/db";
 import { agentSessions, edits, projects } from "@zks/db/schema";
-import { AgentKindSchema, UsageSourceSchema, type AgentKind, type StudioEvent, type UsageSource } from "@zks/shared";
+import { AgentKindSchema, UsageSourceSchema, type AgentKind, type StudioEvent, type UsageSource, agentKindOfAuthMode } from "@zks/shared";
 import { eq } from "drizzle-orm";
+import { readConnection } from "../auth/connection-store.ts";
 import type { EventBus } from "../events/event-bus.ts";
 import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
 import type { Logger } from "../logging/logger.ts";
@@ -158,11 +159,13 @@ export class EditRecorder {
     if (state.openEdit !== undefined) return;
     const [project] = await this.#database.select({ videoId: projects.videoId }).from(projects).where(eq(projects.id, projectId));
     if (project === undefined) return;
-    const [row] = await this.#database.insert(edits).values({ projectId, videoId: project.videoId, agentKind: "claude", turns }).returning();
+    // The connected mode names the agent, so an edit that never reports usage still says who ran it.
+    const agentKind = agentKindOfAuthMode((await readConnection(this.#database))?.mode);
+    const [row] = await this.#database.insert(edits).values({ projectId, videoId: project.videoId, agentKind, turns }).returning();
     if (row === undefined) throw new Error("edits insert returned no row");
     // ASSUMPTION: an open edit marks the project "editing"; the export moves it to "delivered".
     await this.#database.update(projects).set({ status: "editing" }).where(eq(projects.id, projectId));
-    state.openEdit = { id: row.id, videoId: row.videoId, startedAt: row.startedAt, agentKind: "claude", turns, answers: {} };
+    state.openEdit = { id: row.id, videoId: row.videoId, startedAt: row.startedAt, agentKind, turns, answers: {} };
     state.ledger.openEdit();
   }
 

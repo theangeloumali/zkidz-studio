@@ -30,6 +30,7 @@ import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts
 import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
 import { createPtyHost } from "./terminal/pty-host.ts";
 import { registerTerminalRoutes } from "./terminal/routes.ts";
+import type { TerminalAgents } from "./terminal/agent-launch.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
@@ -55,6 +56,8 @@ export interface AgentServicesDeps {
   /** §11 ZKS_RUN; main.ts empties it at startup. */
   readonly runDir: string;
   readonly claudePath: string | null;
+  /** The installed Codex and OpenCode, resolved at startup like claude (ADR 0007). */
+  readonly terminalAgents?: TerminalAgents;
   /** main.ts probes both after the server listens; the routes that need them await them. */
   readonly claudeVersion: string | null | Promise<string | null>;
   readonly secretStore: SecretStore;
@@ -111,7 +114,11 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     cancelProjectJobs,
   });
   const terminalSessions = createTerminalSessions({
-    ptyHost: createPtyHost({ claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME) }),
+    ptyHost: createPtyHost({
+      claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME),
+      agentPaths: [...(deps.terminalAgents?.values() ?? [])].map((agent) => agent.binaryPath),
+    }),
+    ...(deps.terminalAgents === undefined ? {} : { agents: deps.terminalAgents }),
     eventBus: deps.eventBus,
     runDir: deps.runDir,
     appPort: deps.appPort,

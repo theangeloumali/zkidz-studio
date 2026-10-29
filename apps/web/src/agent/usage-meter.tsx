@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import type { EditSummary } from "@zks/shared";
+import { isTerminalAuthMode } from "@zks/shared";
 import { useEffect, useState } from "react";
 import type { Connection } from "../api/agent-client.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -24,7 +25,7 @@ export function UsageMeter({ summary, mode, openEdit }: UsageMeterProps) {
   if (openEdit === undefined && summary.turnCostUsd === null && utilization === undefined) return null;
   const percent = utilization === undefined ? null : Math.round(utilization * 100);
   // Terminal mode is the one where the user signs in with a Claude plan instead of paying per token.
-  const costNote = mode === "terminal" ? `${COST_DISCLAIMER} ${PLAN_PRICING_NOTE}` : COST_DISCLAIMER;
+  const costNote = isTerminalAuthMode(mode) ? `${COST_DISCLAIMER} ${PLAN_PRICING_NOTE}` : COST_DISCLAIMER;
   return (
     <div role="group" aria-label="Usage" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-ui-sm text-copy-muted">
       <span className="font-semibold">Usage</span>

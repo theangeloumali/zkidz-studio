@@ -3,11 +3,12 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import type { UsageFigures } from "@zks/shared";
+import type { AgentKind, UsageFigures } from "@zks/shared";
 import type { TerminalTokens } from "../auth/agent-env.ts";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import type { Logger } from "../logging/logger.ts";
 import type { AskedQuestions, QuestionAnswers } from "../tools/context.ts";
+import { launchAgentSession, type AgentRuntime, type TerminalAgents } from "./agent-launch.ts";
 import { buildTerminalArgs } from "./launch-args.ts";
 import { TerminalLaunchError, type PtyHost, type TerminalPty } from "./pty-host.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH, removeSessionFiles, writeSessionFiles, type SessionFiles } from "./session-files.ts";
@@ -37,6 +38,8 @@ export interface TerminalSessionsDeps {
   /** How long a question card waits for Claude's text about it, so the text lands first in Activity. */
   readonly questionTextWaitMs?: number;
   readonly readTranscriptUsage?: (transcriptPath: string) => Promise<UsageFigures | null>;
+  /** The installed Codex and OpenCode, for their terminal modes (ADR 0007). */
+  readonly agents?: TerminalAgents;
 }
 
 export interface OpenTerminalRequest {
@@ -45,6 +48,8 @@ export interface OpenTerminalRequest {
   readonly model?: string;
   readonly rulesText: string;
   readonly resumeSessionId?: string;
+  /** Claude when unset. */
+  readonly agentKind?: AgentKind;
 }
 
 export interface TerminalSession {
@@ -58,7 +63,9 @@ export interface TerminalSession {
 }
 
 export interface SessionRecord extends TerminalSession {
-  readonly files: SessionFiles;
+  readonly files: Pick<SessionFiles, "dir">;
+  /** Codex or OpenCode; unset for Claude, whose hooks terminal-sessions.ts handles itself. */
+  readonly agent?: AgentRuntime;
   hasStarted: boolean;
   wasKilled: boolean;
   /** Prompts sent before SessionStart; they die with the record. */
@@ -85,7 +92,23 @@ export interface SessionRecord extends TerminalSession {
   lastStatusUsage?: string;
 }
 
+/** The per-session state every agent's record starts with. */
+export function freshSessionState() {
+  return {
+    hasStarted: false,
+    wasKilled: false,
+    isWorking: false,
+    queuedPrompts: [],
+    displayBuffers: new Map<string, string>(),
+    hasTextSinceTool: false,
+    textWaiters: [],
+    hasNarratedTurn: false,
+    questionCards: new Set<AbortController>(),
+  };
+}
+
 export async function launchSession(deps: TerminalSessionsDeps, request: OpenTerminalRequest): Promise<SessionRecord> {
+  if (request.agentKind === "codex" || request.agentKind === "opencode") return launchAgentSession(deps, request, request.agentKind);
   await assertClaudeInstalled(deps, request.projectId);
   const sessionId = request.resumeSessionId ?? randomUUID();
   const tokens = { hookToken: deps.createToken(), mcpToken: deps.createToken() };
@@ -114,22 +137,7 @@ export async function launchSession(deps: TerminalSessionsDeps, request: OpenTer
       cwd: request.projectDir,
       env: deps.buildEnv({ ...tokens, mcpUrl: files.mcpUrl }),
     });
-    return {
-      ...request,
-      ...tokens,
-      sessionId,
-      pty,
-      files,
-      hasStarted: false,
-      wasKilled: false,
-      isWorking: false,
-      queuedPrompts: [],
-      displayBuffers: new Map(),
-      hasTextSinceTool: false,
-      textWaiters: [],
-      hasNarratedTurn: false,
-      questionCards: new Set(),
-    };
+    return { ...request, ...tokens, sessionId, pty, files, ...freshSessionState() };
   } catch (error) {
     await removeSessionFiles(files);
     throw error;

@@ -13,7 +13,7 @@ const DEFAULT_COLUMNS = 120;
 const DEFAULT_ROWS = 32;
 const loadNodePty = lazyImport("node-pty", () => import("node-pty"));
 
-export type TerminalLaunchFailure = "claude_missing" | "wrong_binary" | "credential_env" | "session_cap" | "duplicate_session";
+export type TerminalLaunchFailure = "claude_missing" | "agent_missing" | "wrong_binary" | "credential_env" | "session_cap" | "duplicate_session";
 
 export class TerminalLaunchError extends Error {
   readonly reason: TerminalLaunchFailure;
@@ -52,19 +52,24 @@ export interface PtyHost {
 }
 
 export interface PtyHostOptions {
-  /** Resolved once at startup (plan §6.3); every spawn must run exactly this file. */
+  /** Resolved once at startup (plan §6.3); every spawn must run exactly this file or one of agentPaths. */
   readonly claudePath: string;
+  /** The resolved codex and opencode binaries, when installed. */
+  readonly agentPaths?: readonly string[];
   readonly spawn?: typeof nodePty.spawn;
   readonly maxSessions?: number;
 }
 
 export function createPtyHost(options: PtyHostOptions): PtyHost {
-  if (!isAbsolute(options.claudePath)) throw new Error("The claude path must be absolute.");
+  const launchable = new Set([options.claudePath, ...(options.agentPaths ?? [])]);
+  if ([...launchable].some((binaryPath) => !isAbsolute(binaryPath))) throw new Error("Every terminal binary path must be absolute.");
   const maxSessions = options.maxSessions ?? MAX_TERMINAL_SESSIONS;
   const livePtys = new Map<string, TerminalPty>();
 
   const assertLaunchable = (sessionId: string, launch: PtyLaunch) => {
-    if (launch.argv[0] !== options.claudePath) throw new TerminalLaunchError("wrong_binary", "Terminal mode only runs the resolved claude binary.");
+    if (launch.argv[0] === undefined || !launchable.has(launch.argv[0])) {
+      throw new TerminalLaunchError("wrong_binary", "Terminal mode only runs a resolved agent binary.");
+    }
     const credentialVariable = findCredentialVariable(launch.env);
     if (credentialVariable !== undefined) {
       throw new TerminalLaunchError("credential_env", `Terminal mode never passes a credential; ${credentialVariable} must not be set.`);

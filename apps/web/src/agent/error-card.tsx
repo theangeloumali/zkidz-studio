@@ -19,6 +19,14 @@ const INSTALL_LINK = <ExternalLink href={CLAUDE_LINKS.install}>Install Claude Co
 /** One-line fix per failure (plan §6.14); the server's own message is shown under it, as text. */
 const ERROR_VIEW: Record<ErrorKind, { title: string; fix: ReactNode }> = {
   claude_missing: { title: "Claude Code is not installed", fix: INSTALL_LINK },
+  agent_missing: {
+    title: "The agent you connected is not installed",
+    fix: (
+      <Link to="/setup" className={INLINE_LINK_CLASS}>
+        Check your connection
+      </Link>
+    ),
+  },
   sdk_binary_missing: { title: "The studio's Claude runtime is missing", fix: INSTALL_LINK },
   auth_failed: { title: "Your API key was rejected", fix: SETUP_LINK },
   billing_error: { title: "Your Anthropic account needs credit", fix: <ExternalLink href={CLAUDE_LINKS.billing}>Open billing</ExternalLink> },

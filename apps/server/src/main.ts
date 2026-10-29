@@ -28,6 +28,7 @@ import { createCompositionBuilder } from "./preview/composition-builder.ts";
 import { createPreviewOrigin } from "./preview/preview-origin.ts";
 import { createPreviewService } from "./preview/preview-service.ts";
 import { createSecurity } from "./security/index.ts";
+import { resolveTerminalAgents } from "./terminal/agent-launch.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
 
@@ -63,7 +64,7 @@ async function main(): Promise<void> {
   // ASSUMPTION: ZKS_RUN is <ZKS_HOME>/run. Files left there belong to sessions that died with the last server.
   const runDir = join(config.studioHome, "run");
   await clearSessionFiles(runDir);
-  const claudePath = await resolveClaudePath(process.env);
+  const [claudePath, terminalAgents] = await Promise.all([resolveClaudePath(process.env), resolveTerminalAgents(process.env)]);
   // Both probes cost ~1 s, so they wait for the listen callback (plan §9.5) and their routes await them.
   const { promise: listening, resolve: markListening } = Promise.withResolvers<void>();
   const claudeVersion = listening.then(() => readClaudeVersion(claudePath));
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
     pluginDir: PLUGIN_DIR,
     runDir,
     claudePath,
+    terminalAgents,
     claudeVersion,
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
     query: lazySdkQuery,

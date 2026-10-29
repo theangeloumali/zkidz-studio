@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 import { useMutation } from "@tanstack/react-query";
 import type { StudioEvent } from "@zks/shared";
+import { isTerminalAuthMode } from "@zks/shared";
 import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { stopTurn, submitPrompt, type Connection } from "../api/agent-client.ts";
@@ -21,7 +22,7 @@ interface AgentPaneProps {
 
 /** The server routes the prompt and Stop to the PTY in terminal mode, or to the SDK otherwise. */
 export function AgentPane({ projectId, events, mode }: AgentPaneProps) {
-  const isTerminal = mode === "terminal";
+  const isTerminal = isTerminalAuthMode(mode);
   const summary = useMemo(() => summarizeSession(events), [events]);
   const [tab, setTab] = useState<PaneTab>("activity");
   const edits = useProjectEdits(projectId, events);

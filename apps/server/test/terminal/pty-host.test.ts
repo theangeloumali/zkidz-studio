@@ -49,6 +49,13 @@ describe("createPtyHost", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     );
   });
 
+  it("also spawns a resolved codex or opencode binary, and only an absolute one", async () => {
+    expect(() => createPtyHost({ claudePath: "/usr/local/bin/claude", agentPaths: ["codex"] })).toThrow(/absolute/);
+    host = createPtyHost({ claudePath: "/usr/local/bin/claude", agentPaths: [claudePath] });
+    const pty = await launchStub();
+    await waitFor(() => pty.snapshot().includes("READY"));
+  });
+
   it("refuses an env carrying a credential, naming the variable but never its value", async () => {
     host = createPtyHost({ claudePath: "/usr/local/bin/claude" });
     const launchWithKey = () => host.launch(SESSION_ID, { argv: ["/usr/local/bin/claude"], cwd: scratchDir, env: { ANTHROPIC_API_KEY: "sk-secret" } });

@@ -41,6 +41,19 @@ export type SpecKind = z.infer<typeof SpecKindSchema>;
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 export type DeliverableKind = z.infer<typeof DeliverableKindSchema>;
 export type AuthMode = z.infer<typeof AuthModeSchema>;
+
+/** The modes that run the user's own agent CLI in the studio's terminal pane, and the agent each one runs. */
+export const TERMINAL_AUTH_MODES = ["terminal", "codex_terminal", "opencode_terminal"] as const satisfies readonly AuthMode[];
+const AGENT_OF_TERMINAL_MODE = { terminal: "claude", codex_terminal: "codex", opencode_terminal: "opencode" } as const;
+
+export function isTerminalAuthMode(mode: AuthMode | null | undefined): mode is (typeof TERMINAL_AUTH_MODES)[number] {
+  return mode === "terminal" || mode === "codex_terminal" || mode === "opencode_terminal";
+}
+
+/** Modes A and B run Claude through the SDK, so every non-terminal mode is Claude too. */
+export function agentKindOfAuthMode(mode: AuthMode | null | undefined): (typeof AGENT_KINDS)[number] {
+  return isTerminalAuthMode(mode) ? AGENT_OF_TERMINAL_MODE[mode] : "claude";
+}
 export type AgentKind = z.infer<typeof AgentKindSchema>;
 export type UsageSource = z.infer<typeof UsageSourceSchema>;
 export type ThemeId = z.infer<typeof ThemeIdSchema>;

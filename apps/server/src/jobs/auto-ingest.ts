@@ -6,6 +6,8 @@ import type { Logger } from "../logging/logger.ts";
 import { type IngestStartDeps, openIngestJobIds, startIngest } from "../tools/ingest-start.ts";
 
 const DEFAULT_QUIET_MS = 3000;
+/** Footage a template places as a showcase insert; its own ingest runs once the template starts. */
+const INSERT_KINDS: ReadonlySet<string> = new Set(["screen_recording", "film"]);
 
 export interface AutoIngest {
   /** Runs an upload; once the project has no upload in flight and the drop goes quiet, its ingest starts. */
@@ -51,7 +53,7 @@ export function createAutoIngest(options: AutoIngestOptions): AutoIngest {
       .from(mediaAssets)
       .where(eq(mediaAssets.projectId, projectId))
       .orderBy(asc(mediaAssets.createdAt));
-    if (assets.some((asset) => asset.kind === "source")) return;
+    if (assets.some((asset) => asset.kind === "source" || INSERT_KINDS.has(asset.kind))) return;
     const clips = assets.filter((asset) => asset.kind === "camera").map((asset) => ({ assetId: asset.id }));
     if (clips.length === 0) return;
     const ownJobId = ownJobs.get(projectId);

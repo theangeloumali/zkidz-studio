@@ -38,7 +38,7 @@ afterAll(async () => {
   await server.close();
 });
 
-async function upload(projectId: string, kind: "camera" | "image" | "source" = "camera") {
+async function upload(projectId: string, kind: "camera" | "image" | "source" | "screen_recording" = "camera") {
   return autoIngest.track(projectId, async () => {
     const [asset] = await server.database.db
       .insert(mediaAssets)
@@ -73,6 +73,17 @@ describe("auto ingest", () => {
     const project = await insertProject(server);
     await upload(project.id, "source");
     await upload(project.id);
+
+    await delay(QUIET_MS * 4);
+
+    expect(await ingestJobs(project.id)).toHaveLength(0);
+  });
+
+  // A screen recording beside a camera clip is a showcase insert: the template's ingest places it, so a join would be thrown away.
+  it("leaves a drop with a screen recording to the template's ingest", async () => {
+    const project = await insertProject(server);
+    await upload(project.id);
+    await upload(project.id, "screen_recording");
 
     await delay(QUIET_MS * 4);
 

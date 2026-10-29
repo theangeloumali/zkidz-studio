@@ -6,12 +6,14 @@ import {
   ConnectionSchema,
   DeliverableSchema,
   DoctorCheckSchema,
+  EditSummarySchema,
   JobSchema,
   MediaAssetSchema,
   PROJECT_TITLE_MAX_CHARS,
   ProjectSchema,
   ProjectSettingsSchema,
   ProjectSettingsUpdateSchema,
+  ProjectStyleSchema,
   RULE_TEXT_MAX_CHARS,
   RuleSchema,
   SettingsSchema,
@@ -163,6 +165,19 @@ export const API_ROUTES = {
   terminalSocket: { method: "GET", path: "/api/terminal/:sessionId/ws", query: TerminalSocketQuerySchema, response: "websocket" },
   /** Called by the PTY's Claude Code with `Authorization: Bearer $ZKS_HOOK_TOKEN`, not by the browser. */
   terminalHooks: { method: "POST", path: "/api/terminal/:sessionId/hooks", body: HookPayloadSchema, response: HookResponseSchema },
+
+  /** The project's look over its theme; null until a style is set (slice D). */
+  getProjectStyle: { method: "GET", path: "/api/projects/:projectId/style", response: z.strictObject({ style: ProjectStyleSchema.nullable() }) },
+  setProjectStyle: {
+    method: "PUT",
+    path: "/api/projects/:projectId/style",
+    body: z.strictObject({ style: ProjectStyleSchema.nullable() }),
+    response: z.strictObject({ style: ProjectStyleSchema.nullable() }),
+  },
+  /** Newest first (slice E). */
+  listEdits: { method: "GET", path: "/api/projects/:projectId/edits", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
+  /** Each project's newest edit, for the home list. */
+  latestEdits: { method: "GET", path: "/api/edits/latest", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
 
   getProjectSettings: { method: "GET", path: "/api/projects/:projectId/settings", response: ProjectSettingsSchema },
   updateProjectSettings: { method: "PUT", path: "/api/projects/:projectId/settings", body: ProjectSettingsUpdateSchema, response: ProjectSettingsSchema },

@@ -5,8 +5,8 @@ import { buildFeedItems, summarizeSession } from "../src/agent/feed-items.ts";
 import { SAMPLE_EVENTS, sampleEvent } from "./event-fixtures.ts";
 
 describe("buildFeedItems", () => {
-  it("gives every event type except resync a feed entry", () => {
-    const silentTypes = new Set(["resync"]);
+  it("gives every event type except resync and usage reports a feed entry", () => {
+    const silentTypes = new Set(["resync", "usage.reported"]);
     for (const type of STUDIO_EVENT_TYPES) {
       const items = buildFeedItems([SAMPLE_EVENTS[type]]);
       expect(items.length, type).toBe(silentTypes.has(type) ? 0 : 1);

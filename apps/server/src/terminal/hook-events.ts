@@ -62,6 +62,10 @@ export function hookToStudioEvents(payload: HookPayload, context: HookEventConte
         },
         { type: "terminal.state", projectId, state: "ready" },
       ];
+    // terminal-sessions.ts reads these itself: MessageDisplay buffers into narration, StatusLine reports usage.
+    case "MessageDisplay":
+    case "StatusLine":
+      return [];
     default: {
       const unhandled: never = payload;
       return unhandled;

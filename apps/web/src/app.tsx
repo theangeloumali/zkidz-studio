@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router";
+import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import { ROUTE_PATHS } from "./lib/routes.ts";
 import { AppShell } from "./routes/app-shell.tsx";
 import { HomeRoute } from "./routes/home.tsx";
@@ -29,7 +30,9 @@ const router = createBrowserRouter([
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

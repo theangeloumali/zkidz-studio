@@ -18,6 +18,7 @@ describe("Drizzle schema (plan §8)", () => {
       "deliverables",
       "edit_spec_versions",
       "edit_specs",
+      "edits",
       "events",
       "jobs",
       "media_assets",

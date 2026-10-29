@@ -52,6 +52,9 @@ export const SAMPLE_EVENTS: { readonly [Type in StudioEventType]: EventOf<Type> 
   narration: { ...BASE, type: "narration", text: "Done. The cut is 58 seconds." },
   "terminal.state": { ...BASE, type: "terminal.state", state: "exited", exitCode: 1 },
   "session.error": { ...BASE, type: "session.error", kind: "auth_failed", message: "invalid x-api-key" },
+  "usage.reported": { ...BASE, type: "usage.reported", sessionId: "sess-1", source: "claude_statusline", costUsd: 0.42, durationMs: 840_000 },
+  "lessons.suggested": { ...BASE, type: "lessons.suggested", requestId: "l-1", lessons: ["Open on the result, not the setup."] },
+  "edit.closed": { ...BASE, type: "edit.closed", editId: "6f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", costUsd: 0.62, inputTokens: 210_000, durationMs: 840_000 },
   resync: { ...BASE, type: "resync" },
 };
 

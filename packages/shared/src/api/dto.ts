@@ -2,16 +2,21 @@
 // What the REST API returns. Rows map to these at the server boundary; secrets never appear in any of them.
 import { z } from "zod";
 import {
+  AgentKindSchema,
   AssetKindSchema,
   AuthModeSchema,
   CloudProviderSchema,
   DeliverableKindSchema,
+  EditStatusSchema,
   JobLaneSchema,
   JobStatusSchema,
   ProjectStatusSchema,
   SpecAuthorSchema,
   SpecKindSchema,
+  ThemeIdSchema,
+  UsageSourceSchema,
 } from "../enums.ts";
+import { SFX_LEVELS } from "../presets.ts";
 import { FrameRateSchema, IdSchema, IsoTimestampSchema, JobPercentSchema, VideoIdSchema } from "../primitives.ts";
 
 /** Rules panel cap (plan §6.9). */
@@ -92,6 +97,56 @@ export const RuleSchema = z.strictObject({
   createdAt: IsoTimestampSchema,
 });
 
+/** What an edit did, written once when it closes; the next edits read the recent ones (plan 2026-10-29, slice E). */
+export const EditFactsSchema = z.strictObject({
+  sourceS: z.number().nonnegative().optional(),
+  keptS: z.number().nonnegative().optional(),
+  segments: z.int().nonnegative().optional(),
+  cutReasons: z.array(z.string()),
+  opening: z.string().optional(),
+  /** Question text → the user's answer, from that edit's question cards. */
+  answers: z.record(z.string(), z.string()),
+});
+
+/** One edit: from the first prompt with no open edit to the export that closes it. Cost and tokens are estimates. */
+export const EditSummarySchema = z.strictObject({
+  id: IdSchema,
+  projectId: IdSchema,
+  videoId: VideoIdSchema,
+  agentKind: AgentKindSchema,
+  status: EditStatusSchema,
+  startedAt: IsoTimestampSchema,
+  finishedAt: IsoTimestampSchema.nullable(),
+  costUsd: z.number().nonnegative().nullable(),
+  costSource: UsageSourceSchema.nullable(),
+  inputTokens: z.int().nonnegative().nullable(),
+  outputTokens: z.int().nonnegative().nullable(),
+  cacheTokens: z.int().nonnegative().nullable(),
+  turns: z.int().nonnegative(),
+  facts: EditFactsSchema.nullable(),
+});
+
+/** themes/<id>/theme.json type roles, and the faces packages/engine/hf/brand/fonts.js bundles (plan §7.8). */
+export const THEME_TYPE_ROLES = ["display", "body", "label", "kicker", "hand", "mono"] as const;
+export const BUNDLED_FONT_FAMILIES = ["Newsreader", "Inter", "Caveat", "JetBrains Mono"] as const;
+const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+/**
+ * A project's look over its theme pack. Token names must exist in that theme's tokens (the server checks against
+ * theme.json); components always come from the repo, so a style can change colours and faces but never code.
+ */
+export const ProjectStyleSchema = z.strictObject({
+  theme: ThemeIdSchema,
+  tokens: z.record(z.string().regex(/^[a-z][A-Za-z0-9]*$/), HexColorSchema).optional(),
+  type: z.partialRecord(z.enum(THEME_TYPE_ROLES), z.enum(BUNDLED_FONT_FAMILIES)).optional(),
+  boil: z.boolean().optional(),
+  sfx: z.enum(SFX_LEVELS).optional(),
+  /** Target average shot length in seconds, from a reference's pace. */
+  shotLengthS: z.number().min(0.5).max(30).optional(),
+  /** Where the style came from, shown in the Style panel. */
+  referenceAssetId: IdSchema.optional(),
+});
+
 /** The key itself never leaves the server; the UI shows the last 4 (plan §6.5). */
 export const ConnectionSchema = z.strictObject({
   mode: AuthModeSchema.nullable(),
@@ -123,6 +178,9 @@ export type MediaAsset = z.infer<typeof MediaAssetSchema>;
 export type Job = z.infer<typeof JobSchema>;
 export type Rule = z.infer<typeof RuleSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
+export type EditSummary = z.infer<typeof EditSummarySchema>;
+export type EditFacts = z.infer<typeof EditFactsSchema>;
+export type ProjectStyle = z.infer<typeof ProjectStyleSchema>;
 export type ApiErrorCode = z.infer<typeof ApiErrorCodeSchema>;
 export type ApiErrorBody = z.infer<typeof ApiErrorBodySchema>;
 

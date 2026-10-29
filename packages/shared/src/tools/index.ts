@@ -7,6 +7,9 @@ import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projec
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
 
 export * from "./define.ts";
+// Not in STUDIO_TOOLS until their handlers are registered (plan 2026-10-29, Phase 7).
+export { readSkill, suggestLessons } from "./knowledge.ts";
+export { MAX_REFERENCE_FRAMES, sampleReference, setProjectStyle } from "./style.ts";
 export { CUE_SHEETS, CUE_TIERS } from "./edit.ts";
 export { JobSnapshotSchema, MAX_JOB_WAIT_S } from "./jobs.ts";
 export { IngestResultSchema, RENDER_PROFILES, TranscribeResultSchema, WHISPER_MODELS } from "./media.ts";

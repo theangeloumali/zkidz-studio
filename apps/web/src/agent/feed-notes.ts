@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import type { StudioEvent } from "@zks/shared";
+import { formatUsage } from "../lib/format.ts";
 
 export type EventOf<Type extends StudioEvent["type"]> = Extract<StudioEvent, { type: Type }>;
 export interface FeedNote {
@@ -70,6 +71,10 @@ export function describeNote(event: StudioEvent): FeedNote | null {
       return { tone: "info", text: "Older conversation was summarized to make room." };
     case "terminal.state":
       return { tone: event.state === "exited" ? "warn" : "info", text: describeTerminal(event) };
+    case "edit.closed": {
+      const totals = formatUsage(event);
+      return { tone: "info", text: totals === "" ? "Edit finished." : `Edit finished: ${totals}.` };
+    }
     default:
       return null;
   }

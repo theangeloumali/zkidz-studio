@@ -100,6 +100,8 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
         throw error;
       }
     },
+    // Codex fires SessionStart with the first prompt, so its drawn composer is what lets the Prompt box send one.
+    inputReady: /›|>_/,
     events: {
       kind: "hooks",
       mapHook(payload, context) {

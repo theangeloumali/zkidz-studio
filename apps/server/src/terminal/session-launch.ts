@@ -33,6 +33,8 @@ export interface TerminalSessionsDeps {
   readonly askQuestions: (projectId: string, questions: AskedQuestions, signal: AbortSignal) => Promise<QuestionAnswers | null>;
   readonly sessionStartTimeoutMs?: number;
   readonly promptRetryMs?: number;
+  /** How long a freshly drawn agent input waits before taking a prompt; tests shorten it. */
+  readonly inputSettleMs?: number;
   /** How long a card waits before the question falls back to the terminal dialog. */
   readonly questionTimeoutMs?: number;
   /** How long a question card waits for Claude's text about it, so the text lands first in Activity. */

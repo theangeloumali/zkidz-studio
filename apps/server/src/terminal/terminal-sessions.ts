@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 // Mode T session registry (plan §6.3): hooks → policy + events, Esc to stop, Kill to close.
+import { stripVTControlCharacters } from "node:util";
 import { AskUserQuestionInputSchema, toAskedQuestions, type HookPayload, type HookResponse, type UsageFigures } from "@zks/shared";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import { hookToStudioEvents, QUESTION_TOOL_NAME } from "./hook-events.ts";
@@ -50,6 +51,8 @@ type StopPayload = Extract<HookPayload, { hook_event_name: "Stop" }>;
 const ALLOWED_PERMISSION_MODES: ReadonlySet<string> = new Set(["auto", "default"]);
 /** A child that ignores the kill must not hold shutdown forever. */
 const KILL_SETTLE_TIMEOUT_MS = 5_000;
+/** A TUI may drop keys while it first draws its input. */
+const INPUT_SETTLE_MS = 2_000;
 
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
@@ -282,10 +285,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
         return preToolUseAnswer(decision);
       }
       case "SessionStart":
-        clearTimeout(record.sessionStartTimer);
-        record.hasStarted = true;
         agent.agentSessionId = payload.session_id;
-        for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+        markStarted(record);
         break;
       case "UserPromptSubmit":
         clearTimeout(record.promptRetryTimer);
@@ -300,6 +301,21 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     }
     await publishAll(events.mapHook(payload, context));
     return {};
+  };
+
+  const markStarted = (record: SessionRecord) => {
+    clearTimeout(record.sessionStartTimer);
+    if (record.hasStarted) return;
+    record.hasStarted = true;
+    for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+  };
+
+  const startWhenInputDrawn = (record: SessionRecord, inputReady: RegExp) => {
+    const stopWatching = record.pty.onData(() => {
+      if (!inputReady.test(stripVTControlCharacters(record.pty.snapshot()))) return;
+      stopWatching();
+      setTimeout(() => markStarted(record), deps.inputSettleMs ?? INPUT_SETTLE_MS).unref();
+    });
   };
 
   // Erases a prompt a Stop put back in Claude Code's input first, so the paste is not appended to it.
@@ -341,6 +357,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       records.set(record.sessionId, record);
       watchLifecycle(record);
       const { agent } = record;
+      if (agent?.adapter.inputReady !== undefined) startWhenInputDrawn(record, agent.adapter.inputReady);
       if (agent?.adapter.events.kind === "stream") agent.unsubscribe = agent.adapter.events.subscribe(agent.launch, eventContext(record), publishInBackground);
       // The TUI only fails once its server is gone; the record says why and closes. A normal exit has removed it already.
       agent?.companion?.once("exit", (code) => {
@@ -394,8 +411,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
             killRecord(record);
             return {};
           }
-          record.hasStarted = true;
-          for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+          markStarted(record);
           break;
         default:
           break;

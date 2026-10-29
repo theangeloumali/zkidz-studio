@@ -91,6 +91,16 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     ]);
   });
 
+  it("sends a Prompt-box prompt once the agent's input is drawn, for an agent whose SessionStart only comes with the first prompt", async () => {
+    const adapter: AgentAdapter = { ...baseAdapter("codex"), inputReady: /READY/, events: { kind: "hooks", mapHook: () => [] } };
+    const session = await openAgent("codex", adapter);
+
+    expect(fixture.sessions.submitPrompt(PROJECT_ID, "cut it")).toBe(true);
+
+    await waitFor(() => session.pty.snapshot().includes("cut it"));
+    expect(fixture.sessions.isMcpCallAllowed(session.sessionId, session.mcpToken)).toBe(true);
+  });
+
   it("starts a stream-driven agent's companion first, publishes its stream, and stops both with Kill", async () => {
     let unsubscribed = false;
     const pidFile = join(tmpdir(), `zks-companion-${process.pid}-${Date.now()}.pid`);

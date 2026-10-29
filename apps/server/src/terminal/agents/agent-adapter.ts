@@ -70,6 +70,8 @@ export interface AgentAdapter {
   readonly minVersion: string;
   prepare(request: AgentLaunchRequest, tokens: TerminalTokens, binaryPath: string): Promise<PreparedLaunch>;
   readonly events: AgentEventSource;
+  /** For an agent whose SessionStart only comes with its first prompt: the screen text that shows it takes input. */
+  readonly inputReady?: RegExp;
   /** The studio's deny-by-default tool policy, for agents whose hooks can block a call. */
   decideTool?(toolName: string, toolInput: unknown, scope: TerminalToolScope): Promise<TerminalToolDecision>;
   /** Where usage comes from for this agent, if anywhere; folded into the edit by the edit recorder. */

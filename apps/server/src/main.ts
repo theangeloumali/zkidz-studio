@@ -17,6 +17,7 @@ import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./co
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { closeServer } from "./http/close-server.ts";
+import { createAutoIngest } from "./jobs/auto-ingest.ts";
 import { createEngineProcessRunner, pinnedEngineTools } from "./jobs/engine-process.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
@@ -115,6 +116,7 @@ async function main(): Promise<void> {
     webDistDir: WEB_DIST_DIR,
     logger,
     jobRunner,
+    autoIngest: createAutoIngest({ db: database.db, studioHome: config.studioHome, jobs: jobRunner, logger }),
     agent,
     doctor: {
       runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),

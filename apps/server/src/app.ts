@@ -10,6 +10,7 @@ import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
+import type { AutoIngest } from "./jobs/auto-ingest.ts";
 import { registerDeliverableRoutes, type FolderOpener } from "./jobs/deliverable-routes.ts";
 import { registerJobControlRoutes } from "./jobs/job-control-routes.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
@@ -38,6 +39,8 @@ export interface AppDependencies {
   readonly webDistDir: string;
   readonly logger: Logger;
   readonly jobRunner: Pick<JobRunner, "resume">;
+  /** Starts the ingest of a project's first uploads; main.ts passes it. */
+  readonly autoIngest?: AutoIngest;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
   readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
   /** GET /api/doctor; main.ts always passes it. */

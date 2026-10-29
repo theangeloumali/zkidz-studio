@@ -8,3 +8,5 @@ from zks_engine.home import data_dir, zks_home
 # and the speech test needs the whisper-cli and models `zks setup` installed.
 MACHINE_LOCKS = os.environ.get("ZKS_LOCKS") or data_dir("locks")
 MACHINE_HOME = zks_home()
+
+import support  # noqa: E402,F401  # the scratch ZKS_HOME, before any zks_engine module resolves the progress folder

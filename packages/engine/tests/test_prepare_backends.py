@@ -11,7 +11,8 @@ from zks_engine import backends, prepare
 
 def proxy_command(name, rotation_filter="", transpose_cuda=True):
     runs = []
-    with (mock.patch.object(prepare.subprocess, "run", side_effect=lambda command, **_: runs.append(command)),
+    with (mock.patch.object(prepare.ffio, "run_reporting", side_effect=lambda command, on_seconds: runs.append(command)),
+          mock.patch.object(prepare.ffio, "probe", return_value={"durationS": 1.0}),
           mock.patch.object(prepare, "orientation_filter", side_effect=lambda source, cuda: rotation_filter if cuda else ""),
           mock.patch.object(prepare, "has_filter", return_value=transpose_cuda),
           mock.patch.object(prepare, "assert_upright"), mock.patch.object(Path, "replace")):

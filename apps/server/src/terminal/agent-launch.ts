@@ -71,9 +71,10 @@ export async function launchAgentSession(deps: TerminalSessionsDeps, request: Op
   );
   let companion: ChildProcess | undefined;
   try {
-    companion = launch.companion === undefined ? undefined : await startCompanion(launch.companion, launch.cwd);
-    const pty = await deps.ptyHost.launch(sessionId, { argv: [launch.file, ...launch.args], cwd: launch.cwd, env: { ...launch.env } });
-    const runtime: AgentRuntime = { adapter: agent.adapter, launch, ...(companion === undefined ? {} : { companion }) };
+    let connected = launch;
+    if (launch.companion !== undefined) ({ child: companion, connected } = await startCompanion(launch.companion, launch.cwd));
+    const pty = await deps.ptyHost.launch(sessionId, { argv: [connected.file, ...connected.args], cwd: connected.cwd, env: { ...connected.env } });
+    const runtime: AgentRuntime = { adapter: agent.adapter, launch: connected, ...(companion === undefined ? {} : { companion }) };
     return {
       ...request,
       ...tokens,
@@ -92,9 +93,10 @@ export async function launchAgentSession(deps: TerminalSessionsDeps, request: Op
   }
 }
 
-// A companion that dies before it answers fails the launch at once, so whatever answers later on its port is never trusted.
-async function startCompanion(companion: NonNullable<PreparedLaunch["companion"]>, cwd: string): Promise<ChildProcess> {
-  const child = spawn(companion.file, [...companion.args], { cwd, env: { ...companion.env }, stdio: "ignore", shell: false });
+// The adapter reads the companion's own stdout for its address, so the PTY only connects to the server it spawned.
+// A companion that dies before it answers fails the launch at once.
+async function startCompanion(companion: NonNullable<PreparedLaunch["companion"]>, cwd: string): Promise<{ child: ChildProcess; connected: PreparedLaunch }> {
+  const child = spawn(companion.file, [...companion.args], { cwd, env: { ...companion.env }, stdio: ["ignore", "pipe", "ignore"], shell: false });
   const readiness = new AbortController();
   const died = new Promise<never>((_resolve, reject) => {
     child.once("error", reject);
@@ -103,8 +105,9 @@ async function startCompanion(companion: NonNullable<PreparedLaunch["companion"]
     );
   });
   try {
-    await Promise.race([companion.isReady(AbortSignal.any([readiness.signal, AbortSignal.timeout(COMPANION_READY_TIMEOUT_MS)])), died]);
-    return child;
+    const signal = AbortSignal.any([readiness.signal, AbortSignal.timeout(COMPANION_READY_TIMEOUT_MS)]);
+    const connected = await Promise.race([companion.connect(child.stdout, signal), died]);
+    return { child, connected };
   } catch (error) {
     readiness.abort();
     child.kill();

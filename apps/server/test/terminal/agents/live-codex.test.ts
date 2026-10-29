@@ -56,7 +56,7 @@ describe.skipIf(!isLiveEnabled)("live codex in mode T", () => {
       filesDir = launch.filesDir;
       pty = await createPtyHost({ claudePath: binary }).launch(SESSION_ID, { argv: [launch.file, ...launch.args], cwd: launch.cwd, env: launch.env });
       if (adapter.events.kind !== "hooks") throw new Error("codex reports through hooks");
-      const { mapHook } = adapter.events;
+      const mapHook = adapter.events.mapHook.bind(adapter.events);
       const events = (): NewStudioEvent[] => (bridge?.requests ?? []).flatMap((request) => mapHook(request.body, { projectId: PROJECT_ID }));
       const screen = () => stripVTControlCharacters(pty?.snapshot() ?? "");
 

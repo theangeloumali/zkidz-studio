@@ -34,7 +34,7 @@ async function launchRequest(overrides: { resumeSessionId?: string; model?: stri
 }
 
 const adapterWith = (userMcpServers: readonly string[] = ["figma", "my server"]) =>
-  createCodexAdapter({ parentEnv: PARENT_ENV, listUserMcpServers: async () => userMcpServers });
+  createCodexAdapter({ parentEnv: PARENT_ENV, listUserMcpServers: () => Promise.resolve(userMcpServers) });
 
 function expectedArgs(instructions: string, model?: string): string[] {
   return [
@@ -118,7 +118,7 @@ describe("codex adapter: launch", () => {
 describe("codex adapter: hooks", () => {
   const adapter = adapterWith();
   if (adapter.events.kind !== "hooks") throw new Error("codex reports through hooks");
-  const { mapHook } = adapter.events;
+  const mapHook = adapter.events.mapHook.bind(adapter.events);
   const base = { session_id: "019a-thread", transcript_path: "/x/rollout.jsonl", cwd: "/p", permission_mode: "bypassPermissions" };
 
   it("reports the session on the user's codex sign-in", () => {
@@ -131,7 +131,7 @@ describe("codex adapter: hooks", () => {
   it("maps tool calls, denials, prompts and the turn's end", () => {
     const toolCall = { ...base, tool_name: "mcp__studio__project_info", tool_input: {}, tool_use_id: "exec-1" };
     expect(mapHook({ ...toolCall, hook_event_name: "PreToolUse" }, { projectId: PROJECT_ID })).toEqual([
-      { type: "tool.called", projectId: PROJECT_ID, toolUseId: "exec-1", name: "mcp__studio__project_info", label: expect.any(String), input: {} },
+      { type: "tool.called", projectId: PROJECT_ID, toolUseId: "exec-1", name: "mcp__studio__project_info", label: expect.any(String) as unknown, input: {} },
     ]);
     expect(
       mapHook(

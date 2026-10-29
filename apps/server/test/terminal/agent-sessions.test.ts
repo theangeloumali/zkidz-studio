@@ -99,8 +99,12 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
       async prepare(request, tokens, binaryPath) {
         const launch = await baseAdapter("opencode").prepare(request, tokens, binaryPath);
         const script = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => undefined, 1000);`;
-        const isReady = () => waitFor(() => existsSync(pidFile));
-        return { ...launch, companion: { file: process.execPath, args: ["-e", script], env: { PATH: process.env.PATH ?? "" }, isReady } };
+        // The real adapter reads its server's address off this stdout; the fake only waits for the child to be up.
+        const connect = async () => {
+          await waitFor(() => existsSync(pidFile));
+          return launch;
+        };
+        return { ...launch, companion: { file: process.execPath, args: ["-e", script], env: { PATH: process.env.PATH ?? "" }, connect } };
       },
       events: {
         kind: "stream",
@@ -136,8 +140,9 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
       ...baseAdapter("opencode"),
       async prepare(request, tokens, binaryPath) {
         const launch = await baseAdapter("opencode").prepare(request, tokens, binaryPath);
-        const isReady = (signal: AbortSignal) => new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
-        return { ...launch, companion: { file: process.execPath, args: ["-e", "process.exit(3)"], env: { PATH: process.env.PATH ?? "" }, isReady } };
+        const connect = (_output: AsyncIterable<Uint8Array | string>, signal: AbortSignal) =>
+          new Promise<never>((_resolve, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+        return { ...launch, companion: { file: process.execPath, args: ["-e", "process.exit(3)"], env: { PATH: process.env.PATH ?? "" }, connect } };
       },
       events: { kind: "stream", subscribe: () => () => undefined },
     };

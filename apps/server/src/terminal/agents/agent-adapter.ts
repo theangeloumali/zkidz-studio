@@ -28,8 +28,8 @@ export interface AgentCompanion {
   readonly file: string;
   readonly args: readonly string[];
   readonly env: Readonly<Record<string, string>>;
-  /** Resolves once the companion accepts the PTY's connection. */
-  readonly isReady: (signal: AbortSignal) => Promise<void>;
+  /** Reads the companion's stdout until it listens, checks its lockdown, and resolves the launch the PTY must run (it names the server). */
+  readonly connect: (output: AsyncIterable<Uint8Array | string>, signal: AbortSignal) => Promise<PreparedLaunch>;
 }
 
 export interface PreparedLaunch {

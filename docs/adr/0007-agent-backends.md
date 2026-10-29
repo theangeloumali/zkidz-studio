@@ -36,16 +36,26 @@ Codex CLI, 0.164.0 or newer (`codex.ts`):
   Usage is read from the session's rollout file.
 - `CODEX_HOME` is passed through untouched, because it also holds the sign-in.
 
-OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-stream.ts`):
+OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-companion.ts`, `opencode-stream.ts`):
 
-- A companion `opencode serve` on a free loopback port, behind a random per-session password. The TUI attaches with `--server` and
-  `--session`.
-- A studio-written config (`OPENCODE_CONFIG_DIR`) sets `"*": "deny"`, `studio_*` and `read` allowed, and
-  `external_directory: "deny"`. It also turns off sharing and auto-update.
+- A companion `opencode serve --port 0`, behind a random per-session password. The server picks its own loopback port and prints
+  it, and the studio reads that line from the child's stdout. The password is only ever sent to the address the studio's own child
+  printed, so no other local process can be handed it. The TUI attaches with `--server` and `--session` only after the check below.
+- `OPENCODE_CONFIG_DIR` and `XDG_CONFIG_HOME` both point at the session's own folder, so `~/.config/opencode` (its MCP servers,
+  plugins, agents and permissions) is never a config source. `XDG_DATA_HOME` is passed through untouched, because it holds the
+  sign-in.
+- The studio-written config sets `"*": "deny"`, `studio_*` allowed, `read: "ask"` and `external_directory: "deny"`. It also turns
+  off sharing and auto-update.
 - `OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_DISABLE_CLAUDE_CODE` and `OPENCODE_DISABLE_AUTOUPDATE` stop it from loading the
   project's config or `~/.claude` skills.
-- Events arrive over the server's SSE stream, and the adapter reconnects after a drop. Any permission request that still comes
-  through is answered with a reject.
+- Before the TUI starts, the studio reads the resolved config from the server and refuses the launch with `config_conflict` when
+  any config source is not the studio's file, an MCP server other than `studio` is configured, an agent allows anything after the
+  studio's rules, a plugin is not built in, or OpenCode has saved permission answers.
+- Each read is asked, and the studio answers it with the same check Claude Code's `Read` goes through (`decideTerminalTool`,
+  lexical and realpath confinement to the project and the studio plugin). An allowed read is answered `once`, never `always`. A
+  symlink in the project that points outside it is rejected.
+- Events arrive over the server's SSE stream, and the adapter reconnects after a drop. Any other permission request is answered
+  with a reject.
 - The studio never offers a Claude Pro or Max sign-in in OpenCode. The Setup card says so (see policy-check §12).
 
 ## What the adapters cannot enforce
@@ -53,10 +63,13 @@ OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-stream.ts`):
 - Codex: `~/.codex/config.toml` still loads, and the studio overrides only the keys it names. The update notice still shows in the
   TUI, and the studio leaves it on.
 - Codex: the read-only sandbox limits writes, not reads. Reads outside the project are blocked by the `PreToolUse` policy only.
-- OpenCode: global config and plugins in `~/.config/opencode` still load, because the studio never edits that folder. A plugin runs
-  inside OpenCode's process, outside the permission config.
-- OpenCode has no blocking pre-tool hook. The deny comes from its permission config and the reject replies, so a bug in OpenCode's
-  permission engine would get past the studio.
+- OpenCode: a managed system config (`/etc/opencode` and its macOS and Windows equivalents) still loads, and the studio cannot
+  switch it off. It should show up as a source that is not the studio's and be refused, but that is untested: the test machine
+  has none.
+- OpenCode has no blocking pre-tool hook. The deny comes from its permission config, the launch check and the studio's replies,
+  so a bug in OpenCode's permission engine would get past the studio.
+- OpenCode's TUI may show a read request for a moment before the studio answers it. If the person answers it there first, the
+  studio's check is skipped for that read. An "always" answer is saved, and the next launch refuses until it is removed.
 - Neither agent's sign-in is checked before launch. A signed-out agent asks for its own login in the terminal, and the studio
   never offers one.
 

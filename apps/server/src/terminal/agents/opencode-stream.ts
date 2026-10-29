@@ -1,9 +1,11 @@
 // Created by The Angelo Umali.
-// OpenCode's server-sent events (GET /api/event) → StudioEvents; every permission request is answered with a reject.
+// OpenCode's server-sent events (GET /api/event) → StudioEvents; a read is allowed once when the studio's confinement allows it, all else is rejected.
 import { z } from "zod";
 import { toolLabel } from "../../agent/tool-names.ts";
 import type { NewStudioEvent } from "../../events/event-bus.ts";
+import { decideTerminalTool, type TerminalToolScope } from "../hook-policy.ts";
 import type { AgentEventContext } from "./agent-adapter.ts";
+import type { OpenCodeServer } from "./opencode-companion.ts";
 
 const OPENCODE_CREDENTIAL = "your OpenCode sign-in";
 const UNNAMED_MODEL_LABEL = "your default model";
@@ -24,15 +26,17 @@ const UsageSchema = z.looseObject({
   cost: z.number().nonnegative(),
   tokens: z.looseObject({ input: z.int(), output: z.int(), reasoning: z.int().default(0), cache: z.looseObject({ read: z.int(), write: z.int() }) }),
 });
-const PermissionSchema = z.looseObject({ id: z.string().min(1), action: z.string().min(1) });
+const PermissionSchema = z.looseObject({ id: z.string().min(1), action: z.string().min(1), resources: z.array(z.string()).default([]) });
+const READ_ACTION = "read";
 
-interface OpenCodeConnection {
-  readonly serverUrl: string;
+export interface OpenCodeConnection extends OpenCodeServer {
   readonly sessionId: string;
-  readonly authorization: string;
-  readonly fetch: typeof fetch;
   readonly reconnectDelayMs: number;
+  /** The same confinement Claude's Read goes through (hook-policy). */
+  readonly scope: TerminalToolScope;
 }
+
+type PermissionRequest = z.infer<typeof PermissionSchema>;
 
 type Publish = (events: readonly NewStudioEvent[]) => void;
 type Envelope = z.infer<typeof EnvelopeSchema>;
@@ -40,7 +44,7 @@ type Envelope = z.infer<typeof EnvelopeSchema>;
 /** Reads the stream until stopped, reconnecting with backoff; returns the unsubscribe. */
 export function subscribeOpenCodeEvents(connection: OpenCodeConnection, context: AgentEventContext, publish: Publish): () => void {
   const controller = new AbortController();
-  const mapper = createEventMapper(connection, context);
+  const mapper = createEventMapper(connection, context, publish);
   const handle = (envelope: Envelope) => {
     const events = mapper.map(envelope);
     if (events.length > 0) publish(events);
@@ -67,8 +71,9 @@ async function readStream(connection: OpenCodeConnection, signal: AbortSignal, h
   if (!response.ok || response.body === null) return false;
   const decoder = new TextDecoder();
   let buffered = "";
-  for await (const chunk of response.body) {
-    buffered += decoder.decode(chunk, { stream: true });
+  const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
+  for (let chunk = await reader.read(); chunk.done !== true; chunk = await reader.read()) {
+    buffered += decoder.decode(chunk.value, { stream: true });
     const frames = buffered.split("\n\n");
     buffered = frames.pop() ?? "";
     frames.forEach((frame) => parseFrame(frame).forEach(handle));
@@ -91,7 +96,7 @@ function parseFrame(frame: string): Envelope[] {
   }
 }
 
-function createEventMapper(connection: OpenCodeConnection, context: AgentEventContext) {
+function createEventMapper(connection: OpenCodeConnection, context: AgentEventContext, publish: Publish) {
   const { projectId } = context;
   const toolNames = new Map<string, string>();
   let hasStarted = false;
@@ -150,7 +155,11 @@ function createEventMapper(connection: OpenCodeConnection, context: AgentEventCo
       ]),
     "permission.asked": (data) =>
       parsedOr(PermissionSchema, data, (permission) => {
-        void rejectPermission(connection, permission.id);
+        if (permission.action === READ_ACTION && permission.resources.length > 0) {
+          void answerRead(connection, permission, (reason) => publish([{ type: "tool.denied", projectId, name: READ_ACTION, reason }]));
+          return [];
+        }
+        void replyPermission(connection, permission.id, "reject");
         return [{ type: "tool.denied", projectId, name: permission.action, reason: `${permission.action} is not available in ZKidz Studio.` }];
       }),
   };
@@ -164,14 +173,23 @@ function createEventMapper(connection: OpenCodeConnection, context: AgentEventCo
   };
 }
 
-async function rejectPermission(connection: OpenCodeConnection, requestId: string): Promise<void> {
+/** Every path must pass; one escape (a symlink out of the project, say) rejects the whole request. */
+async function answerRead(connection: OpenCodeConnection, permission: PermissionRequest, deny: (reason: string) => void): Promise<void> {
+  const decisions = await Promise.all(permission.resources.map((path) => decideTerminalTool("Read", { file_path: path }, connection.scope)));
+  const refusal = decisions.find((decision) => !decision.isAllowed);
+  // "once", never "always": a saved answer would skip this check for later reads.
+  await replyPermission(connection, permission.id, refusal === undefined ? "once" : "reject");
+  if (refusal !== undefined && !refusal.isAllowed) deny(refusal.reason);
+}
+
+async function replyPermission(connection: OpenCodeConnection, requestId: string, decision: "once" | "reject"): Promise<void> {
   const url = `${connection.serverUrl}/api/session/${encodeURIComponent(connection.sessionId)}/permission/${encodeURIComponent(requestId)}/reply`;
-  // The config already denies; a failed reply leaves the request waiting, which still runs nothing.
+  // An unanswered request waits, which still runs nothing.
   await connection
     .fetch(url, {
       method: "POST",
       headers: { authorization: connection.authorization, "content-type": "application/json" },
-      body: JSON.stringify({ decision: "reject" }),
+      body: JSON.stringify({ decision }),
     })
     .catch(() => undefined);
 }

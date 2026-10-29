@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Opt-in (ZKS_LIVE_OPENCODE=1): the user's own signed-in opencode, its companion server and TUI, launched as the adapter says.
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +37,7 @@ afterEach(async () => {
 
 describe.skipIf(!isLiveEnabled)("live opencode in mode T", () => {
   it(
-    "serves the studio config, streams the turn and starts the studio MCP with the token from env",
+    "loads only the studio config on the user's sign-in, streams the turn, starts the studio MCP and refuses a read that escapes the project",
     async () => {
       const adapter = createOpenCodeAdapter();
       const binary = await resolveAgentBinary(adapter.binaryNames, process.env, process.platform);
@@ -61,11 +61,22 @@ describe.skipIf(!isLiveEnabled)("live opencode in mode T", () => {
       filesDir = launch.filesDir;
       if (launch.companion === undefined || adapter.events.kind !== "stream") throw new Error("opencode runs a companion server and streams its events");
 
-      companion = spawn(launch.companion.file, launch.companion.args, { cwd: launch.cwd, env: launch.companion.env, stdio: "ignore", shell: false });
-      await launch.companion.isReady(AbortSignal.timeout(START_WAIT_MS));
+      const spawned = spawn(launch.companion.file, launch.companion.args, {
+        cwd: launch.cwd,
+        env: launch.companion.env,
+        stdio: ["ignore", "pipe", "ignore"],
+        shell: false,
+      });
+      companion = spawned;
+      // Passing means the user's own ~/.config/opencode (MCP servers, plugins, permissions) was not loaded.
+      const connected = await launch.companion.connect(spawned.stdout, AbortSignal.timeout(START_WAIT_MS));
       const events: NewStudioEvent[] = [];
-      unsubscribe = adapter.events.subscribe(launch, { projectId: PROJECT_ID }, (published) => events.push(...published));
-      pty = await createPtyHost({ claudePath: binary }).launch(SESSION_ID, { argv: [launch.file, ...launch.args], cwd: launch.cwd, env: launch.env });
+      unsubscribe = adapter.events.subscribe(connected, { projectId: PROJECT_ID }, (published) => events.push(...published));
+      pty = await createPtyHost({ claudePath: binary }).launch(SESSION_ID, {
+        argv: [connected.file, ...connected.args],
+        cwd: connected.cwd,
+        env: connected.env,
+      });
       await waitFor(() => events.some((event) => event.type === "session.started"), START_WAIT_MS);
 
       // The TUI drops keys while it first draws; typing is retried until the server sees the prompt.
@@ -80,6 +91,20 @@ describe.skipIf(!isLiveEnabled)("live opencode in mode T", () => {
       expect(events).toContainEqual(expect.objectContaining({ type: "prompt.submitted", text: "Say ok." }));
       // The bridge only answers the MCP token, so a request here means {env:ZKS_MCP_TOKEN} was resolved by opencode.
       expect(bridge.requests.map((request) => request.path)).toContain("/mcp/tools");
+
+      const outsideFile = join(await mkdtemp(join(tmpdir(), "zks-outside-")), "secret.txt");
+      await writeFile(outsideFile, "not the project's");
+      await symlink(outsideFile, join(projectDir, "link.txt"));
+      const serverUrl = connected.args[connected.args.indexOf("--server") + 1];
+      const sessionId = connected.args.at(-1);
+      const password = connected.env["OPENCODE_SERVER_PASSWORD"] ?? "";
+      const asked = await fetch(`${serverUrl}/api/session/${sessionId}/permission`, {
+        method: "POST",
+        headers: { authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "read", resources: [join(projectDir, "link.txt")] }),
+      });
+      expect(asked.ok).toBe(true);
+      await waitFor(() => events.some((event) => event.type === "tool.denied" && event.name === "read"), START_WAIT_MS);
     },
     4 * START_WAIT_MS,
   );

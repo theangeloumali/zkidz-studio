@@ -1,77 +1,32 @@
 // Created by The Angelo Umali.
-import { mkdtemp, readFile, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { NewStudioEvent } from "../../../src/events/event-bus.ts";
-import type { PreparedLaunch } from "../../../src/terminal/agents/agent-adapter.ts";
-import { createOpenCodeAdapter, OPENCODE_PERMISSIONS } from "../../../src/terminal/agents/opencode.ts";
+import { OPENCODE_PERMISSIONS } from "../../../src/terminal/agents/opencode-companion.ts";
 import { MCP_SERVER_PATH } from "../../../src/terminal/session-files.ts";
-import { waitFor } from "../stub-claude.ts";
-
-const SESSION_ID = "0b0f6c0e-1f9b-4c1e-9d55-1a2b3c4d5e6f";
-const PROJECT_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-const PLUGIN_DIR = fileURLToPath(new URL("../../../../../plugin/", import.meta.url));
-const TOKENS = { hookToken: "hook-secret", mcpToken: "mcp-secret", mcpUrl: "http://127.0.0.1:4100/mcp/x" };
-const PARENT_ENV = { PATH: "/usr/bin", HOME: "/home/user", XDG_DATA_HOME: "/home/user/.local/share", GEMINI_API_KEY: "parent" };
-const PORT = 47123;
-const SERVER_URL = `http://127.0.0.1:${PORT}`;
-const BINARY = "/opt/opencode/bin/opencode";
-const modeOf = async (path: string) => (await stat(path)).mode & 0o777;
-
-type FetchCall = { readonly url: string; readonly init: RequestInit | undefined };
-
-async function launchRequest(overrides: { resumeSessionId?: string; model?: string } = {}) {
-  const projectDir = await mkdtemp(join(tmpdir(), "zks-proj-"));
-  return {
-    sessionId: SESSION_ID,
-    projectId: PROJECT_ID,
-    projectDir,
-    runDir: await mkdtemp(join(tmpdir(), "zks-run-")),
-    appPort: 4100,
-    nodePath: "/usr/bin/node",
-    rulesText: "RULES",
-    pluginDir: PLUGIN_DIR,
-    studioToolNames: [],
-    ...overrides,
-  };
-}
-
-function sseResponse(envelopes: readonly unknown[]): Response {
-  const body = envelopes.map((envelope) => `data: ${JSON.stringify(envelope)}\n\n`).join("");
-  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
-}
-
-function fakeFetch(streams: Response[][]): { readonly fetch: typeof fetch; readonly calls: FetchCall[] } {
-  const calls: FetchCall[] = [];
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    calls.push({ url, init });
-    if (url.endsWith("/api/event")) return streams.shift()?.[0] ?? new Promise<Response>(() => undefined);
-    return new Response("{}", { status: 200 });
-  };
-  return { fetch: fetchImpl, calls };
-}
-
-const adapterWith = (fetchImpl: typeof fetch = fakeFetch([]).fetch) =>
-  createOpenCodeAdapter({ parentEnv: PARENT_ENV, findFreePort: async () => PORT, fetch: fetchImpl, reconnectDelayMs: 1 });
+import {
+  TOKENS,
+  SERVER_URL,
+  BINARY,
+  RESUMED_SESSION,
+  STUDIO_RULES,
+  modeOf,
+  launchRequest,
+  studioSources,
+  fakeServer,
+  printed,
+  silent,
+  adapterWith,
+  connectWith,
+} from "./opencode-fixtures.ts";
 
 describe("opencode adapter: launch", () => {
-  it("attaches the TUI to a password-protected local server that loads only the studio's config", async () => {
+  it("starts a password-protected local server on a port it picks itself, loading only the studio's config", async () => {
     const request = await launchRequest({ model: "openai/gpt-5.6-luna" });
     const launch = await adapterWith().prepare(request, TOKENS, BINARY);
     const password = launch.env["OPENCODE_SERVER_PASSWORD"] ?? "";
-    const isolation = {
-      OPENCODE_CONFIG_DIR: launch.filesDir,
-      OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-      OPENCODE_DISABLE_CLAUDE_CODE: "1",
-      OPENCODE_DISABLE_AUTOUPDATE: "1",
-    };
 
     expect(password.length).toBeGreaterThanOrEqual(32);
-    expect(launch.file).toBe(BINARY);
-    expect(launch.args).toEqual([request.projectDir, "--server", SERVER_URL, "--session", expect.stringMatching(/^ses_[0-9A-Za-z]{26}$/)]);
     expect(launch.env).toEqual({
       PATH: "/usr/bin",
       HOME: "/home/user",
@@ -79,15 +34,20 @@ describe("opencode adapter: launch", () => {
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
       OPENCODE_SERVER_PASSWORD: password,
-      ...isolation,
+      // The user's ~/.config/opencode is never a config source; the sign-in under XDG_DATA_HOME still is.
+      XDG_CONFIG_HOME: launch.filesDir,
+      OPENCODE_CONFIG_DIR: launch.filesDir,
+      OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+      OPENCODE_DISABLE_CLAUDE_CODE: "1",
+      OPENCODE_DISABLE_AUTOUPDATE: "1",
     });
     expect(launch.companion?.file).toBe(BINARY);
-    expect(launch.companion?.args).toEqual(["serve", "--hostname", "127.0.0.1", "--port", String(PORT)]);
+    expect(launch.companion?.args).toEqual(["serve", "--hostname", "127.0.0.1", "--port", "0"]);
     expect(launch.companion?.env).toEqual({ ...launch.env, ZKS_MCP_TOKEN: "mcp-secret", ZKS_MCP_URL: TOKENS.mcpUrl });
     expect([...launch.args, ...(launch.companion?.args ?? [])].join(" ")).not.toMatch(new RegExp(`${password}|mcp-secret|hook-secret`));
   });
 
-  it("writes a deny-by-default config whose only tools are the studio's and project reads", async () => {
+  it("writes a deny-by-default config whose only tools are the studio's and reads the studio confirms", async () => {
     const launch = await adapterWith().prepare(await launchRequest({ model: "openai/gpt-5.6-luna" }), TOKENS, BINARY);
     const configPath = join(launch.filesDir, "opencode.json");
     const instructionsPath = join(launch.filesDir, "instructions.md");
@@ -107,149 +67,89 @@ describe("opencode adapter: launch", () => {
       permission: OPENCODE_PERMISSIONS,
       instructions: [instructionsPath],
     });
-    expect(OPENCODE_PERMISSIONS).toEqual({ "*": "deny", "studio_*": "allow", read: "allow", external_directory: "deny" });
+    expect(OPENCODE_PERMISSIONS).toEqual({ "*": "deny", "studio_*": "allow", read: "ask", external_directory: "deny" });
     expect(await readFile(instructionsPath, "utf8")).toContain("read_skill");
     expect(await modeOf(launch.filesDir)).toBe(0o700);
     expect(await modeOf(configPath)).toBe(0o600);
     expect(await modeOf(instructionsPath)).toBe(0o600);
   });
 
+  it("attaches the TUI to the address its own server printed, after checking that server with the password", async () => {
+    const server = fakeServer();
+    const { prepared, connect } = await connectWith(server, { output: printed("starting\nserver listening on http://127.0.", "0.1:47123\n") });
+    const launch = await connect();
+    const password = prepared.env["OPENCODE_SERVER_PASSWORD"] ?? "";
+
+    expect(launch?.args).toEqual([prepared.cwd, "--server", SERVER_URL, "--session", RESUMED_SESSION]);
+    expect(launch?.env).toEqual(prepared.env);
+    expect(server.calls.map((call) => new URL(call.url).pathname).sort()).toEqual(["/api/agent", "/api/config", "/api/permission/saved", "/api/plugin"]);
+    server.calls.forEach((call) => {
+      expect(call.url.startsWith(SERVER_URL)).toBe(true);
+      expect(new Headers(call.init?.headers).get("authorization")).toBe(`Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`);
+    });
+  });
+
+  it("sends nothing to any port until its own server names one, and never trusts a non-loopback address", async () => {
+    const server = fakeServer();
+    const { connect } = await connectWith(server, { output: printed("server listening on http://0.0.0.0:47123\n") });
+
+    await expect(connect()).rejects.toMatchObject({ name: "AgentLaunchError", reason: "companion_failed" });
+    expect(server.calls).toEqual([]);
+  });
+
+  it("gives up when the server stops or the session is cancelled before it listens", async () => {
+    const stopped = await connectWith(fakeServer(), { output: printed("Error: something broke\n") });
+    await expect(stopped.connect()).rejects.toMatchObject({ reason: "companion_failed" });
+
+    const cancelled = await connectWith(fakeServer());
+    await expect(cancelled.prepared.companion?.connect(silent(), AbortSignal.timeout(50))).rejects.toThrow();
+  });
+
   it("resumes the user's opencode session by its id", async () => {
-    const launch = await adapterWith().prepare(await launchRequest({ resumeSessionId: "ses_e7a5fa25affeTP3sSSc7cugkTa" }), TOKENS, BINARY);
-    expect(launch.args.at(-1)).toBe("ses_e7a5fa25affeTP3sSSc7cugkTa");
-  });
-
-  it("waits for the server to answer with the password before the TUI attaches", async () => {
-    const calls: FetchCall[] = [];
-    let attempts = 0;
-    const fetchImpl: typeof fetch = async (input, init) => {
-      calls.push({ url: String(input), init });
-      attempts += 1;
-      if (attempts < 3) throw new TypeError("connection refused");
-      return new Response("{}", { status: 200 });
-    };
-    const launch = await adapterWith(fetchImpl).prepare(await launchRequest(), TOKENS, BINARY);
-    await launch.companion?.isReady(new AbortController().signal);
-
-    const password = launch.env["OPENCODE_SERVER_PASSWORD"] ?? "";
-    expect(calls.at(-1)?.url).toBe(`${SERVER_URL}/api/config`);
-    expect(new Headers(calls.at(-1)?.init?.headers).get("authorization")).toBe(`Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`);
-  });
-
-  it("gives up waiting when the session is cancelled", async () => {
-    const refused: typeof fetch = async () => Promise.reject(new TypeError("connection refused"));
-    const launch = await adapterWith(refused).prepare(await launchRequest(), TOKENS, BINARY);
-    await expect(launch.companion?.isReady(AbortSignal.timeout(50))).rejects.toThrow();
+    const launch = await adapterWith().prepare(await launchRequest({ resumeSessionId: RESUMED_SESSION }), TOKENS, BINARY);
+    expect(launch.args.at(-1)).toBe(RESUMED_SESSION);
   });
 });
 
-describe("opencode adapter: events", () => {
-  async function subscribeWith(
-    streams: Response[][],
-  ): Promise<{
-    readonly events: NewStudioEvent[];
-    readonly calls: FetchCall[];
-    readonly launch: PreparedLaunch;
-    readonly stop: () => void;
-    readonly sessionId: string;
-  }> {
-    const fake = fakeFetch(streams);
-    const adapter = adapterWith(fake.fetch);
-    const launch = await adapter.prepare(await launchRequest(), TOKENS, BINARY);
-    if (adapter.events.kind !== "stream") throw new Error("opencode reports through its event stream");
-    const events: NewStudioEvent[] = [];
-    const stop = adapter.events.subscribe(launch, { projectId: PROJECT_ID, model: "openai/gpt-5.6-luna" }, (published) => events.push(...published));
-    return { events, calls: fake.calls, launch, stop, sessionId: launch.args.at(-1) ?? "" };
-  }
+describe("opencode adapter: resolved config", () => {
+  const refusals: ReadonlyArray<readonly [string, (answers: Map<string, unknown>, filesDir: string) => void]> = [
+    [
+      "a config file outside the studio's folder",
+      (answers, filesDir) =>
+        answers.set("/api/config", [...studioSources(filesDir), { type: "document", path: "/home/user/.config/opencode/opencode.json", info: {} }]),
+    ],
+    [
+      "config passed in through the environment",
+      (answers, filesDir) =>
+        answers.set("/api/config", [...studioSources(filesDir), { type: "document", info: { mcp: { servers: { extra: { type: "local" } } } } }]),
+    ],
+    [
+      "an MCP server other than the studio's in the studio's own file",
+      (answers, filesDir) =>
+        answers.set("/api/config", [{ type: "document", path: join(filesDir, "opencode.json"), info: { mcp: { servers: { studio: {}, extra: {} } } } }]),
+    ],
+    [
+      "an agent allowed a tool after the studio's rules",
+      (answers) => answers.set("/api/agent", { data: [{ id: "build", permissions: [...STUDIO_RULES, { action: "shell", resource: "*", effect: "allow" }] }] }),
+    ],
+    [
+      "an agent without the studio's rules",
+      (answers) => answers.set("/api/agent", { data: [{ id: "reviewer", permissions: [{ action: "*", resource: "*", effect: "allow" }] }] }),
+    ],
+    [
+      "a plugin the user installed",
+      (answers) => answers.set("/api/plugin", { data: [{ id: "opencode-anthropic-auth", source: { type: "npm" }, state: { status: "active" } }] }),
+    ],
+    ["a saved approval that would answer reads before the studio sees them", (answers) => answers.set("/api/permission/saved", { data: [{ id: "prm_1" }] })],
+  ];
 
-  it("maps a turn: prompt, tool call, result, text, usage and the end", async () => {
-    const { events, stop, sessionId } = await subscribeWith([]);
-    stop();
-    const turn = await subscribeWithTurn(sessionId);
-    await waitFor(() => turn.events.some((event) => event.type === "terminal.state" && event.state === "ready" && turn.events.length > 3), 5_000);
-    turn.stop();
-    expect(events).toEqual([]);
-    expect(turn.events).toEqual([
-      { type: "session.started", projectId: PROJECT_ID, sessionId, model: "openai/gpt-5.6-luna", credential: "your OpenCode sign-in", skills: [] },
-      { type: "terminal.state", projectId: PROJECT_ID, state: "ready" },
-      { type: "prompt.submitted", projectId: PROJECT_ID, text: "cut it" },
-      { type: "terminal.state", projectId: PROJECT_ID, state: "working" },
-      {
-        type: "tool.called",
-        projectId: PROJECT_ID,
-        toolUseId: "call_1",
-        name: "mcp__studio__project_info",
-        label: expect.any(String),
-        input: { verbose: true },
-      },
-      { type: "tool.finished", projectId: PROJECT_ID, toolUseId: "call_1", ok: true, summary: "two clips" },
-      { type: "tool.called", projectId: PROJECT_ID, toolUseId: "call_2", name: "read", label: expect.any(String), input: { filePath: "/etc/passwd" } },
-      { type: "tool.finished", projectId: PROJECT_ID, toolUseId: "call_2", ok: false, summary: "Permission denied: external_directory" },
-      { type: "tool.denied", projectId: PROJECT_ID, name: "read", reason: "Permission denied: external_directory" },
-      { type: "narration", projectId: PROJECT_ID, text: "Two clips found." },
-      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "opencode", costUsd: 0, inputTokens: 2748, outputTokens: 396, cacheTokens: 3584 },
-      { type: "terminal.state", projectId: PROJECT_ID, state: "ready" },
-    ]);
+  it.each(refusals)("refuses to launch with %s", async (_label, edit) => {
+    const { connect } = await connectWith(fakeServer(), { edit });
+    await expect(connect()).rejects.toMatchObject({ name: "AgentLaunchError", reason: "config_conflict" });
   });
 
-  async function subscribeWithTurn(sessionId: string) {
-    const scoped = (type: string, data: Record<string, unknown>) => ({ id: `evt_${type}`, type, data: { sessionID: sessionId, ...data } });
-    const turnEnvelopes = [
-      { id: "evt_0", type: "server.connected", data: {} },
-      scoped("session.inbox.enqueued", { item: { type: "user", payload: { text: "cut it" } } }),
-      scoped("session.execution.started", {}),
-      scoped("session.tool.input.started", { id: "call_1", name: "studio_project_info" }),
-      scoped("session.tool.called", { id: "call_1", input: { verbose: true } }),
-      scoped("session.tool.success", { id: "call_1", content: [{ type: "text", text: "two clips" }] }),
-      scoped("session.tool.input.started", { id: "call_2", name: "read" }),
-      scoped("session.tool.called", { id: "call_2", input: { filePath: "/etc/passwd" } }),
-      scoped("session.tool.failed", { id: "call_2", error: { type: "permission.rejected", message: "Permission denied: external_directory" } }),
-      { id: "evt_other", type: "session.text.ended", data: { sessionID: "ses_someoneelse0000000000000", text: "not ours" } },
-      scoped("session.text.ended", { text: "Two clips found.", native: { phase: "final_answer" } }),
-      scoped("session.usage.updated", { cost: 0, tokens: { input: 2748, output: 218, reasoning: 178, cache: { read: 3584, write: 0 } } }),
-      scoped("session.execution.succeeded", {}),
-    ];
-    return subscribeWithSession(sessionId, [[sseResponse(turnEnvelopes)]]);
-  }
-
-  async function subscribeWithSession(sessionId: string, streams: Response[][]) {
-    const fake = fakeFetch(streams);
-    const adapter = adapterWith(fake.fetch);
-    const launch = await adapter.prepare(await launchRequest({ resumeSessionId: sessionId }), TOKENS, BINARY);
-    if (adapter.events.kind !== "stream") throw new Error("opencode reports through its event stream");
-    const events: NewStudioEvent[] = [];
-    const stop = adapter.events.subscribe(launch, { projectId: PROJECT_ID, model: "openai/gpt-5.6-luna" }, (published) => events.push(...published));
-    return { events, calls: fake.calls, stop };
-  }
-
-  it("rejects every permission request and reports the tool as denied", async () => {
-    const sessionId = "ses_e7a5fa25affeTP3sSSc7cugkTa";
-    const asked = { id: "evt_1", type: "permission.asked", data: { id: "per_1", sessionID: sessionId, action: "bash", resources: ["*"], metadata: {} } };
-    const { events, calls, stop } = await subscribeWithSession(sessionId, [[sseResponse([asked])]]);
-    await waitFor(() => calls.some((call) => call.url.includes("/permission/")), 5_000);
-    stop();
-
-    const reply = calls.find((call) => call.url.includes("/permission/"));
-    expect(reply?.url).toBe(`${SERVER_URL}/api/session/${sessionId}/permission/per_1/reply`);
-    expect(reply?.init?.method).toBe("POST");
-    expect(JSON.parse(String(reply?.init?.body))).toEqual({ decision: "reject" });
-    expect(events).toContainEqual({ type: "tool.denied", projectId: PROJECT_ID, name: "bash", reason: "bash is not available in ZKidz Studio." });
-  });
-
-  it("reconnects after the stream drops, without starting the session twice", async () => {
-    const sessionId = "ses_e7a5fa25affeTP3sSSc7cugkTa";
-    const connected = { id: "evt_0", type: "server.connected", data: {} };
-    const later = { id: "evt_2", type: "session.execution.started", data: { sessionID: sessionId } };
-    const { events, calls, stop } = await subscribeWithSession(sessionId, [
-      [sseResponse([connected])],
-      [new Response("oops", { status: 503 })],
-      [sseResponse([connected, later])],
-    ]);
-    await waitFor(() => events.some((event) => event.type === "terminal.state" && event.state === "working"), 5_000);
-    stop();
-
-    // The third stream also ends, so a fourth connection may already be open.
-    expect(calls.filter((call) => call.url.endsWith("/api/event")).length).toBeGreaterThanOrEqual(3);
-    expect(events.filter((event) => event.type === "session.started")).toHaveLength(1);
+  it("fails closed when the server answers in a shape it does not know", async () => {
+    const { connect } = await connectWith(fakeServer(), { edit: (answers) => answers.set("/api/agent", { agents: "?" }) });
+    await expect(connect()).rejects.toMatchObject({ reason: "companion_failed" });
   });
 });

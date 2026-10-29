@@ -7,6 +7,7 @@
 //   … --stills auto --max 4                                → only the earliest 4 auto times are drawn
 //   … --events                                             → edl/<video>.sfx.json only (for sfx.py)
 //   … --theme minimal                                       → draws in themes/minimal's look (default themes/zkidz)
+//   … --style work/style.json                               → draws the style's theme under its colours and faces
 //   … --layer behind [--stills …]                          → frames/<video>.behind/ (stills/<cues>.hf.behind/): only the
 //                                                            depth "behind" cues, which render_final.py lays under the matte
 //   node <engine>/hf/render.js --brand-intro landscape --fps 30000/1001 --out DIR   → DIR/preroll/, DIR/split/ (brand_intro.py)
@@ -242,22 +243,31 @@ async function renderBrandIntro(orientation, rate, out) {
   console.log(`brand intro (${orientation}, ${rate} fps): ${preroll.frames} pre-roll + ${split.frames} split frames → ${out}`);
 }
 
+// A missing flag fails rather than taking the next argument: --out's preroll/ and split/ are emptied.
+function optionValue(args, name) {
+  const value = args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
+  if (value === undefined || value.startsWith("--")) throw new Error(`${name} is required`);
+  return value;
+}
+
+// theme.js checks the style before any of it reaches Chrome.
+function themeFrom(args) {
+  if (!args.includes("--style")) return args.includes("--theme") ? optionValue(args, "--theme") : DEFAULT_THEME;
+  const style = JSON.parse(fs.readFileSync(optionValue(args, "--style"), "utf8"));
+  return { id: style.theme, style };
+}
+
 async function main() {
   // Chrome inherits this: overlay rendering must not starve the desktop.
   os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL);
   const [target, ...args] = process.argv.slice(2);
-  // A missing flag fails rather than taking the next argument: --out's preroll/ and split/ are emptied.
-  const option = (name) => {
-    const value = args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
-    if (value === undefined || value.startsWith("--")) throw new Error(`${name} is required`);
-    return value;
-  };
+  const option = (name) => optionValue(args, name);
   if (target === "--brand-intro") return renderBrandIntro(args[0], option("--fps"), path.resolve(option("--out")));
-  const theme = args.includes("--theme") ? option("--theme") : DEFAULT_THEME;
+  const theme = themeFrom(args);
   if (args.includes("--events")) await progress.track(target.split(":")[0], "events", () => build(target, { events: true, theme }));
   else {
     const layer = args.includes("--layer") ? option("--layer") : "front";
-    const times = args.filter((arg, index) => !arg.startsWith("--") && !["--layer", "--theme", "--max"].includes(args[index - 1]));
+    const times = args.filter((arg, index) => !arg.startsWith("--") && !["--layer", "--theme", "--style", "--max"].includes(args[index - 1]));
     const max = args.includes("--max") ? Number(option("--max")) : Infinity;
     if (args.includes("--stills")) await renderStills(target, times, args.includes("--guides"), layer, theme, args.includes("--settled"), max);
     else await renderFrames(target, layer, theme);
@@ -270,4 +280,4 @@ if (require.main === module)
     process.exit(1);
   });
 
-module.exports = { failureText, framesCaptured, stillTimesFor, unsettledStills };
+module.exports = { failureText, framesCaptured, stillTimesFor, themeFrom, unsettledStills };

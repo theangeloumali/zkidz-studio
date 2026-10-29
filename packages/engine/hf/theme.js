@@ -38,7 +38,36 @@ function validateTheme(theme) {
   return theme;
 }
 
-function loadTheme(id = DEFAULT_THEME) {
+// A project style (work/style.json) may only recolour tokens, swap bundled faces and turn boil: never code, URLs or paths.
+const STYLE_KEYS = ["theme", "tokens", "type", "boil"];
+const HEX_COLOUR = /^#[0-9a-fA-F]{6}$/;
+
+function applyStyle(pack, style) {
+  const fail = (message) => {
+    throw new Error(`theme ${pack.id} style: ${message}`);
+  };
+  if (!isRecord(style)) fail("a style is a JSON object");
+  const extraKey = Object.keys(style).find((key) => !STYLE_KEYS.includes(key));
+  if (extraKey !== undefined) fail(`${extraKey} cannot be set by a style (${STYLE_KEYS.join(", ")})`);
+  if (style.theme !== pack.id) fail(`it names theme ${JSON.stringify(style.theme)}`);
+  const styled = structuredClone(pack);
+  for (const [name, value] of Object.entries(style.tokens ?? {})) {
+    if (!Object.hasOwn(pack.tokens, name)) fail(`the pack has no token ${name}`);
+    if (typeof value !== "string" || !HEX_COLOUR.test(value)) fail(`${name} must be a #rrggbb colour`);
+    styled.tokens[name] = value;
+  }
+  for (const [role, family] of Object.entries(style.type ?? {})) {
+    if (!TYPE_ROLES.includes(role)) fail(`type role ${role} is not one of ${TYPE_ROLES.join(", ")}`);
+    styled.type[role] = { ...pack.type[role], family };
+  }
+  if (style.boil !== undefined) styled.boil = style.boil;
+  return validateTheme(styled);
+}
+
+/** An id draws the pack as it is; `{ id, style }` draws it under a project's style. */
+function loadTheme(ref = DEFAULT_THEME) {
+  if (isRecord(ref)) return applyStyle(loadTheme(ref.id), ref.style);
+  const id = ref;
   if (typeof id !== "string" || !THEME_ID.test(id)) throw new Error(`${JSON.stringify(id)} is not a theme id (lowercase letters, digits and -)`);
   const file = path.join(THEMES_DIR, id, "theme.json");
   if (!fs.existsSync(file)) throw new Error(`no theme ${id} in the repo's themes/ folder`);

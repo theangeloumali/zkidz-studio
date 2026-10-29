@@ -79,7 +79,7 @@ function parsePort(envName: string, rawPort: string | undefined, defaultPort: nu
 }
 
 /** ZKS_FFMPEG wins; otherwise the same lookup `zks setup` installs into (ZKS_HOME/tools, or Homebrew on macOS). */
-function pinnedFfmpegPath(env: Environment, studioHome: string): string {
+export function pinnedFfmpegPath(env: Environment, studioHome: string): string {
   const overridePath = env[ENV.ffmpeg];
   if (overridePath) return overridePath;
   const ffmpegPath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, "ffmpeg");

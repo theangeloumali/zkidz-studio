@@ -3,7 +3,8 @@
 # Card tiers in the zkidz theme
 
 `list_cue_kinds` returns each kind with its schema and `maxChars`, not its tier. This table is the tier of every kind in the
-zkidz theme manifest (`themes/zkidz/index.json`); a test keeps the two in step.
+zkidz theme manifest (`themes/zkidz/index.json`) that `list_cue_kinds` offers; a test keeps the two in step. Image and
+chart kinds the manifest draws but the cue schema cannot carry yet are left out, because no tool can add them.
 
 ## `core`
 
@@ -42,15 +43,8 @@ Allowed by `zkidz` and `loud`.
 
 Allowed by `loud` only.
 
-| Kind            | Purpose                                                                 |
-| --------------- | ----------------------------------------------------------------------- |
-| `backdrop`      | A full-frame image drawn behind the person matte.                       |
-| `chatCard`      | A chat exchange as bubbles, quoting only the cue's words.               |
-| `frameEscape`   | Paper over the frame except a window, so the person steps out of it.    |
-| `headlineStack` | Headlines stacking as paper slips, the last one in the accent.          |
-| `lineChart`     | A line drawing on with a counting value at its tip and one focus point. |
-| `paperCutout`   | A cut-out image on paper, behind or in front of the person.             |
-| `phoneFrame`    | A phone bezel around a screen recording insert.                         |
-| `pipeline`      | Exactly three stations of a process, drawn in turn.                     |
-| `splitFlow`     | One idea splitting into two outcomes.                                   |
-| `vsCard`        | Two options side by side for a comparison.                              |
+| Kind        | Purpose                                             |
+| ----------- | --------------------------------------------------- |
+| `pipeline`  | Exactly three stations of a process, drawn in turn. |
+| `splitFlow` | One idea splitting into two outcomes.               |
+| `vsCard`    | Two options side by side for a comparison.          |

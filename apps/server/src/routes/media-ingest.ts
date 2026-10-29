@@ -27,7 +27,7 @@ interface UploadRequest {
   readonly body: ReadableStream<Uint8Array>;
 }
 
-interface StagedUpload {
+export interface StagedUpload {
   readonly assetId: string;
   readonly partPath: string;
   /** Where the file will live under its project folder: media/raw/<assetId>.<ext>. */

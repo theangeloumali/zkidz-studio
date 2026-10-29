@@ -25,6 +25,7 @@ import { registerMediaStreamRoute } from "./routes/media-stream.ts";
 import { registerMediaRoutes } from "./routes/media.ts";
 import { registerProjectRoutes } from "./routes/projects.ts";
 import { registerRuleRoutes } from "./rules/routes.ts";
+import { registerStyleRoutes } from "./routes/style.ts";
 import type { Security } from "./security/index.ts";
 import { registerSpecRoutes } from "./specs/spec-routes.ts";
 
@@ -62,6 +63,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
+  registerStyleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);

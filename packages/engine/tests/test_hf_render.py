@@ -148,6 +148,21 @@ class HyperFramesRenderTests(unittest.TestCase):
         self.assertEqual(len(stills), len(settled))
         self.assertFalse((self.work / "hf" / "gallery").exists(), "stills must not write the folder a frame render reads")
 
+    def test_a_project_style_recolours_a_still_in_chrome(self):
+        # Real chain, no fake: --style reaches theme.js and the page draws the paper card in the style's colour.
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=gray:size=1080x1920:rate=30000/1001:duration=2",
+                        "-c:v", "libx264", "-preset", "ultrafast", str(self.work / "mezz" / "tiny.mp4")], check=True)
+        style = self.work / "style.json"
+        style.write_text(json.dumps({"theme": "zkidz", "tokens": {"paper": "#ff0000"}}), encoding="utf-8")
+        red_counts = []
+        for flags in ([], ["--style", str(style)]):
+            result = self.render("tiny", "--stills", "1", *flags)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            pixels = rgba(self.work / "stills" / "tiny.hf" / "t1.png")
+            red_counts.append(int(((pixels[..., 0] > 230) & (pixels[..., 1] < 30) & (pixels[..., 2] < 30)).sum()))
+        self.assertEqual(red_counts[0], 0)
+        self.assertGreater(red_counts[1], 1000)
+
     def test_gallery_sounds_are_the_canvas_pages_through_the_effects_sound_design(self):
         # The canvas renderer is not shipped here: its --events output for this gallery is a recorded fixture.
         canvas_events = json.loads(CANVAS_GALLERY_EVENTS.read_text(encoding="utf-8"))

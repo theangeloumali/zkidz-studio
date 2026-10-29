@@ -19,6 +19,8 @@ export const projectInfo = defineTool({
     clips: z.array(
       z.strictObject({ assetId: IdSchema, name: z.string(), durationS: z.number(), fps: FrameRateSchema, rotation: RotationSchema, hdr: z.boolean() }),
     ),
+    // A reference is a look to match (sample_reference), never footage to cut.
+    references: z.array(z.strictObject({ assetId: IdSchema, name: z.string(), durationS: z.number() })),
     theme: z.string(),
     rules: z.array(z.string()),
   }),

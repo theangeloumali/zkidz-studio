@@ -23,10 +23,16 @@ def master_path(work, video, draft, uhd):
     return work / "out" / f"{video}{'-4k' if uhd else '-draft' if draft else ''}.mp4"
 
 
+def style_flags():
+    """--style when the project set one (work/style.json, written by the server); none draws the theme pack as it is."""
+    style = pipeline.WORK / "style.json"
+    return ["--style", str(style)] if style.exists() else []
+
+
 def render_stills(video, names, times, *flags):
     """hf/render.js --stills of those cue sheets, composited on the proxy, into stills/<names>.hf/t<at>.png. A refusal
     (a cover title still animating in) is a gate naming its reason."""
-    command = ["node", str(HF_DIR / "render.js"), f"{video}:{'+'.join(names)}", "--stills", *times, *flags]
+    command = ["node", str(HF_DIR / "render.js"), f"{video}:{'+'.join(names)}", "--stills", *times, *flags, *style_flags()]
     result = subprocess.run(command, stderr=subprocess.PIPE, text=True)
     sys.stderr.write(result.stderr)
     if result.returncode:
@@ -45,9 +51,10 @@ def cue_sheet_names(video, work):
 def draw_overlays(video):
     """The SFX sheet first, since sfx.py picks the intro's insert that the overlay frames are then drawn around."""
     target = f"{video}:{'+'.join(cue_sheet_names(video, pipeline.WORK))}"
-    subprocess.run(["node", str(HF_DIR / "render.js"), target, "--events"], check=True)
+    style = style_flags()
+    subprocess.run(["node", str(HF_DIR / "render.js"), target, "--events", *style], check=True)
     sfx.main(video)
-    subprocess.run(["node", str(HF_DIR / "render.js"), target], check=True)
+    subprocess.run(["node", str(HF_DIR / "render.js"), target, *style], check=True)
 
 
 def render_master(video, quality, source, backend=None, edit=edit_stage, preflight=render_final.preflight, overlays=draw_overlays,

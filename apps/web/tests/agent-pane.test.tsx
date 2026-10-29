@@ -5,6 +5,7 @@ import type { StudioEvent } from "@zks/shared";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 import { AgentPane } from "../src/agent/agent-pane.tsx";
+import { PROJECT_EDITS_PATH, makeOpenEdit } from "./edits/fixtures.ts";
 import { SAMPLE_EVENTS, sampleEvent } from "./event-fixtures.ts";
 import { PROJECT_ID, jsonResponse } from "./fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "./render.tsx";
@@ -29,8 +30,9 @@ function renderPane(events: readonly StudioEvent[], mode: "api_key" | "terminal"
   return renderWithProviders(<AgentPane projectId={PROJECT_ID} events={events} mode={mode} />);
 }
 
-function stubAgentApi() {
+function stubAgentApi(extra: Parameters<typeof stubFetch>[0] = {}) {
   return stubFetch({
+    ...extra,
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     [`POST ${DECISIONS}`]: () => jsonResponse({ ok: true }),
     [`POST ${CUT_CANDIDATES}`]: () => jsonResponse({ ok: true }),
@@ -134,11 +136,12 @@ describe("AgentPane", () => {
     expect(within(usage).getByRole("meter")).toHaveAttribute("aria-valuenow", "80");
   });
 
-  it("offers the Terminal tab and hides the cost only in terminal mode", () => {
-    stubAgentApi();
-    renderPane([sampleEvent("turn.completed", { costUsd: 0.42 })], "terminal");
+  // The owner reversed plan §6.13: every mode shows the open edit's estimate.
+  it("offers the Terminal tab and shows the open edit's totals in terminal mode too", async () => {
+    stubAgentApi({ [`GET ${PROJECT_EDITS_PATH}`]: () => jsonResponse({ edits: [makeOpenEdit()] }) });
+    renderPane([sampleEvent("prompt.submitted")], "terminal");
     expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
-    expect(screen.queryByText(/this turn/)).toBeNull();
+    expect(await screen.findByText("This edit · 14 min · ≈ $0.62 estimate · 210k tokens")).toBeInTheDocument();
   });
 
   it("opens the project's terminal before Claude Code has started, and restarts it on request", async () => {

@@ -7,6 +7,7 @@ import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
 import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
+import { registerEdits } from "./edits/routes.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
@@ -62,6 +63,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
+  registerEdits(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);

@@ -3,6 +3,7 @@
 import type { StudioToolContract } from "./define.ts";
 import { addCue, listCueKinds, makeCaptionPhrases, proposeCuts, removeCue, setCaptions, setCuts, setReel, updateCue, validateSpec } from "./edit.ts";
 import { approve, jobCancel, jobResume, jobStatus, jobWait } from "./jobs.ts";
+import { suggestLessons } from "./knowledge.ts";
 import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projectInfo, readTranscript, transcribe } from "./media.ts";
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
 
@@ -46,6 +47,7 @@ export const STUDIO_TOOLS = {
   job_cancel: jobCancel,
   approve,
   job_resume: jobResume,
+  suggest_lessons: suggestLessons,
 } as const satisfies Record<string, StudioToolContract>;
 
 export type StudioToolName = keyof typeof STUDIO_TOOLS;

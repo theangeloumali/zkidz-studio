@@ -123,6 +123,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     buildEnv: (tokens) => buildAgentEnv({ kind: "terminal", tokens }, { studioHome: deps.studioHome, appVersion: deps.appVersion, proxyOptIn: false }),
     cancelProjectJobs,
     logger: deps.logger,
+    askQuestions: (projectId, questions, signal) => broker.askQuestions(projectId, questions, signal),
   });
   const engineJobDeps = {
     db: deps.database,

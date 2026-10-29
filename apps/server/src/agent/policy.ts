@@ -1,15 +1,13 @@
 // Created by The Angelo Umali.
 // Deny-by-default canUseTool (plan §6.10). Never bypassPermissions or dontAsk: this is the only allow path.
 import type { CanUseTool, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
-import { AskedQuestionSchema, findStudioTool, type ApprovalFacts } from "@zks/shared";
-import { z } from "zod";
+import { AskUserQuestionInputSchema, findStudioTool, toAskedQuestions, type ApprovalFacts } from "@zks/shared";
 import { assertNever } from "./assert-never.ts";
 import type { DecisionBroker } from "./decisions.ts";
 import { bareToolName } from "./tool-names.ts";
 
 /** Read is confined by the PreToolUse hook, which runs before this. */
 const ALWAYS_ALLOWED_TOOLS: ReadonlySet<string> = new Set(["Read", "Skill"]);
-const AskUserQuestionInputSchema = z.object({ questions: z.array(AskedQuestionSchema).min(1) });
 
 export interface ToolDeciderOptions {
   readonly projectId: string;
@@ -45,7 +43,7 @@ async function decide(call: DeciderCall): Promise<PermissionResult> {
 async function askQuestions(call: DeciderCall): Promise<PermissionResult> {
   const parsed = AskUserQuestionInputSchema.safeParse(call.input);
   if (!parsed.success) return deny(call, "The question was malformed");
-  const answers = await call.broker.askQuestions(call.projectId, parsed.data.questions, call.signal);
+  const answers = await call.broker.askQuestions(call.projectId, toAskedQuestions(parsed.data), call.signal);
   if (answers === null) return { behavior: "deny", message: "The question was dismissed" };
   return allow({ ...call.input, answers });
 }

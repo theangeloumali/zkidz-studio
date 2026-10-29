@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // `approve`, the `claude -p` fallback's --permission-prompt-tool (plan §6.7): the §6.10 deny-by-default policy for a path
 // with no canUseTool. Gated studio tools pass here because the twin route raises their card when they run, so one card per call.
-import { AskedQuestionSchema, findStudioTool, STUDIO_TOOL_NAMES, STUDIO_TOOLS, studioToolName } from "@zks/shared";
+import { AskUserQuestionInputSchema, findStudioTool, toAskedQuestions, STUDIO_TOOL_NAMES, STUDIO_TOOLS, studioToolName } from "@zks/shared";
 import { z } from "zod";
 import type { ToolContext } from "../context.ts";
 import type { StudioTool } from "../define-tool.ts";
@@ -18,7 +18,6 @@ type PermissionDecision = z.input<typeof STUDIO_TOOLS.approve.output>;
 
 /** Read is confined by the PreToolUse hook in the -p run's --settings, which runs before this prompt. */
 const ALWAYS_ALLOWED_TOOLS: ReadonlySet<string> = new Set(["Read", "Skill"]);
-const AskUserQuestionInputSchema = z.object({ questions: z.array(AskedQuestionSchema).min(1) });
 const STUDIO_TOOL_NAME_SET: ReadonlySet<string> = new Set(STUDIO_TOOL_NAMES);
 const NOT_AVAILABLE = "This tool is not available in the studio";
 
@@ -48,7 +47,7 @@ async function decide(prompt: PermissionPrompt, context: ToolContext, signal: Ab
 async function askQuestions(prompt: PermissionPrompt, context: ToolContext, signal: AbortSignal | undefined): Promise<PermissionDecision> {
   const parsed = AskUserQuestionInputSchema.safeParse(prompt.input);
   if (!parsed.success) return deny(prompt, context, "The question was malformed");
-  const answers = await context.askQuestions(parsed.data.questions, signal);
+  const answers = await context.askQuestions(toAskedQuestions(parsed.data), signal);
   if (answers === null) return { behavior: "deny", message: "The question was dismissed" };
   return allow({ ...prompt.input, answers });
 }

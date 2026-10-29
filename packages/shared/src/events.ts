@@ -64,6 +64,32 @@ export const UsageFiguresSchema = z.strictObject({
 export const MAX_SUGGESTED_LESSONS = 5;
 export const LessonTextSchema = z.string().trim().min(1).max(RULE_TEXT_MAX_CHARS);
 
+/**
+ * AskUserQuestion's input as Claude Code sends it: loose, because it adds fields over time (an option's `preview`),
+ * and a strict parse would refuse the whole question. toAskedQuestions keeps what a card shows.
+ */
+export const AskUserQuestionInputSchema = z.looseObject({
+  questions: z
+    .array(
+      z.looseObject({
+        question: z.string().min(1),
+        header: z.string().optional(),
+        options: z.array(z.looseObject({ label: z.string().min(1), description: z.string().optional() })),
+        multiSelect: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+});
+
+export function toAskedQuestions(input: z.infer<typeof AskUserQuestionInputSchema>): z.infer<typeof AskedQuestionSchema>[] {
+  return input.questions.map(({ question, header, options, multiSelect }) => ({
+    question,
+    ...(header === undefined ? {} : { header }),
+    options: options.map(({ label, description }) => ({ label, ...(description === undefined ? {} : { description }) })),
+    ...(multiSelect === undefined ? {} : { multiSelect }),
+  }));
+}
+
 function jobLifecycleEvent<Type extends string>(type: Type) {
   return studioEvent(type, { jobId: IdSchema, kind: z.string().min(1), status: JobStatusSchema });
 }

@@ -37,8 +37,9 @@ export function buildTerminalArgs(run: TerminalRun): string[] {
     DISALLOWED_TOOLS,
     "--allowedTools",
     ...run.studioToolNames,
+    // Auto skips routine prompts; the PreToolUse policy still denies in every mode (policy-check §12).
     "--permission-mode",
-    "default",
+    "auto",
     "--append-system-prompt-file",
     run.rulesPath,
     ...(run.model === undefined ? [] : ["--model", run.model]),

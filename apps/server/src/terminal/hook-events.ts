@@ -11,6 +11,7 @@ export const SIGN_IN_CREDENTIAL = "your Claude Code sign-in";
 /** Neither the launch nor the hook named a model, so Claude Code chose its own. */
 const UNNAMED_MODEL_LABEL = "your default model";
 const TASK_NOTIFICATION_TAG = "<task-notification>";
+export const QUESTION_TOOL_NAME = "AskUserQuestion";
 
 export interface HookEventContext {
   readonly projectId: string;
@@ -35,6 +36,8 @@ export function hookToStudioEvents(payload: HookPayload, context: HookEventConte
         },
       ];
     case "PostToolUse":
+      // AskUserQuestion is drawn as a question card (terminal-sessions.ts), never as a tool row.
+      if (payload.tool_name === QUESTION_TOOL_NAME) return [];
       // Claude Code sends failures to PostToolUseFailure, so this hook only ever reports success.
       return [{ type: "tool.finished", projectId, toolUseId: toolUseIdOf(payload), ok: true, summary: `${toolLabel(payload.tool_name)} finished` }];
     case "UserPromptSubmit": {

@@ -10,6 +10,8 @@ const OWNER_ONLY_FILE_MODE = 0o600;
 
 export async function createAgentFilesDir(runDir: string, sessionId: string): Promise<string> {
   const dir = join(runDir, `${IdSchema.parse(sessionId)}.${randomUUID()}`);
+  // Startup clears ZKS_RUN, so the first launch after it creates it; the session folder itself must be new.
+  await mkdir(runDir, { recursive: true, mode: OWNER_ONLY_DIR_MODE });
   await mkdir(dir, { mode: OWNER_ONLY_DIR_MODE });
   return dir;
 }

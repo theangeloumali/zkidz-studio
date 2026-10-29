@@ -23,6 +23,14 @@ describe.skipIf(process.platform === "win32")("agent session files", () => {
     await expect(stat(filesDir)).rejects.toThrow();
   });
 
+  it("creates the run dir when it is missing, as it is after every server start", async () => {
+    const runDir = join(await mkdtemp(join(tmpdir(), "zks-home-")), "run");
+    const filesDir = await createAgentFilesDir(runDir, SESSION_ID);
+
+    expect(dirname(filesDir)).toBe(runDir);
+    expect(await modeOf(runDir)).toBe(0o700);
+  });
+
   it("never overwrites a file that is already there", async () => {
     const filesDir = await createAgentFilesDir(await mkdtemp(join(tmpdir(), "zks-run-")), SESSION_ID);
     await writeAgentFile(filesDir, "instructions.md", "first");

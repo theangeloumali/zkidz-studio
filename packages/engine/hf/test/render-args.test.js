@@ -1,11 +1,11 @@
 // Created by The Angelo Umali.
-// render.js's theme flags: --theme names a pack, --style draws a project's style file over its theme (slice D).
+// The renderers' theme flags: --theme names a pack, --style draws a project's style file over its theme (slice D).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { themeFrom } = require("../render");
+const { themeFrom } = require("../theme");
 
 test("no flag draws the default pack, and --theme names one", () => {
   assert.equal(themeFrom([]), "zkidz");

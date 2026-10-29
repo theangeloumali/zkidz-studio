@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { findRejectedCandidates, MAX_REJECTED_SPANS, pendingCutReviewCards, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
+import { insertReferenceAsset } from "./reference-fixtures.ts";
 import { createToolFixture, cutSpecFor, insertCameraAsset, insertTranscript, type ToolFixture } from "./tool-fixtures.ts";
 
 let server: TestServer;
@@ -45,6 +46,14 @@ describe("set_cuts", () => {
     const fixture = await createToolFixture(server);
     const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(foreignAsset.id) });
     expect(result.isError).toBe(true);
+  });
+
+  it("refuses a reference as the cut source: it is a look to match, never footage", async () => {
+    const fixture = await createToolFixture(server);
+    const reference = await insertReferenceAsset(fixture);
+    const result = await callTool(fixture, "set_cuts", { cuts: cutSpecFor(reference.id) });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain(`Asset ${reference.id} is a reference`);
   });
 
   it("stores a version, reports the kept length and publishes spec.version", async () => {

@@ -4,13 +4,12 @@ import { execFile } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import type { ImageContent } from "@modelcontextprotocol/sdk/types.js";
 import { MAX_REFERENCE_FRAMES } from "@zks/shared";
-import { pinnedFfmpegPath } from "../../config.ts";
-import { confinePath, openConfined } from "../../security/confine-path.ts";
+import { pinnedToolPath } from "../../config.ts";
+import { confinePath } from "../../security/confine-path.ts";
 import { implementTool } from "../define-tool.ts";
 import { assetFilePath, findProjectAsset, loadProject, projectRootOf } from "../project-files.ts";
-import { ToolError } from "../result.ts";
+import { readPngImageBlock, ToolError } from "../result.ts";
 
 const runFile = promisify(execFile);
 const FFMPEG_TIMEOUT_MS = 120_000;
@@ -54,7 +53,7 @@ const sampleReference = implementTool("sample_reference", {
         ? integratedLoudness((await ffmpeg(["-vn", "-af", "ebur128=framelog=quiet", "-f", "null", "-"])).stderr)
         : null;
 
-    const images = await Promise.all([contactSheet, ...frames.map((frame) => frame.path)].map((path) => readImageBlock(projectRoot, path)));
+    const images = await Promise.all([contactSheet, ...frames.map((frame) => frame.path)].map((path) => readPngImageBlock(projectRoot, path)));
     const output = {
       durationS,
       contactSheet,
@@ -70,7 +69,7 @@ const sampleReference = implementTool("sample_reference", {
 async function runFfmpeg(studioHome: string, args: string[]): Promise<{ stderr: string }> {
   let ffmpegPath: string;
   try {
-    ffmpegPath = pinnedFfmpegPath(process.env, studioHome);
+    ffmpegPath = pinnedToolPath(process.env, studioHome, "ffmpeg");
   } catch (error) {
     throw new ToolError(error instanceof Error ? error.message : "ffmpeg is not installed");
   }
@@ -99,13 +98,4 @@ function roundTo(value: number, decimals: number): number {
 }
 
 // Confined at open, so a file swapped for a link out of the project is never read back to the model.
-async function readImageBlock(projectRoot: string, relPath: string): Promise<ImageContent> {
-  const { handle } = await openConfined(projectRoot, relPath);
-  try {
-    return { type: "image", data: (await handle.readFile()).toString("base64"), mimeType: "image/png" };
-  } finally {
-    await handle.close();
-  }
-}
-
 export const referenceTools = [sampleReference];

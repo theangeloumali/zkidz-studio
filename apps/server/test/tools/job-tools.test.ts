@@ -11,6 +11,7 @@ import { engineProgressRecordPath } from "../../src/jobs/engine-progress.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { registerEngineJobHandlers, type EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
+import { insertReferenceAsset } from "./reference-fixtures.ts";
 import { createToolFixture, insertCameraAsset, JOINED_SOURCE_PROBE, type ToolFixture } from "./tool-fixtures.ts";
 
 let server: TestServer;
@@ -134,6 +135,17 @@ describe("ingest", () => {
     const fixture = await createToolFixture(server);
     const result = await callTool(fixture, "ingest", { clips: [{ assetId: crypto.randomUUID() }] });
     expect(result.isError).toBe(true);
+  });
+
+  it("refuses a reference as a clip or an insert", async () => {
+    const fixture = await createToolFixture(server);
+    const [clip, reference] = await Promise.all([insertCameraAsset(fixture), insertReferenceAsset(fixture)]);
+    const asClip = await callTool(fixture, "ingest", { clips: [{ assetId: reference.id }] });
+    const asInsert = await callTool(fixture, "ingest", { clips: [{ assetId: clip.id }], inserts: [{ at: 1, end: 2, srcAssetId: reference.id, srcAt: 0 }] });
+    for (const result of [asClip, asInsert]) {
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain(`Asset ${reference.id} is a reference`);
+    }
   });
 });
 

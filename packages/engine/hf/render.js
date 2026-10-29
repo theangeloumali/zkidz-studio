@@ -16,7 +16,8 @@ const os = require("os");
 const path = require("path");
 const { execFileSync, spawn } = require("child_process");
 const { build, brandIntroCompositions } = require("./build");
-const { DEFAULT_THEME } = require("./theme");
+const { optionValue } = require("./cli-args");
+const { themeFrom } = require("./theme");
 const { EXIT_SECONDS } = require("./fx/motion");
 const progress = require("./progress");
 const { ffmpegBin, hyperframesToolsEnv } = require("./home");
@@ -243,20 +244,6 @@ async function renderBrandIntro(orientation, rate, out) {
   console.log(`brand intro (${orientation}, ${rate} fps): ${preroll.frames} pre-roll + ${split.frames} split frames → ${out}`);
 }
 
-// A missing flag fails rather than taking the next argument: --out's preroll/ and split/ are emptied.
-function optionValue(args, name) {
-  const value = args.includes(name) ? args[args.indexOf(name) + 1] : undefined;
-  if (value === undefined || value.startsWith("--")) throw new Error(`${name} is required`);
-  return value;
-}
-
-// theme.js checks the style before any of it reaches Chrome.
-function themeFrom(args) {
-  if (!args.includes("--style")) return args.includes("--theme") ? optionValue(args, "--theme") : DEFAULT_THEME;
-  const style = JSON.parse(fs.readFileSync(optionValue(args, "--style"), "utf8"));
-  return { id: style.theme, style };
-}
-
 async function main() {
   // Chrome inherits this: overlay rendering must not starve the desktop.
   os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -280,4 +267,4 @@ if (require.main === module)
     process.exit(1);
   });
 
-module.exports = { failureText, framesCaptured, stillTimesFor, themeFrom, unsettledStills };
+module.exports = { failureText, framesCaptured, stillTimesFor, unsettledStills };

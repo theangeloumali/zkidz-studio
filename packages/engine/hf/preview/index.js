@@ -1,12 +1,12 @@
 // Created by The Angelo Umali.
 // The live preview (plan §9.3): the renderer's composition for one video, from the same cue and caption JSON and theme, written
 // with no frames rendered. The 4318 origin serves it under `script-src 'self'`, so the runtime and CSS are files, not inline.
-// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/preview v1 [--theme id]   → <WORK>/preview/v1/index.html
+// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/preview v1 [--theme id | --style file]   → <WORK>/preview/v1/index.html
 const fs = require("fs");
 const path = require("path");
 const { createTimemap } = require("../overlay/timemap");
 const { loadCueSheet } = require("../cues");
-const { loadTheme, DEFAULT_THEME } = require("../theme");
+const { loadTheme, styleRef, themeFrom, DEFAULT_THEME } = require("../theme");
 const { composeDocument } = require("../compose");
 const { REGISTRY } = require("../components");
 const { canvasBrand } = require("../brand/canvas");
@@ -32,6 +32,8 @@ const STYLE_ATTRIBUTE = /(<[a-zA-Z][^>]*?\s)style="/g;
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const readJsonIfPresent = (file) => (fs.existsSync(file) ? readJson(file) : null);
+// The look the renders draw by default: work/style.json when the project set one (render/__init__.py style_flags).
+const projectTheme = (work) => (fs.existsSync(path.join(work, "style.json")) ? styleRef(path.join(work, "style.json")) : DEFAULT_THEME);
 
 // captions/vN.json groups timed by the phrase file, as zks_engine.captions emit_cues writes derived/cues/vN-cc.json.
 function captionCues(work, video) {
@@ -82,11 +84,11 @@ function writePreview(dir, { html, css }) {
   fs.renameSync(partPath, path.join(dir, "index.html"));
 }
 
-function buildPreview({ work, video, theme: themeId = DEFAULT_THEME }) {
+function buildPreview({ work, video, theme: themeRef = projectTheme(work) }) {
   if (typeof video !== "string" || !VIDEO_ID.test(video)) throw new Error(`${JSON.stringify(video)} is not a video id (v1, v1r)`);
   // The server's preview EDL, kept apart from edl/<video>.json, which is the render's.
   const edl = readJson(path.join(work, "preview", `${video}.edl.json`));
-  const theme = loadTheme(themeId);
+  const theme = loadTheme(themeRef);
   const brand = canvasBrand();
   brand.applyTheme(theme);
   const warnings = [];
@@ -109,8 +111,8 @@ function buildPreview({ work, video, theme: themeId = DEFAULT_THEME }) {
 if (require.main === module) {
   const [video, ...args] = process.argv.slice(2);
   try {
-    const theme = args.includes("--theme") ? args[args.indexOf("--theme") + 1] : DEFAULT_THEME;
-    const { dir, placed, warnings } = buildPreview({ work: process.env.ZKS_WORK || process.cwd(), video, theme });
+    const work = process.env.ZKS_WORK || process.cwd();
+    const { dir, placed, warnings } = buildPreview({ work, video, theme: themeFrom(args, projectTheme(work)) });
     console.log(JSON.stringify({ dir, clips: placed.length, warnings }));
   } catch (error) {
     console.error(error.message);

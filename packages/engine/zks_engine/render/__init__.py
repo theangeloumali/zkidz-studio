@@ -24,8 +24,8 @@ def master_path(work, video, draft, uhd):
 
 
 def style_flags():
-    """--style when the project set one (work/style.json, written by the server); none draws the theme pack as it is."""
-    style = pipeline.WORK / "style.json"
+    """--style when the project set one (work/style.json, written by the server); in a job, the copy its snapshot took."""
+    style = pipeline.spec_file(pipeline.WORK, "style.json")
     return ["--style", str(style)] if style.exists() else []
 
 

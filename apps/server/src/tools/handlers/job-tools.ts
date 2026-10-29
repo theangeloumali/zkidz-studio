@@ -10,7 +10,7 @@ import { implementTool } from "../define-tool.ts";
 import { describeStudioGate } from "../gate-facts.ts";
 import { fenceJobError } from "../job-error-fence.ts";
 import { readJobResult } from "../job-results.ts";
-import { findProjectAsset, loadProject, projectRootOf } from "../project-files.ts";
+import { findFootageAsset, loadProject, projectRootOf } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 
 const DEFAULT_LANGUAGE = "auto";
@@ -24,7 +24,7 @@ const ingest = implementTool("ingest", {
     "Join the given clips (by assetId, optional zoom) into the edit's source, with optional screen-recording inserts. Returns a jobId; follow it with job_wait.",
   handler: async (input, context) => {
     const assetIds = [...input.clips.map((clip) => clip.assetId), ...(input.inserts ?? []).map((insert) => insert.srcAssetId)];
-    await Promise.all(assetIds.map((assetId) => findProjectAsset(context, assetId)));
+    await Promise.all(assetIds.map((assetId) => findFootageAsset(context, assetId)));
     const project = await loadProject(context);
     const job = await context.jobs.enqueue({ projectId: context.projectId, kind: "ingest", videoId: project.videoId, lane: "gpu", params: { ...input } });
     return { output: { jobId: job.id } };

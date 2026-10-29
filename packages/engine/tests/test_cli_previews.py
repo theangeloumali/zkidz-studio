@@ -1,6 +1,7 @@
 # Created by The Angelo Umali.
 # zks-engine caption-phrases / render-preview: the phrase file captions are written against, and stills of the edit.
 import json
+import os
 import subprocess
 import unittest
 from unittest import mock
@@ -192,6 +193,15 @@ class DrawOverlaysTests(ScratchWork):
         style.write_text(json.dumps({"theme": "zkidz", "boil": False}), encoding="utf-8")
         render.draw_overlays("v1")
         self.assertEqual(self.drawn, [["v1:v1", "--events", "--style", str(style)], ["v1:v1", "--style", str(style)]])
+
+    def test_a_job_draws_the_style_its_snapshot_took(self):
+        (self.work / "style.json").write_text(json.dumps({"theme": "minimal"}), encoding="utf-8")
+        snapshot = self.work / "snapshots" / "s1"
+        snapshot.mkdir(parents=True)
+        (snapshot / "style.json").write_text(json.dumps({"theme": "zkidz"}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"ZKS_SPECS": str(snapshot)}):
+            render.draw_overlays("v1")
+        self.assertEqual(self.drawn[1][1:], ["--style", str(snapshot / "style.json")])
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,13 @@ export async function findProjectAsset(context: ToolContext, assetId: string): P
   return asset;
 }
 
+/** An asset an edit cuts from; a reference only shows the look to match. */
+export async function findFootageAsset(context: ToolContext, assetId: string): Promise<MediaAssetRow> {
+  const asset = await findProjectAsset(context, assetId);
+  if (asset.kind === "reference") throw new ToolError(`Asset ${assetId} is a reference: a look to match, never footage`);
+  return asset;
+}
+
 /** An upload lives under the project folder; an in-place file is the realpath registered at pick time. */
 export function assetFilePath(projectRoot: string, asset: MediaAssetRow): string {
   if (asset.relPath !== null) return join(projectRoot, asset.relPath);

@@ -11,6 +11,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
 import type { ProjectRow } from "../dto.ts";
+import { PROJECT_STYLE_REL_PATH } from "../jobs/spec-snapshot.ts";
 import { writeFileAtomically } from "../specs/spec-files.ts";
 
 const THEMES_DIR = fileURLToPath(new URL("../../../../themes", import.meta.url));
@@ -42,7 +43,7 @@ export async function readProjectStyle(database: StudioDatabase, project: Projec
 /** The renderer's file goes first and is put back if the row write fails, so the two never disagree. */
 export async function writeProjectStyle(store: StyleStore, project: ProjectRow, requested: ProjectStyle | null): Promise<StyleWrite> {
   const checked = requested === null ? { style: null, warnings: [] } : await checkedStyle(store.database, project.id, requested);
-  const filePath = join(projectDir(store.studioHome, project.slug), "work", "style.json");
+  const filePath = join(projectDir(store.studioHome, project.slug), PROJECT_STYLE_REL_PATH);
   const previousLook = await readFile(filePath, "utf8").catch(nullWhenMissing);
   await writeLook(filePath, checked.style === null ? null : JSON.stringify(drawnLook(checked.style), null, 2));
   try {

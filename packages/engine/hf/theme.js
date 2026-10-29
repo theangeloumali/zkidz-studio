@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { FAMILIES } = require("./brand/fonts");
+const { optionValue } = require("./cli-args");
 
 const THEMES_DIR = path.resolve(__dirname, "..", "..", "..", "themes");
 const DEFAULT_THEME = "zkidz";
@@ -78,4 +79,16 @@ function loadTheme(ref = DEFAULT_THEME) {
   return validateTheme(theme);
 }
 
-module.exports = { loadTheme, validateTheme, DEFAULT_THEME, THEMES_DIR };
+/** A project style file (work/style.json, written by the server) as a loadTheme ref; applyStyle checks it on load. */
+function styleRef(file) {
+  const style = JSON.parse(fs.readFileSync(file, "utf8"));
+  return { id: style.theme, style };
+}
+
+/** --style <file> draws a project's style over its theme; else --theme <id>, else the fallback. */
+function themeFrom(args, fallback = DEFAULT_THEME) {
+  if (args.includes("--style")) return styleRef(optionValue(args, "--style"));
+  return args.includes("--theme") ? optionValue(args, "--theme") : fallback;
+}
+
+module.exports = { loadTheme, styleRef, themeFrom, validateTheme, DEFAULT_THEME, THEMES_DIR };

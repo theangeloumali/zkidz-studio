@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NewStudioEvent } from "../../../src/events/event-bus.ts";
 import type { PreparedLaunch } from "../../../src/terminal/agents/agent-adapter.ts";
+import { subscribeOpenCodeEvents } from "../../../src/terminal/agents/opencode-stream.ts";
 import { waitFor } from "../stub-claude.ts";
 import {
   PROJECT_ID,
@@ -164,5 +165,44 @@ describe("opencode adapter: events", () => {
     // The third stream also ends, so a fourth connection may already be open.
     expect(calls.filter((call) => call.url.endsWith("/api/event")).length).toBeGreaterThanOrEqual(3);
     expect(events.filter((event) => event.type === "session.started")).toHaveLength(1);
+  });
+});
+
+describe("opencode event stream: reconnects", () => {
+  const BASE_DELAY_MS = 25;
+  function followWith(fetchStream: () => Response) {
+    const callTimes: number[] = [];
+    const fakeFetch: typeof fetch = () => {
+      callTimes.push(performance.now());
+      return Promise.resolve(fetchStream());
+    };
+    const connection = {
+      serverUrl: SERVER_URL,
+      authorization: "Basic eA==",
+      fetch: fakeFetch,
+      sessionId: RESUMED_SESSION,
+      reconnectDelayMs: BASE_DELAY_MS,
+      scope: { projectDir: "/p", pluginDir: "/plugin", studioToolNames: [] },
+    };
+    const stop = subscribeOpenCodeEvents(connection, { projectId: PROJECT_ID }, () => undefined);
+    return { callTimes, stop };
+  }
+
+  it("cancels the body of a refused stream", async () => {
+    let cancelledCount = 0;
+    const refused = () => new Response(new ReadableStream({ cancel: () => void cancelledCount++ }), { status: 503 });
+    const { callTimes, stop } = followWith(refused);
+    await waitFor(() => callTimes.length >= 2, 5_000);
+    stop();
+    expect(cancelledCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("keeps backing off from a server that accepts and then drops without an event", async () => {
+    const { callTimes, stop } = followWith(() => new Response(""));
+    await waitFor(() => callTimes.length >= 5, 10_000);
+    stop();
+    // Waits double from 2x the base: 50, 100, 200, 400 ms.
+    const lastGap = (callTimes[4] ?? 0) - (callTimes[3] ?? 0);
+    expect(lastGap).toBeGreaterThanOrEqual(BASE_DELAY_MS * 12);
   });
 });

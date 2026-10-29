@@ -57,8 +57,9 @@ async function readWithReconnect(connection: OpenCodeConnection, signal: AbortSi
   let delayMs = connection.reconnectDelayMs;
   while (!signal.aborted) {
     // A dropped stream, a refused connection and a 5xx all mean the same thing here: wait and try again.
-    const isConnected = await readStream(connection, signal, handle).catch(() => false);
-    delayMs = isConnected ? connection.reconnectDelayMs : Math.min(delayMs * 2, MAX_RECONNECT_DELAY_MS);
+    const hadEvents = await readStream(connection, signal, handle).catch(() => false);
+    // Only a stream that delivered an event resets the backoff, so an accept-then-drop server still slows us down.
+    delayMs = hadEvents ? connection.reconnectDelayMs : Math.min(delayMs * 2, MAX_RECONNECT_DELAY_MS);
     await sleep(delayMs, signal);
   }
 }
@@ -68,17 +69,24 @@ async function readStream(connection: OpenCodeConnection, signal: AbortSignal, h
     headers: { authorization: connection.authorization, accept: "text/event-stream" },
     signal,
   });
-  if (!response.ok || response.body === null) return false;
+  if (!response.ok || response.body === null) {
+    // An unread body holds the socket open until it is cancelled.
+    await response.body?.cancel();
+    return false;
+  }
   const decoder = new TextDecoder();
   let buffered = "";
+  let hadEvents = false;
   const reader: ReadableStreamDefaultReader<Uint8Array> = response.body.getReader();
   for (let chunk = await reader.read(); chunk.done !== true; chunk = await reader.read()) {
     buffered += decoder.decode(chunk.value, { stream: true });
     const frames = buffered.split("\n\n");
     buffered = frames.pop() ?? "";
-    frames.forEach((frame) => parseFrame(frame).forEach(handle));
+    const envelopes = frames.flatMap(parseFrame);
+    hadEvents ||= envelopes.length > 0;
+    envelopes.forEach(handle);
   }
-  return true;
+  return hadEvents;
 }
 
 function parseFrame(frame: string): Envelope[] {

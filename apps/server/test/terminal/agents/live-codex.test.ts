@@ -54,6 +54,7 @@ describe.skipIf(!isLiveEnabled)("live codex in mode T", () => {
       };
       const launch = await adapter.prepare(request, TOKENS, binary);
       filesDir = launch.filesDir;
+      expect(launch.args.join(" ")).not.toMatch(/dangerously|developer_instructions|Reply in one word/);
       pty = await createPtyHost({ claudePath: binary }).launch(SESSION_ID, { argv: [launch.file, ...launch.args], cwd: launch.cwd, env: launch.env });
       if (adapter.events.kind !== "hooks") throw new Error("codex reports through hooks");
       const mapHook = adapter.events.mapHook.bind(adapter.events);

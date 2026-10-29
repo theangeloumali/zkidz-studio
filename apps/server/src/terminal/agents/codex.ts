@@ -1,23 +1,20 @@
 // Created by The Angelo Umali.
-// OpenAI Codex CLI in mode T (ADR 0007): the user's own sign-in, locked down through argv; events arrive on Claude-shaped hooks.
-import { execFile } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+// OpenAI Codex CLI in mode T (ADR 0007): the user's own sign-in, locked down by config flags that codex is asked to confirm before launch.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { API_ROUTES, HookPayloadSchema, LOOPBACK_HOST, type UsageFigures } from "@zks/shared";
-import { z } from "zod";
+import { API_ROUTES, HookPayloadSchema, LOOPBACK_HOST } from "@zks/shared";
 import type { TerminalTokens } from "../../auth/agent-env.ts";
 import { hookToStudioEvents } from "../hook-events.ts";
 import { decideTerminalTool } from "../hook-policy.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../session-files.ts";
 import type { AgentAdapter, AgentLaunchRequest } from "./agent-adapter.ts";
 import { AgentLaunchError, buildTerminalAgentEnv } from "./agent-env.ts";
-import { createAgentFilesDir, writeAgentFile } from "./agent-files.ts";
+import { createAgentFilesDir, removeAgentFiles } from "./agent-files.ts";
+import { assertOnlyStudioHooks, assertOnlyStudioTools, hookStateOverride, writeStudioModelCatalog, type CodexHook } from "./codex-lockdown.ts";
+import { listCodexHooks, listCodexMcpServers, listCodexTools, type CodexProbe } from "./codex-probes.ts";
+import { createRolloutUsageReader } from "./codex-usage.ts";
 import { buildAgentInstructions } from "./instructions.ts";
 
-const runFile = promisify(execFile);
-const MCP_LIST_TIMEOUT_MS = 10_000;
 const CODEX_CREDENTIAL = "your Codex sign-in";
 const STUDIO_MCP_NAME = "studio";
 const HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"] as const;
@@ -43,13 +40,6 @@ export const CODEX_DISABLED_FEATURES = [
   "remote_plugin",
   "worktrees",
 ] as const;
-const THREAD_ID = /^[0-9A-Za-z-]+$/;
-const McpListSchema = z.array(z.looseObject({ name: z.string().min(1) }));
-const TokenTotalsSchema = z.looseObject({ input_tokens: z.int(), cached_input_tokens: z.int().default(0), output_tokens: z.int() });
-const RolloutLineSchema = z.looseObject({
-  type: z.literal("event_msg"),
-  payload: z.looseObject({ type: z.literal("token_count"), info: z.looseObject({ total_token_usage: TokenTotalsSchema }) }),
-});
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -58,11 +48,18 @@ interface CodexAdapterOptions {
   readonly parentEnv?: Environment;
   /** The user's own MCP servers, each switched off for the session; defaults to `codex mcp list --json`. */
   readonly listUserMcpServers?: (binaryPath: string, env: Readonly<Record<string, string>>) => Promise<readonly string[]>;
+  /** The hooks codex would load with these args; defaults to the app-server's hooks/list. */
+  readonly listHooks?: (probe: CodexProbe) => Promise<readonly CodexHook[]>;
+  /** The tools codex would show the model with these args; defaults to `codex debug prompt-input`. */
+  readonly listExposedTools?: (probe: CodexProbe) => Promise<readonly string[]>;
 }
 
 export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdapter {
   const parentEnv = options.parentEnv ?? process.env;
   const listUserMcpServers = options.listUserMcpServers ?? listCodexMcpServers;
+  const listHooks = options.listHooks ?? listCodexHooks;
+  const listExposedTools = options.listExposedTools ?? listCodexTools;
+  const codexHome = parentEnv["CODEX_HOME"] ?? join(homedir(), ".codex");
   return {
     kind: "codex",
     label: "Codex",
@@ -77,9 +74,23 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
       if (userMcpServers.includes(STUDIO_MCP_NAME))
         throw new AgentLaunchError("config_conflict", "Your Codex config already has an MCP server named studio; rename it to use ZKidz Studio.");
       const filesDir = await createAgentFilesDir(request.runDir, request.sessionId);
-      const instructions = await buildAgentInstructions(request);
-      await writeAgentFile(filesDir, "instructions.md", instructions);
-      return { file: binaryPath, args: buildCodexArgs({ request, userMcpServers, instructions }), env, cwd: request.projectDir, filesDir };
+      const probe = (configArgs: readonly string[]): CodexProbe => ({ binaryPath, configArgs, env, cwd: request.projectDir });
+      try {
+        const catalogPath = await writeStudioModelCatalog(codexHome, filesDir, await buildAgentInstructions(request));
+        const relayCommand = buildRelayCommand(request);
+        const baseArgs = buildCodexConfigArgs({ request, userMcpServers, catalogPath, relayCommand });
+        const hookState = hookStateOverride(await asked(listHooks(probe(baseArgs))), relayCommand);
+        const configArgs = [...baseArgs, ...config(hookState)];
+        // Codex is asked again with the final args: the launch is refused unless what it reports is what the studio allows.
+        const [hooks, tools] = await asked(Promise.all([listHooks(probe(configArgs)), listExposedTools(probe(configArgs))]));
+        assertOnlyStudioHooks(hooks, relayCommand, HOOK_EVENTS.length);
+        assertOnlyStudioTools(tools);
+        const args = request.resumeSessionId === undefined ? configArgs : ["resume", ...configArgs, request.resumeSessionId];
+        return { file: binaryPath, args, env, cwd: request.projectDir, filesDir };
+      } catch (error) {
+        await removeAgentFiles(filesDir);
+        throw error;
+      }
     },
     events: {
       kind: "hooks",
@@ -90,25 +101,26 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
       },
     },
     decideTool: decideTerminalTool,
-    usageSource: (threadId) => readRolloutUsage(join(parentEnv["CODEX_HOME"] ?? join(homedir(), ".codex"), "sessions"), threadId),
+    usageSource: createRolloutUsageReader(join(codexHome, "sessions")),
   };
 }
 
 interface CodexArgsRequest {
   readonly request: AgentLaunchRequest;
   readonly userMcpServers: readonly string[];
-  readonly instructions: string;
+  readonly catalogPath: string;
+  readonly relayCommand: string;
 }
 
-function buildCodexArgs({ request, userMcpServers, instructions }: CodexArgsRequest): string[] {
-  const isResume = request.resumeSessionId !== undefined;
-  const relayCommand = buildRelayCommand(request);
+/** Config keys only, so the TUI, the app-server and prompt-input all read the very same session config. */
+function buildCodexConfigArgs({ request, userMcpServers, catalogPath, relayCommand }: CodexArgsRequest): string[] {
   return [
-    ...(isResume ? ["resume"] : []),
-    ...["--sandbox", "read-only", "-a", "never", "--dangerously-bypass-hook-trust"],
+    ...config('sandbox_mode="read-only"'),
+    ...config('approval_policy="never"'),
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...config('web_search="disabled"'),
-    ...(request.model === undefined ? [] : ["-m", request.model]),
+    ...(request.model === undefined ? [] : config(`model=${tomlString(request.model)}`)),
+    ...config(`model_catalog_json=${tomlString(catalogPath)}`),
     ...userMcpServers.flatMap((name) => config(`mcp_servers.${tomlKey(name)}.enabled=false`)),
     ...config(`mcp_servers.studio.command=${tomlString(request.nodePath)}`),
     ...config(`mcp_servers.studio.args=[${tomlString(MCP_SERVER_PATH)}]`),
@@ -116,10 +128,16 @@ function buildCodexArgs({ request, userMcpServers, instructions }: CodexArgsRequ
     ...config('mcp_servers.studio.env_vars=["ZKS_MCP_TOKEN","ZKS_MCP_URL"]'),
     ...config('mcp_servers.studio.default_tools_approval_mode="approve"'),
     ...HOOK_EVENTS.flatMap((event) => config(`hooks.${event}=[{matcher="*",hooks=[{type="command",command=${tomlString(relayCommand)}}]}]`)),
-    // developer_instructions adds to codex's base prompt; model_instructions_file would replace it.
-    ...config(`developer_instructions=${tomlString(instructions)}`),
-    ...(isResume ? [request.resumeSessionId] : []),
   ];
+}
+
+/** A probe that fails leaves the session unchecked, so it is refused. */
+async function asked<T>(probe: Promise<T>): Promise<T> {
+  return probe.catch((error: unknown) => {
+    throw error instanceof AgentLaunchError
+      ? error
+      : new AgentLaunchError("config_conflict", `Codex could not be checked before the session started: ${String(error)}`);
+  });
 }
 
 function buildRelayCommand(request: AgentLaunchRequest): string {
@@ -138,43 +156,3 @@ const config = (override: string) => ["-c", override];
 // A JSON string is a valid TOML basic string, which is how codex parses every -c value.
 const tomlString = (value: string) => JSON.stringify(value);
 const tomlKey = (key: string) => (/^[A-Za-z0-9_-]+$/.test(key) ? key : tomlString(key));
-
-async function listCodexMcpServers(binaryPath: string, env: Readonly<Record<string, string>>): Promise<readonly string[]> {
-  const { stdout } = await runFile(binaryPath, ["mcp", "list", "--json"], { env, timeout: MCP_LIST_TIMEOUT_MS, shell: false });
-  return McpListSchema.parse(JSON.parse(stdout)).map((server) => server.name);
-}
-
-/** Codex writes each thread to sessions/YYYY/MM/DD/rollout-<time>-<threadId>.jsonl; the last token_count holds its totals. */
-async function readRolloutUsage(sessionsDir: string, threadId: string): Promise<UsageFigures | null> {
-  if (!THREAD_ID.test(threadId)) return null;
-  const rolloutPath = await findRollout(sessionsDir, threadId);
-  if (rolloutPath === null) return null;
-  const lines = (await readFile(rolloutPath, "utf8")).split("\n").reverse();
-  for (const line of lines) {
-    const totals = parseTokenTotals(line);
-    // OpenAI counts cached input inside input_tokens; the studio reports the two apart.
-    if (totals !== null)
-      return { inputTokens: totals.input_tokens - totals.cached_input_tokens, outputTokens: totals.output_tokens, cacheTokens: totals.cached_input_tokens };
-  }
-  return null;
-}
-
-async function findRollout(sessionsDir: string, threadId: string): Promise<string | null> {
-  try {
-    const names = await readdir(sessionsDir, { recursive: true });
-    const match = names.find((name) => name.endsWith(`-${threadId}.jsonl`));
-    return match === undefined ? null : join(sessionsDir, match);
-  } catch {
-    return null;
-  }
-}
-
-function parseTokenTotals(line: string): z.infer<typeof TokenTotalsSchema> | null {
-  if (!line.includes('"token_count"')) return null;
-  try {
-    const parsed = RolloutLineSchema.safeParse(JSON.parse(line));
-    return parsed.success ? parsed.data.payload.info.total_token_usage : null;
-  } catch {
-    return null;
-  }
-}

@@ -14,6 +14,11 @@ export const MCP_SERVER_PATH = fileURLToPath(new URL("../../bin/zks-mcp.mjs", im
 
 const HOOK_TIMEOUT_S = 30;
 const RELAY_TIMEOUT_S = 10;
+/** The AskUserQuestion hook holds while the user answers the card in Activity (terminal-sessions.ts). */
+export const QUESTION_HOOK_TIMEOUT_S = 3600;
+/** Claude Code holds each streamed batch until this hook answers, so it stays short. */
+const MESSAGE_DISPLAY_TIMEOUT_S = 5;
+const QUESTION_TOOL = "AskUserQuestion";
 
 export interface SessionFilesRequest {
   /** The runtime dir (§11 ZKS_RUN), cleared at startup so a crashed session leaves nothing behind. */
@@ -87,23 +92,30 @@ async function createSessionDir(request: Pick<SessionFilesRequest, "runDir" | "s
 }
 
 // Claude Code expands $ZKS_HOOK_TOKEN from the child env, and only because allowedEnvVars names it.
-function httpHook(hookUrl: string) {
-  return { type: "http", url: hookUrl, headers: { Authorization: "Bearer $ZKS_HOOK_TOKEN" }, allowedEnvVars: ["ZKS_HOOK_TOKEN"], timeout: HOOK_TIMEOUT_S };
+function httpHook(hookUrl: string, timeout = HOOK_TIMEOUT_S) {
+  return { type: "http", url: hookUrl, headers: { Authorization: "Bearer $ZKS_HOOK_TOKEN" }, allowedEnvVars: ["ZKS_HOOK_TOKEN"], timeout };
 }
 
 function buildHookSettings(request: SessionFilesRequest, hookUrl: string) {
   const hook = httpHook(hookUrl);
-  const relayCommand = `"${request.nodePath}" "${request.hookRelayPath}" "${hookUrl}"`;
+  const relay = `"${request.nodePath}" "${request.hookRelayPath}"`;
   return {
     hooks: {
-      SessionStart: [{ hooks: [{ type: "command", command: relayCommand, timeout: RELAY_TIMEOUT_S }] }],
+      SessionStart: [{ hooks: [{ type: "command", command: `${relay} "${hookUrl}"`, timeout: RELAY_TIMEOUT_S }] }],
       // A bridge that is down must stop the prompt or tool, not wave it through unaudited.
       UserPromptSubmit: [{ hooks: [{ ...hook, onFailure: "block" }] }],
-      PreToolUse: [{ matcher: "*", hooks: [{ ...hook, onFailure: "block" }] }],
+      // Two entries, never overlapping: Claude Code runs every matching hook and leaves two updatedInputs undefined.
+      PreToolUse: [
+        { matcher: QUESTION_TOOL, hooks: [{ ...httpHook(hookUrl, QUESTION_HOOK_TIMEOUT_S), onFailure: "block" }] },
+        { matcher: `^(?!${QUESTION_TOOL}$)`, hooks: [{ ...hook, onFailure: "block" }] },
+      ],
       PostToolUse: [{ matcher: "*", hooks: [hook] }],
       Stop: [{ hooks: [hook] }],
       Notification: [{ hooks: [hook] }],
+      // A failed display hook shows the original text, so it never blocks.
+      MessageDisplay: [{ hooks: [httpHook(hookUrl, MESSAGE_DISPLAY_TIMEOUT_S)] }],
     },
+    statusLine: { type: "command", command: `${relay} --status "${hookUrl}"` },
   };
 }
 

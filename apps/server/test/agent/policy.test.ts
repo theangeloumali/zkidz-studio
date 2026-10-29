@@ -85,6 +85,21 @@ describe("tool decider", () => {
     expect(await pending).toEqual({ behavior: "allow", updatedInput: { questions, answers: { "Which take?": "B" } } });
   });
 
+  // Claude Code adds fields to its questions (an option's preview); the card shows what it knows and the answer echoes them all.
+  it("asks a question whose options carry fields the card does not show", async () => {
+    const { published, broker, call, nextRequestId } = setup();
+    const questions = [{ question: "Which layout?", options: [{ label: "Grid", preview: "┌─┐" }, { label: "List" }] }];
+    const pending = call("AskUserQuestion", { questions });
+    const requestId = await nextRequestId();
+
+    expect(published.at(-1)).toMatchObject({
+      type: "question.asked",
+      questions: [{ question: "Which layout?", options: [{ label: "Grid" }, { label: "List" }] }],
+    });
+    broker.settle(PROJECT_ID, { kind: "question", requestId, answers: { "Which layout?": "Grid" } });
+    expect(await pending).toEqual({ behavior: "allow", updatedInput: { questions, answers: { "Which layout?": "Grid" } } });
+  });
+
   it("denies a pending card when the project is stopped", async () => {
     const { broker, call, nextRequestId } = setup();
     const pending = call("mcp__studio__delete_asset", { assetId: "00000000-0000-4000-8000-000000000009" });

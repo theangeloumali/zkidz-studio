@@ -1,12 +1,13 @@
 // Created by The Angelo Umali.
 // Mode T session registry (plan §6.3): hooks → policy + events, Esc to stop, Kill to close.
-import type { HookPayload, HookResponse } from "@zks/shared";
+import { AskUserQuestionInputSchema, toAskedQuestions, type HookPayload, type HookResponse, type UsageFigures } from "@zks/shared";
 import type { NewStudioEvent } from "../events/event-bus.ts";
-import { hookToStudioEvents } from "./hook-events.ts";
+import { hookToStudioEvents, QUESTION_TOOL_NAME } from "./hook-events.ts";
 import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
 import { encodePrompt, eraseInput } from "./prompt-input.ts";
-import { removeSessionFiles } from "./session-files.ts";
+import { QUESTION_HOOK_TIMEOUT_S, removeSessionFiles } from "./session-files.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
+import { isSessionTranscript, readTranscriptUsage } from "./transcript-usage.ts";
 
 export type { TerminalSession, TerminalSessionsDeps } from "./session-launch.ts";
 
@@ -15,6 +16,12 @@ const SESSION_START_TIMEOUT_MS = 30_000;
 /** A resumed Claude Code drops input for its first seconds, after SessionStart has fired (measured on 2.1.311). */
 const PROMPT_RETRY_MS = 3000;
 const PROMPT_ATTEMPTS = 4;
+/** The card gives up a minute before Claude Code's hook timeout, so the terminal dialog takes over instead of a block. */
+const QUESTION_DEADLINE_MS = (QUESTION_HOOK_TIMEOUT_S - 60) * 1000;
+/** Claude Code 2.1.312 shows the text before a question while the question's hook is already held (live test). */
+const QUESTION_TEXT_WAIT_MS = 3000;
+const QUESTION_DISMISSED = "The question was dismissed.";
+const ALLOW: TerminalToolDecision = { isAllowed: true };
 
 export interface TerminalSessions {
   open(request: OpenTerminalRequest): Promise<TerminalSession>;
@@ -23,7 +30,8 @@ export interface TerminalSessions {
   isHookAuthorized(sessionId: string, presentedToken: string | undefined): boolean;
   /** The stdio twin refuses every call until SessionStart arrives (plan §6.3). */
   isMcpCallAllowed(sessionId: string, presentedToken: string | undefined): boolean;
-  handleHook(sessionId: string, payload: HookPayload): Promise<HookResponse>;
+  /** `signal` aborts when Claude Code drops the hook request, which dismisses a waiting question card. */
+  handleHook(sessionId: string, payload: HookPayload, signal?: AbortSignal): Promise<HookResponse>;
   submitPrompt(projectId: string, text: string): boolean;
   stop(projectId: string): boolean;
   kill(projectId: string): boolean;
@@ -31,6 +39,11 @@ export interface TerminalSessions {
 }
 
 type PreToolUsePayload = Extract<HookPayload, { hook_event_name: "PreToolUse" }>;
+type MessageDisplayPayload = Extract<HookPayload, { hook_event_name: "MessageDisplay" }>;
+type StatusLinePayload = Extract<HookPayload, { hook_event_name: "StatusLine" }>;
+type StopPayload = Extract<HookPayload, { hook_event_name: "Stop" }>;
+/** Modes that keep the PreToolUse policy's decisions in charge; auto falls back to default when the account can't use it. */
+const ALLOWED_PERMISSION_MODES: ReadonlySet<string> = new Set(["auto", "default"]);
 
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
@@ -45,6 +58,10 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     publishAll(newEvents).catch((error: unknown) => deps.logger.error("terminal event publish failed", { error }));
   };
 
+  const dismissQuestions = (record: SessionRecord) => {
+    for (const card of record.questionCards) card.abort();
+  };
+
   const watchLifecycle = (record: SessionRecord) => {
     const { projectId } = record;
     record.sessionStartTimer = setTimeout(() => {
@@ -55,6 +72,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     record.pty.onExit((exitCode) => {
       clearTimeout(record.sessionStartTimer);
       clearTimeout(record.promptRetryTimer);
+      dismissQuestions(record);
       records.delete(record.sessionId);
       const isUnexpected = !record.wasKilled && exitCode !== 0;
       const exitEvents: NewStudioEvent[] = [{ type: "terminal.state", projectId, state: "exited", exitCode }];
@@ -76,6 +94,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
 
   const killRecord = (record: SessionRecord) => {
     record.wasKilled = true;
+    dismissQuestions(record);
     record.pty.kill();
   };
 
@@ -84,13 +103,117 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     model: record.model,
   });
 
+  const publishNarration = async (record: SessionRecord, text: string) => {
+    const trimmed = text.trim();
+    if (trimmed === "") return;
+    record.hasNarratedTurn = true;
+    record.hasTextSinceTool = true;
+    await publishAll([{ type: "narration", projectId: record.projectId, text: trimmed }]);
+    for (const wake of record.textWaiters.splice(0)) wake();
+  };
+
+  // One narration per assistant message, published on its final batch; Claude Code holds the batch until this answers.
+  const handleMessageDisplay = async (record: SessionRecord, payload: MessageDisplayPayload) => {
+    const messageKey = payload.message_id ?? payload.turn_id ?? "";
+    const text = (record.displayBuffers.get(messageKey) ?? "") + payload.delta;
+    if (payload.final !== true) {
+      record.displayBuffers.set(messageKey, text);
+      return;
+    }
+    record.displayBuffers.delete(messageKey);
+    await publishNarration(record, text);
+  };
+
+  const flushDisplays = async (record: SessionRecord) => {
+    const pending = [...record.displayBuffers.values()];
+    record.displayBuffers.clear();
+    for (const text of pending) await publishNarration(record, text);
+  };
+
+  // The card follows Claude's text about it: at once when that text is out, else when it lands or the wait ends.
+  const questionTextShown = async (record: SessionRecord) => {
+    if (record.hasTextSinceTool && record.displayBuffers.size === 0) return;
+    let timer: NodeJS.Timeout | undefined;
+    await new Promise<void>((resolve) => {
+      record.textWaiters.push(resolve);
+      timer = setTimeout(resolve, deps.questionTextWaitMs ?? QUESTION_TEXT_WAIT_MS);
+    });
+    clearTimeout(timer);
+  };
+
+  const publishUsage = (record: SessionRecord, source: "claude_statusline" | "claude_transcript", figures: UsageFigures) =>
+    publishAll([{ type: "usage.reported", projectId: record.projectId, sessionId: record.sessionId, source, ...figures }]);
+
+  // Cost and time are session totals that refresh on every assistant message; an unchanged refresh says nothing new.
+  const handleStatusLine = async (record: SessionRecord, payload: StatusLinePayload) => {
+    const costUsd = payload.cost?.total_cost_usd;
+    const durationMs = payload.cost?.total_duration_ms;
+    const figures: UsageFigures = {
+      ...(costUsd === undefined ? {} : { costUsd }),
+      ...(durationMs === undefined ? {} : { durationMs: Math.round(durationMs) }),
+    };
+    const fingerprint = JSON.stringify(figures);
+    if (fingerprint === "{}" || fingerprint === record.lastStatusUsage) return;
+    record.lastStatusUsage = fingerprint;
+    await publishUsage(record, "claude_statusline", figures);
+  };
+
+  const reportTranscriptUsage = (record: SessionRecord, payload: StopPayload) => {
+    const transcriptPath = payload.transcript_path;
+    if (!isSessionTranscript(transcriptPath, record.sessionId)) return;
+    (deps.readTranscriptUsage ?? readTranscriptUsage)(transcriptPath)
+      .then((figures) => (figures === null ? undefined : publishUsage(record, "claude_transcript", figures)))
+      .catch((error: unknown) => deps.logger.warn("terminal transcript usage not read", { error }));
+  };
+
+  const handleStop = async (record: SessionRecord, payload: StopPayload) => {
+    record.isWorking = false;
+    await flushDisplays(record);
+    reportTranscriptUsage(record, payload);
+    const hasNarrated = record.hasNarratedTurn;
+    record.hasNarratedTurn = false;
+    await publishAll(hookToStudioEvents(hasNarrated ? { ...payload, last_assistant_message: undefined } : payload, eventContext(record)));
+  };
+
+  // Holds the hook while the card waits in Activity; answering there skips Claude Code's own dialog (docs: hooks).
+  const answerQuestion = async (record: SessionRecord, payload: PreToolUsePayload, requestSignal: AbortSignal | undefined): Promise<HookResponse> => {
+    const parsed = AskUserQuestionInputSchema.safeParse(payload.tool_input);
+    if (!parsed.success) return preToolUseAnswer(ALLOW);
+    const card = new AbortController();
+    let hasTimedOut = false;
+    const deadline = setTimeout(() => {
+      hasTimedOut = true;
+      card.abort();
+    }, deps.questionTimeoutMs ?? QUESTION_DEADLINE_MS);
+    const dismissOnDrop = () => card.abort();
+    requestSignal?.addEventListener("abort", dismissOnDrop, { once: true });
+    record.questionCards.add(card);
+    try {
+      await questionTextShown(record);
+      record.hasTextSinceTool = false;
+      const answers = await deps.askQuestions(record.projectId, toAskedQuestions(parsed.data), card.signal);
+      if (answers !== null) return preToolUseAnswer(ALLOW, { ...parsed.data, answers });
+      return preToolUseAnswer(hasTimedOut ? ALLOW : { isAllowed: false, reason: QUESTION_DISMISSED });
+    } catch (error) {
+      // A card that cannot go out leaves the question to the terminal dialog rather than failing the tool.
+      deps.logger.error("terminal question card failed", { error });
+      return preToolUseAnswer(ALLOW);
+    } finally {
+      clearTimeout(deadline);
+      requestSignal?.removeEventListener("abort", dismissOnDrop);
+      record.questionCards.delete(card);
+    }
+  };
+
   // Always an explicit answer: Claude Code blocks the tool only when the bridge is unreachable (spike 07), not on a 500.
-  const answerPreToolUse = async (record: SessionRecord, payload: PreToolUsePayload): Promise<HookResponse> => {
+  const answerPreToolUse = async (record: SessionRecord, payload: PreToolUsePayload, signal: AbortSignal | undefined): Promise<HookResponse> => {
     const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
     const decision = await decideTerminalTool(payload.tool_name, payload.tool_input, scope).catch((error: unknown): TerminalToolDecision => {
       deps.logger.error("terminal tool policy failed", { error });
       return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
     });
+    if (decision.isAllowed && payload.tool_name === QUESTION_TOOL_NAME) return answerQuestion(record, payload, signal);
+    record.hasTextSinceTool = false;
     try {
       await publishAll(hookToStudioEvents(payload, { ...eventContext(record), decision }));
     } catch (error) {
@@ -148,27 +271,42 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       const record = records.get(sessionId);
       return record !== undefined && record.hasStarted && deps.tokensMatch(record.mcpToken, presentedToken);
     },
-    async handleHook(sessionId, payload) {
+    async handleHook(sessionId, payload, signal) {
       const record = records.get(sessionId);
       // The session can end between the route's token check and here; its tools still get an explicit answer.
       if (record === undefined) {
         return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This Claude session has ended." }) : {};
       }
-      if (payload.hook_event_name === "PreToolUse") return answerPreToolUse(record, payload);
-      if (payload.hook_event_name === "UserPromptSubmit") {
-        clearTimeout(record.promptRetryTimer);
-        record.isWorking = true;
-      }
-      if (payload.hook_event_name === "Stop") record.isWorking = false;
-      if (payload.hook_event_name === "SessionStart") {
-        clearTimeout(record.sessionStartTimer);
-        // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run.
-        if (payload.permission_mode !== undefined && payload.permission_mode !== "default") {
-          killRecord(record);
+      switch (payload.hook_event_name) {
+        case "PreToolUse":
+          return answerPreToolUse(record, payload, signal);
+        case "MessageDisplay":
+          await handleMessageDisplay(record, payload);
           return {};
-        }
-        record.hasStarted = true;
-        for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+        case "StatusLine":
+          await handleStatusLine(record, payload);
+          return {};
+        case "Stop":
+          await handleStop(record, payload);
+          return {};
+        case "UserPromptSubmit":
+          clearTimeout(record.promptRetryTimer);
+          record.isWorking = true;
+          record.hasNarratedTurn = false;
+          record.hasTextSinceTool = false;
+          break;
+        case "SessionStart":
+          clearTimeout(record.sessionStartTimer);
+          // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run.
+          if (payload.permission_mode !== undefined && !ALLOWED_PERMISSION_MODES.has(payload.permission_mode)) {
+            killRecord(record);
+            return {};
+          }
+          record.hasStarted = true;
+          for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+          break;
+        default:
+          break;
       }
       await publishAll(hookToStudioEvents(payload, eventContext(record)));
       return {};
@@ -184,6 +322,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       withProjectRecord(projectId, (record) => {
         record.pty.interrupt();
         clearTimeout(record.promptRetryTimer);
+        dismissQuestions(record);
         record.isWorking = false;
         record.promptToErase = record.lastPrompt;
         publishInBackground([{ type: "terminal.state", projectId, state: "ready" }]);
@@ -195,7 +334,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   };
 }
 
-function preToolUseAnswer(decision: TerminalToolDecision): HookResponse {
+function preToolUseAnswer(decision: TerminalToolDecision, updatedInput?: Record<string, unknown>): HookResponse {
   const reason = decision.isAllowed ? {} : { permissionDecisionReason: decision.reason };
-  return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision.isAllowed ? "allow" : "deny", ...reason } };
+  const rewrite = updatedInput === undefined ? {} : { updatedInput };
+  return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision.isAllowed ? "allow" : "deny", ...reason, ...rewrite } };
 }

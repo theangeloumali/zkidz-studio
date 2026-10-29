@@ -65,7 +65,8 @@ export function registerTerminalRoutes(app: Hono, deps: TerminalRouteDeps): void
     // Unknown session and wrong token answer alike, so the bridge does not reveal which sessions exist.
     if (!deps.sessions.isHookAuthorized(sessionId, presentedToken)) throw new HttpError(401, "Unauthorized");
     const payload = parseOrBadRequest(HookPayloadSchema, await readJsonBody(c));
-    return c.json(await deps.sessions.handleHook(sessionId, payload));
+    // The request aborts when Claude Code drops the hook (Esc, timeout), which dismisses a waiting question card.
+    return c.json(await deps.sessions.handleHook(sessionId, payload, c.req.raw.signal));
   });
 }
 

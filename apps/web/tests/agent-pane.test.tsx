@@ -101,6 +101,39 @@ describe("AgentPane", () => {
     expect(requestBody(fetchMock, DECISIONS)).toEqual({ kind: "question", requestId: "q-1", answers: { "Which take should open the video?": "Take 2" } });
   });
 
+  it("answers in the user's own words with Other, as the terminal's 'Type something' does", async () => {
+    const fetchMock = stubAgentApi();
+    renderPane([SAMPLE_EVENTS["question.asked"]]);
+    const send = screen.getByRole("button", { name: "Send answer" });
+    await userEvent.click(screen.getByRole("radio", { name: "Other" }));
+    expect(send).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: "Your answer" }), "Open on the crash");
+    await userEvent.click(send);
+    expect(requestBody(fetchMock, DECISIONS)).toEqual({
+      kind: "question",
+      requestId: "q-1",
+      answers: { "Which take should open the video?": "Open on the crash" },
+    });
+  });
+
+  it("answers every question with Claude's recommended option in one click", async () => {
+    const fetchMock = stubAgentApi();
+    const event = {
+      ...SAMPLE_EVENTS["question.asked"],
+      questions: [
+        { question: "Which opening?", options: [{ label: "Fail first" }, { label: "Matchup first (Recommended)" }] },
+        { question: "Keep the swears?", options: [{ label: "Bleep them" }, { label: "Keep them" }] },
+      ],
+    };
+    renderPane([event]);
+    await userEvent.click(screen.getByRole("button", { name: "Use Claude's picks" }));
+    expect(requestBody(fetchMock, DECISIONS)).toEqual({
+      kind: "question",
+      requestId: "q-1",
+      answers: { "Which opening?": "Matchup first (Recommended)", "Keep the swears?": "Bleep them" },
+    });
+  });
+
   it("sends the cut decisions to the cut-candidates route the reviewer waits on", async () => {
     const fetchMock = stubAgentApi();
     renderPane([SAMPLE_EVENTS["cuts.proposed"]]);

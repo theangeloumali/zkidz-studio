@@ -36,11 +36,14 @@ async function startBridge(status: number, responseBody: string): Promise<{ url:
   return { url: `http://127.0.0.1:${port}/api/terminal/s/hooks`, received };
 }
 
-function runRelay(hookUrl: string): Promise<{ exitCode: number | null; stdout: string }> {
-  const relay = spawn(process.execPath, [RELAY_PATH, hookUrl], { env: { ZKS_HOOK_TOKEN: "hook-token" }, stdio: ["pipe", "pipe", "pipe"] });
+function runRelay(
+  hookUrl: string,
+  { args = [], payload = PAYLOAD }: { args?: string[]; payload?: string } = {},
+): Promise<{ exitCode: number | null; stdout: string }> {
+  const relay = spawn(process.execPath, [RELAY_PATH, ...args, hookUrl], { env: { ZKS_HOOK_TOKEN: "hook-token" }, stdio: ["pipe", "pipe", "pipe"] });
   let stdout = "";
   relay.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
-  relay.stdin.end(PAYLOAD);
+  relay.stdin.end(payload);
   return new Promise((resolve) => relay.on("exit", (exitCode) => resolve({ exitCode, stdout })));
 }
 
@@ -69,5 +72,28 @@ describe("bin/zks-hook.mjs", () => {
     await new Promise((resolve) => server?.close(resolve));
     server = undefined;
     expect((await runRelay(bridge.url)).exitCode).toBe(2);
+  });
+});
+
+describe("bin/zks-hook.mjs --status", () => {
+  const STATUS = JSON.stringify({ session_id: "s", cost: { total_cost_usd: 0.4234, total_duration_ms: 754_000 }, model: { display_name: "Opus" } });
+
+  it("relays the status-line JSON as a StatusLine hook and prints the studio's line", async () => {
+    const bridge = await startBridge(200, "{}");
+    const { exitCode, stdout } = await runRelay(bridge.url, { args: ["--status"], payload: STATUS });
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("ZKidz Studio · 13 min · ≈ $0.42 estimate\n");
+    expect(JSON.parse(bridge.received[0]?.body ?? "{}")).toEqual({ ...JSON.parse(STATUS), hook_event_name: "StatusLine" });
+    expect(bridge.received[0]?.authorization).toBe("Bearer hook-token");
+  });
+
+  // A failing status command blanks Claude Code's status row, so the line prints whatever the bridge does.
+  it("still prints the line and exits 0 when the bridge is unreachable", async () => {
+    const bridge = await startBridge(200, "{}");
+    await new Promise((resolve) => server?.close(resolve));
+    server = undefined;
+    const { exitCode, stdout } = await runRelay(bridge.url, { args: ["--status"], payload: STATUS });
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("ZKidz Studio · 13 min · ≈ $0.42 estimate\n");
   });
 });

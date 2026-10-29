@@ -1,21 +1,47 @@
 // Created by The Angelo Umali.
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { AgentLaunchError } from "../../../src/terminal/agents/agent-env.ts";
 import { CODEX_DISABLED_FEATURES, createCodexAdapter } from "../../../src/terminal/agents/codex.ts";
+import type { CodexHook } from "../../../src/terminal/agents/codex-lockdown.ts";
+import type { CodexProbe } from "../../../src/terminal/agents/codex-probes.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../../../src/terminal/session-files.ts";
 
 const SESSION_ID = "0b0f6c0e-1f9b-4c1e-9d55-1a2b3c4d5e6f";
 const PROJECT_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const PLUGIN_DIR = fileURLToPath(new URL("../../../../../plugin/", import.meta.url));
 const TOKENS = { hookToken: "hook-secret", mcpToken: "mcp-secret", mcpUrl: "http://127.0.0.1:4100/mcp/x" };
-const PARENT_ENV = { PATH: "/usr/bin", HOME: "/home/user", OPENAI_API_KEY: "sk-parent" };
 const HOOK_URL = `http://127.0.0.1:4100/api/terminal/${SESSION_ID}/hooks`;
 const RELAY = `"/usr/bin/node" "${HOOK_RELAY_PATH}" "${HOOK_URL}"`;
+const HOOK_EVENTS = ["session_start", "user_prompt_submit", "pre_tool_use", "post_tool_use", "stop"];
+const USER_HOOK_KEY = "/home/user/.codex/hooks.json:session_start:0:0";
+const STUDIO_TOOLS = ["functions.request_user_input", "functions.read_mcp_resource", "mcp__studio.project_info"];
 const modeOf = async (path: string) => (await stat(path)).mode & 0o777;
+const hashOf = (index: number) => `sha256:${String(index).repeat(64).slice(0, 64)}`;
+
+const MODEL_CACHE = {
+  fetched_at: "2026-10-29T00:00:00Z",
+  models: [
+    {
+      slug: "gpt-5.6-luna",
+      tool_mode: "code_mode_only",
+      multi_agent_version: "v2",
+      supports_search_tool: true,
+      experimental_supported_tools: ["exec"],
+      apply_patch_tool_type: "freeform",
+      model_messages: { instructions_template: "BASE PROMPT", multi_agent: "keep" },
+    },
+  ],
+};
+
+async function codexHome(cache: unknown = MODEL_CACHE): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), "zks-codex-home-"));
+  await writeFile(join(home, "models_cache.json"), JSON.stringify(cache));
+  return home;
+}
 
 async function launchRequest(overrides: { resumeSessionId?: string; model?: string } = {}) {
   const projectDir = await mkdtemp(join(tmpdir(), "zks-proj-"));
@@ -33,20 +59,66 @@ async function launchRequest(overrides: { resumeSessionId?: string; model?: stri
   };
 }
 
-const adapterWith = (userMcpServers: readonly string[] = ["figma", "my server"]) =>
-  createCodexAdapter({ parentEnv: PARENT_ENV, listUserMcpServers: () => Promise.resolve(userMcpServers) });
+const hook = (key: string, overrides: Partial<CodexHook>): CodexHook => ({
+  key,
+  source: "user",
+  enabled: true,
+  trustStatus: "trusted",
+  currentHash: hashOf(9),
+  handlerType: "command",
+  command: "orca-hook.sh",
+  ...overrides,
+});
+const studioHooks = (trustStatus: string) =>
+  HOOK_EVENTS.map((event, index) =>
+    hook(`/<session-flags>/config.toml:${event}:0:0`, { source: "sessionFlags", trustStatus, currentHash: hashOf(index), command: RELAY }),
+  );
+/** What codex reports before the studio's hooks.state, and after it when the override took. */
+const BEFORE_STATE = [hook(USER_HOOK_KEY, {}), ...studioHooks("untrusted")];
+const AFTER_STATE = [hook(USER_HOOK_KEY, { enabled: false }), ...studioHooks("trusted")];
 
-function expectedArgs(instructions: string, model?: string): string[] {
+interface FakeCodex {
+  readonly userMcpServers?: readonly string[];
+  readonly hooksAfterState?: readonly CodexHook[];
+  readonly exposedTools?: readonly string[];
+  readonly cache?: unknown;
+}
+
+async function adapterWith(fake: FakeCodex = {}) {
+  const probes: CodexProbe[] = [];
+  const hasHookState = (probe: CodexProbe) => probe.configArgs.some((arg) => arg.startsWith("hooks.state="));
+  const adapter = createCodexAdapter({
+    parentEnv: { PATH: "/usr/bin", HOME: "/home/user", OPENAI_API_KEY: "sk-parent", CODEX_HOME: await codexHome(fake.cache) },
+    listUserMcpServers: () => Promise.resolve(fake.userMcpServers ?? ["figma", "my server"]),
+    listHooks: (probe) => {
+      probes.push(probe);
+      return Promise.resolve(hasHookState(probe) ? (fake.hooksAfterState ?? AFTER_STATE) : BEFORE_STATE);
+    },
+    listExposedTools: (probe) => {
+      probes.push(probe);
+      return Promise.resolve(fake.exposedTools ?? STUDIO_TOOLS);
+    },
+  });
+  return { adapter, probes };
+}
+
+function expectedArgs(catalogPath: string): string[] {
+  const hookState = [
+    `${JSON.stringify(USER_HOOK_KEY)}={enabled=false}`,
+    ...HOOK_EVENTS.map((event, index) => `${JSON.stringify(`/<session-flags>/config.toml:${event}:0:0`)}={trusted_hash="${hashOf(index)}"}`),
+  ];
   return [
-    "--sandbox",
-    "read-only",
-    "-a",
-    "never",
-    "--dangerously-bypass-hook-trust",
+    "-c",
+    'sandbox_mode="read-only"',
+    "-c",
+    'approval_policy="never"',
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     "-c",
     'web_search="disabled"',
-    ...(model === undefined ? [] : ["-m", model]),
+    "-c",
+    'model="gpt-5.6-luna"',
+    "-c",
+    `model_catalog_json=${JSON.stringify(catalogPath)}`,
     "-c",
     "mcp_servers.figma.enabled=false",
     "-c",
@@ -64,59 +136,131 @@ function expectedArgs(instructions: string, model?: string): string[] {
       `hooks.${event}=[{matcher="*",hooks=[{type="command",command=${JSON.stringify(RELAY)}}]}]`,
     ]),
     "-c",
-    `developer_instructions=${JSON.stringify(instructions)}`,
+    `hooks.state={${hookState.join(",")}}`,
   ];
 }
 
+const rejectsWithConflict = (launch: Promise<unknown>, message: RegExp) =>
+  expect(launch).rejects.toThrow(
+    expect.objectContaining({ name: "AgentLaunchError", reason: "config_conflict", message: expect.stringMatching(message) as unknown }),
+  );
+
 describe("codex adapter: launch", () => {
-  it("locks codex down entirely through argv, with the tokens only in env", async () => {
+  it("locks codex down through config alone, with the tokens only in env and the instructions only in a file", async () => {
     const request = await launchRequest({ model: "gpt-5.6-luna" });
-    const launch = await adapterWith().prepare(request, TOKENS, "/opt/codex/bin/codex");
-    const instructions = await readFile(join(launch.filesDir, "instructions.md"), "utf8");
+    const { adapter } = await adapterWith();
+    const launch = await adapter.prepare(request, TOKENS, "/opt/codex/bin/codex");
 
     expect(launch.file).toBe("/opt/codex/bin/codex");
     expect(launch.cwd).toBe(request.projectDir);
-    expect(launch.args).toEqual(expectedArgs(instructions, "gpt-5.6-luna"));
+    expect(launch.args).toEqual(expectedArgs(join(launch.filesDir, "codex-models.json")));
     expect(launch.env).toEqual({
       PATH: "/usr/bin",
       HOME: "/home/user",
+      CODEX_HOME: expect.any(String) as unknown,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
       ZKS_HOOK_TOKEN: "hook-secret",
       ZKS_MCP_TOKEN: "mcp-secret",
       ZKS_MCP_URL: TOKENS.mcpUrl,
     });
-    expect(launch.args.join(" ")).not.toMatch(/hook-secret|mcp-secret/);
+    const argv = launch.args.join(" ");
+    expect(argv).not.toMatch(/hook-secret|mcp-secret|RULES|developer_instructions|dangerously/);
     expect(launch.companion).toBeUndefined();
   });
 
-  it("keeps its files owner-only in a folder under the run dir", async () => {
+  it("writes codex's model list back in direct tool mode, with no sub-agents, search or patch tool, and the studio's instructions", async () => {
+    const { adapter } = await adapterWith();
     const request = await launchRequest();
-    const launch = await adapterWith([]).prepare(request, TOKENS, "/opt/codex/bin/codex");
+    const launch = await adapter.prepare(request, TOKENS, "/opt/codex/bin/codex");
+    const catalogPath = join(launch.filesDir, "codex-models.json");
+    const catalog: unknown = JSON.parse(await readFile(catalogPath, "utf8"));
+
+    expect(catalog).toEqual({
+      models: [
+        {
+          slug: "gpt-5.6-luna",
+          tool_mode: "direct",
+          supports_search_tool: false,
+          experimental_supported_tools: [],
+          apply_patch_tool_type: null,
+          model_messages: { instructions_template: expect.stringMatching(/^BASE PROMPT\n\n[\s\S]*RULES/) as unknown, multi_agent: "keep" },
+        },
+      ],
+    });
     expect(dirname(launch.filesDir)).toBe(request.runDir);
     expect(await modeOf(launch.filesDir)).toBe(0o700);
-    expect(await modeOf(join(launch.filesDir, "instructions.md"))).toBe(0o600);
+    expect(await modeOf(catalogPath)).toBe(0o600);
+  });
+
+  it("asks codex what it would load with exactly the args the session runs with", async () => {
+    const { adapter, probes } = await adapterWith();
+    const request = await launchRequest();
+    const launch = await adapter.prepare(request, TOKENS, "/opt/codex/bin/codex");
+    const finalProbes = probes.filter((probe) => probe.configArgs.some((arg) => arg.startsWith("hooks.state=")));
+
+    expect(finalProbes).toHaveLength(2);
+    for (const probe of finalProbes)
+      expect(probe).toEqual({ binaryPath: "/opt/codex/bin/codex", configArgs: launch.args, env: launch.env, cwd: request.projectDir });
   });
 
   it("resumes the codex thread with the same lockdown", async () => {
-    const launch = await adapterWith([]).prepare(await launchRequest({ resumeSessionId: "019a-thread" }), TOKENS, "/opt/codex/bin/codex");
+    const { adapter } = await adapterWith({ userMcpServers: [] });
+    const launch = await adapter.prepare(await launchRequest({ resumeSessionId: "019a-thread" }), TOKENS, "/opt/codex/bin/codex");
     expect(launch.args[0]).toBe("resume");
     expect(launch.args.at(-1)).toBe("019a-thread");
-    expect(launch.args).toContain("--dangerously-bypass-hook-trust");
+    expect(launch.args.some((arg) => arg.startsWith("model_catalog_json=") || arg.startsWith("hooks.state="))).toBe(true);
   });
 
   it("refuses to start when the user has an MCP server named studio", async () => {
-    await expect(adapterWith(["studio"]).prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex")).rejects.toThrow(AgentLaunchError);
+    const { adapter } = await adapterWith({ userMcpServers: ["studio"] });
+    await expect(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex")).rejects.toThrow(AgentLaunchError);
   });
 
   it("refuses to start when the user's MCP servers cannot be listed", async () => {
-    const adapter = createCodexAdapter({ parentEnv: PARENT_ENV, listUserMcpServers: async () => Promise.reject(new Error("codex failed")) });
+    const adapter = createCodexAdapter({ parentEnv: { PATH: "/usr/bin" }, listUserMcpServers: async () => Promise.reject(new Error("codex failed")) });
     await expect(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex")).rejects.toThrow(AgentLaunchError);
+  });
+
+  it("refuses to start when codex has no model list to lock down", async () => {
+    const { adapter } = await adapterWith({ cache: { models: [] } });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /model list/);
+  });
+});
+
+describe("codex adapter: what the session may expose and run", () => {
+  it.each(["collaboration.spawn_agent", "functions.exec", "multi_agent_v1.spawn_agent", "functions.exec_command", "mcp__figma.get_file"])(
+    "refuses to start when codex would offer %s",
+    async (tool) => {
+      const { adapter } = await adapterWith({ exposedTools: [...STUDIO_TOOLS, tool] });
+      await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), new RegExp(tool.replace(".", "\\.")));
+    },
+  );
+
+  it("refuses to start when a hook the studio did not write would still run", async () => {
+    const managed = hook("/etc/codex/managed.toml:pre_tool_use:0:0", { source: "mdm", trustStatus: "managed" });
+    const { adapter } = await adapterWith({ hooksAfterState: [...AFTER_STATE, managed] });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /managed\.toml/);
+  });
+
+  it("refuses to start when codex did not trust the studio's own hooks", async () => {
+    const { adapter } = await adapterWith({ hooksAfterState: [hook(USER_HOOK_KEY, { enabled: false }), ...studioHooks("modified")] });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /studio's own hooks/);
+  });
+
+  it("refuses to start when codex cannot be asked", async () => {
+    const adapter = createCodexAdapter({
+      parentEnv: { PATH: "/usr/bin", CODEX_HOME: await codexHome() },
+      listUserMcpServers: () => Promise.resolve([]),
+      listHooks: () => Promise.reject(new Error("app-server crashed")),
+      listExposedTools: () => Promise.resolve(STUDIO_TOOLS),
+    });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /app-server crashed/);
   });
 });
 
 describe("codex adapter: hooks", () => {
-  const adapter = adapterWith();
+  const adapter = createCodexAdapter();
   if (adapter.events.kind !== "hooks") throw new Error("codex reports through hooks");
   const mapHook = adapter.events.mapHook.bind(adapter.events);
   const base = { session_id: "019a-thread", transcript_path: "/x/rollout.jsonl", cwd: "/p", permission_mode: "bypassPermissions" };
@@ -158,7 +302,7 @@ describe("codex adapter: hooks", () => {
 });
 
 describe("codex adapter: policy", () => {
-  const adapter = adapterWith();
+  const adapter = createCodexAdapter();
   const scope = { projectDir: "/p", pluginDir: PLUGIN_DIR, studioToolNames: ["mcp__studio__project_info"] };
 
   it.each(["apply_patch", "exec_command", "shell", "spawn_agent", "mcp__figma__get_file"])("denies %s", async (toolName) => {
@@ -167,38 +311,5 @@ describe("codex adapter: policy", () => {
 
   it("allows the studio's own tools", async () => {
     expect(await adapter.decideTool?.("mcp__studio__project_info", {}, scope)).toEqual({ isAllowed: true });
-  });
-});
-
-describe("codex adapter: usage", () => {
-  it("reads the thread's latest token totals from its rollout file", async () => {
-    const codexHome = await mkdtemp(join(tmpdir(), "zks-codex-home-"));
-    const dayDir = join(codexHome, "sessions", "2026", "10", "29");
-    await mkdir(dayDir, { recursive: true });
-    const tokenCount = (input: number, cached: number, output: number) =>
-      JSON.stringify({
-        type: "event_msg",
-        payload: {
-          type: "token_count",
-          info: {
-            total_token_usage: {
-              input_tokens: input,
-              cached_input_tokens: cached,
-              output_tokens: output,
-              reasoning_output_tokens: 5,
-              total_tokens: input + output,
-            },
-          },
-        },
-      });
-    await writeFile(
-      join(dayDir, "rollout-2026-10-29T10-00-00-019a-thread.jsonl"),
-      [tokenCount(100, 20, 10), '{"type":"event_msg","payload":{"type":"token_count","info":null}}', tokenCount(900, 300, 40), ""].join("\n"),
-    );
-
-    const adapter = createCodexAdapter({ parentEnv: { ...PARENT_ENV, CODEX_HOME: codexHome } });
-    expect(await adapter.usageSource?.("019a-thread")).toEqual({ inputTokens: 600, outputTokens: 40, cacheTokens: 300 });
-    expect(await adapter.usageSource?.("019b-other")).toBeNull();
-    expect(await adapter.usageSource?.("../escape")).toBeNull();
   });
 });

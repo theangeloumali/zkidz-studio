@@ -24,16 +24,27 @@ session's files are 0600 in a 0700 folder under the run directory and are remove
 the edit-director body plus an index of the other skills. The agent reads a full skill body through the read-only `read_skill`
 tool.
 
-Codex CLI, 0.164.0 or newer (`codex.ts`):
+Codex CLI, 0.164.0 or newer (`codex.ts`, `codex-lockdown.ts`, `codex-probes.ts`):
 
-- The lockdown is all in argv: `--sandbox read-only -a never`, 19 `--disable` flags for every shell, browser, computer-use,
-  image, plugin, sub-agent and worktree feature, and `web_search="disabled"`.
+- The lockdown is all `-c` config keys and `--disable` flags: `sandbox_mode="read-only"`, `approval_policy="never"`, 19 disabled
+  features (every shell, browser, computer-use, image, plugin, sub-agent and worktree feature) and `web_search="disabled"`.
+- Feature flags do not remove Codex 0.164's code-mode `exec` tool or its `collaboration` sub-agent tools, and
+  `agents.max_threads=0` is rejected ("must be at least 1"). So the studio writes its own model catalog (`model_catalog_json`): a
+  copy of `$CODEX_HOME/models_cache.json` with every model set to direct tool mode, with no multi-agent version, no search tool,
+  no experimental tools and no `apply_patch`. A launch with no model list yet is refused.
+- The studio instructions are appended to each model's base prompt in that catalog file, so they never appear in argv or
+  `/proc/<pid>/cmdline`.
 - The user's own MCP servers are listed with `codex mcp list --json` and each is switched off for the session. The studio MCP gets
   its tokens by env var name, never in argv.
+- Before the TUI starts, `codex debug prompt-input` runs with the final args. The launch is refused with `config_conflict` unless
+  every tool it lists is a studio MCP tool (`mcp__studio.*`), `request_user_input` or one of the three MCP-resource tools.
 - Hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `Stop` relay to the studio. `PreToolUse` runs the
-  same deny policy as Claude Code.
-- Instructions go in `developer_instructions`, which adds to Codex's base prompt; `model_instructions_file` would replace it.
-  Usage is read from the session's rollout file.
+  same deny policy as Claude Code. The app-server's `hooks/list` reports every hook Codex would load. The studio passes a
+  `hooks.state` override that trusts its own hooks by their current hash and sets `enabled=false` on every other hook (the user's
+  `hooks.json`, a project `.codex/`, anything planted). A second `hooks/list` with the final args must show no other hook enabled
+  and every studio hook trusted, or the launch is refused. Hook trust is never bypassed.
+- Usage is read from the session's rollout file. The studio looks in today's and yesterday's date folders first and remembers the
+  path per thread.
 - `CODEX_HOME` is passed through untouched, because it also holds the sign-in.
 
 OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-companion.ts`, `opencode-stream.ts`):
@@ -63,6 +74,9 @@ OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-companion.ts`, `opencode-stre
 - Codex: `~/.codex/config.toml` still loads, and the studio overrides only the keys it names. The update notice still shows in the
   TUI, and the studio leaves it on.
 - Codex: the read-only sandbox limits writes, not reads. Reads outside the project are blocked by the `PreToolUse` policy only.
+- Codex: the user's `AGENTS.md` and skills list are still added to the prompt. The tool allowlist check means they can only
+  steer the model, not give it a tool.
+- Codex: the launch checks start the binary three more times, which adds about 8 to 9 seconds before the TUI appears.
 - OpenCode: a managed system config (`/etc/opencode` and its macOS and Windows equivalents) still loads, and the studio cannot
   switch it off. It should show up as a source that is not the studio's and be refused, but that is untested: the test machine
   has none.

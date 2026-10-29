@@ -121,7 +121,10 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   await reportProgress({ stage: "joining", pct: 0 });
   // --mode before the clips: the engine's argv ends with the clip list.
   const args = ["--video", job.videoId, "--mode", mode, ...insertArgs, ...clipArgs.flat()];
-  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths, signal }));
+  const engineReport = await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId: job.videoId }, reportProgress, () =>
+    deps.engine.run({ command: "ingest", args, workDir, inPlacePaths, signal }),
+  );
+  const report = IngestReportSchema.parse(engineReport);
 
   const relPath = workRelativePath(workDir, report.sourcePath);
   const sourcePath = join(projectRoot, relPath);

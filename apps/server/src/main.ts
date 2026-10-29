@@ -12,6 +12,7 @@ import { createAgentServices } from "./agent-services.ts";
 import { hasBundledClaudeBinary } from "./agent/sdk-binary.ts";
 import { lazySdkQuery } from "./agent/sdk-loader.ts";
 import { createApp } from "./app.ts";
+import { EditRecorder } from "./edits/edit-recorder.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
@@ -108,7 +109,10 @@ async function main(): Promise<void> {
   });
 
   const previewBuilder = createCompositionBuilder({ workerScriptPath: PREVIEW_WORKER_SCRIPT, studioHome: config.studioHome });
+  const editRecorder = new EditRecorder({ database: database.db, eventBus, logger });
+  editRecorder.start().catch((error: unknown) => logger.error("edit recorder did not start", { error }));
   const app = createApp({
+    editRecorder,
     database: database.db,
     studioHome: config.studioHome,
     security,
@@ -155,6 +159,7 @@ async function main(): Promise<void> {
     // Settled, not all: a server that fails to close must not skip draining the jobs and closing the database.
     void Promise.allSettled([closeServer(server, websocket.server), closeServer(previewServer)])
       .then(() => jobRunner.idle())
+      .then(() => editRecorder.stop())
       .then(() => database.close())
       .finally(() => process.exit(0));
   };

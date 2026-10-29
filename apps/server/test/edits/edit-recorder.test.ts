@@ -39,7 +39,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  recorder.stop();
+  await recorder.stop();
   await database.close();
   await rm(scratchDir, { recursive: true, force: true });
 });
@@ -201,12 +201,27 @@ describe("EditRecorder", () => {
     ]);
   });
 
+  // A query on a closed PGlite never returns and blocks the event loop, so nothing may run once stop() settles.
+  it("finishes its queued work on stop and runs nothing after, from events or its save timer", async () => {
+    await prompt();
+    await usage("s1", "claude_statusline", { costUsd: 0.3 });
+    await recorder.stop();
+    const rowsAtStop = await database.db.select().from(edits);
+
+    await eventBus.publish({ type: "prompt.submitted", projectId, text: "late" });
+    await eventBus.publish({ type: "usage.reported", projectId, sessionId: "s1", source: "claude_statusline", costUsd: 0.9 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(await database.db.select().from(edits)).toEqual(rowsAtStop);
+    expect(rowsAtStop.map((row) => row.costUsd)).toEqual(["0.300000"]);
+  });
+
   it("keeps an open edit's totals across a restart without counting a session's earlier spend again", async () => {
     await prompt();
     await usage("s1", "claude_statusline", { costUsd: 0.4 });
     await recorder.recordAnswers(projectId, { "Music?": "Lo-fi" });
     await recorder.flush();
-    recorder.stop();
+    await recorder.stop();
 
     recorder = await startRecorder();
     await usage("s1", "claude_statusline", { costUsd: 0.45 });

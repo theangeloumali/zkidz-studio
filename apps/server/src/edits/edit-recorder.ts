@@ -47,6 +47,7 @@ export class EditRecorder {
   readonly #dirtyProjectIds = new Set<string>();
   #queue: Promise<void> = Promise.resolve();
   #persistTimer: NodeJS.Timeout | undefined;
+  #isStopped = false;
   #unsubscribe: (() => void) | undefined;
 
   constructor(deps: EditRecorderDeps) {
@@ -63,9 +64,13 @@ export class EditRecorder {
     return recovered;
   }
 
-  stop(): void {
+  /** Saves what is pending, then runs nothing more: a query on a closed PGlite never returns and blocks the event loop. */
+  async stop(): Promise<void> {
     this.#unsubscribe?.();
     clearTimeout(this.#persistTimer);
+    this.#persistTimer = undefined;
+    await this.#enqueue(() => this.#persistDirty());
+    this.#isStopped = true;
   }
 
   /** Resolves once every event delivered so far has been handled. */
@@ -88,6 +93,7 @@ export class EditRecorder {
   }
 
   #enqueue(task: () => Promise<void>): Promise<void> {
+    if (this.#isStopped) return this.#queue;
     this.#queue = this.#queue.then(task).catch((error: unknown) => this.#logger.error("edit recorder failed", { error }));
     return this.#queue;
   }
@@ -193,7 +199,7 @@ export class EditRecorder {
 
   #markDirty(projectId: string): void {
     this.#dirtyProjectIds.add(projectId);
-    if (this.#persistTimer !== undefined) return;
+    if (this.#persistTimer !== undefined || this.#isStopped) return;
     this.#persistTimer = setTimeout(() => {
       this.#persistTimer = undefined;
       void this.flush();

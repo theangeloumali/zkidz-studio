@@ -3,22 +3,18 @@
 import type { StudioDatabase } from "@zks/db";
 import { API_ROUTES } from "@zks/shared";
 import type { Hono } from "hono";
-import type { EventBus } from "../events/event-bus.ts";
-import type { Logger } from "../logging/logger.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
-import { EditRecorder } from "./edit-recorder.ts";
+import type { EditRecorder } from "./edit-recorder.ts";
 import { listLatestEdits, listProjectEdits } from "./edit-store.ts";
 
 interface EditRouteDeps {
   readonly database: StudioDatabase;
-  readonly eventBus: EventBus;
-  readonly logger: Logger;
+  /** Started and stopped by whoever owns the database (main.ts, the test server), so it stops before the database closes. */
+  readonly editRecorder: EditRecorder;
 }
 
 export function registerEdits(app: Hono, deps: EditRouteDeps): void {
-  const { database, logger } = deps;
-  const recorder = new EditRecorder(deps);
-  recorder.start().catch((error: unknown) => logger.error("edit recorder did not start", { error }));
+  const { database, editRecorder: recorder } = deps;
   recordAcceptedAnswers(app, recorder);
 
   // Flushing first queues behind every event already delivered, so a read never trails the stream that prompted it.

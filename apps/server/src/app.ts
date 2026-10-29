@@ -7,6 +7,7 @@ import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
 import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
+import type { EditRecorder } from "./edits/edit-recorder.ts";
 import { registerEdits } from "./edits/routes.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
@@ -41,6 +42,7 @@ export interface AppDependencies {
   readonly webDistDir: string;
   readonly logger: Logger;
   readonly jobRunner: Pick<JobRunner, "resume">;
+  readonly editRecorder: EditRecorder;
   /** Starts the ingest of a project's first uploads; main.ts passes it. */
   readonly autoIngest?: AutoIngest;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */

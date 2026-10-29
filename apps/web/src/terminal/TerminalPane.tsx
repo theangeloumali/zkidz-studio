@@ -3,8 +3,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { fetchTerminalTicket } from "../api/agent-client.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { TERMINAL_TRUST_HINT } from "../copy/claude.ts";
@@ -22,6 +24,25 @@ function toWritable(data: string | ArrayBuffer): string | Uint8Array {
   return typeof data === "string" ? data : new Uint8Array(data);
 }
 
+const EXPANDED_KEY = "zks.terminal.expanded";
+
+// Storage can be blocked or full; the pane works the same without it.
+function readExpanded(): boolean {
+  try {
+    return localStorage.getItem(EXPANDED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeExpanded(expanded: boolean): void {
+  try {
+    localStorage.setItem(EXPANDED_KEY, String(expanded));
+  } catch {
+    // Remembering the choice is a convenience only.
+  }
+}
+
 interface TerminalPaneProps {
   readonly sessionId: string;
   readonly onRestart: () => void;
@@ -31,6 +52,21 @@ interface TerminalPaneProps {
 export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
+  const [expanded, setExpanded] = useState(readExpanded);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [expanded]);
+
+  const toggleExpanded = () => {
+    writeExpanded(!expanded);
+    setExpanded(!expanded);
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -70,13 +106,26 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
     };
   }, [sessionId]);
 
+  const ToggleIcon = expanded ? Minimize2 : Maximize2;
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div data-testid="terminal-pane" className={cn("flex min-h-0 flex-1 flex-col gap-2", expanded && "fixed inset-0 z-50 overscroll-contain bg-bg p-4")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-ui-sm text-copy-muted">{TERMINAL_TRUST_HINT}</p>
-        <p role="status" className="font-mono text-ui-sm text-copy-muted">
-          {STATUS_TEXT[status]}
-        </p>
+        <div className="flex items-center gap-2">
+          <p role="status" className="font-mono text-ui-sm text-copy-muted">
+            {STATUS_TEXT[status]}
+          </p>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon"
+            aria-pressed={expanded}
+            aria-label={expanded ? "Collapse terminal" : "Expand terminal"}
+            onClick={toggleExpanded}
+          >
+            <ToggleIcon aria-hidden="true" className="size-4" />
+          </Button>
+        </div>
       </div>
       {status === "exited" ? (
         <button type="button" className={buttonClass("secondary", "self-start")} onClick={onRestart}>
@@ -84,10 +133,15 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
           Restart Claude Code
         </button>
       ) : null}
-      {/* The fit addon sizes the grid from the host, so the host has no padding and a fixed height: a box that grows with
-          its content made every fit add a row. */}
-      <div className="rounded-inset bg-bg p-2">
-        <div ref={hostRef} role="application" aria-label="Claude Code terminal" className="h-96 w-full overflow-hidden" />
+      {/* The fit addon sizes the grid from the host, so the host has no padding and a definite height: a box that grows
+          with its content made every fit add a row. Expanded, the flex layout gives it the window's height. */}
+      <div className={cn("rounded-inset bg-bg p-2", expanded && "flex min-h-0 flex-1 flex-col")}>
+        <div
+          ref={hostRef}
+          role="application"
+          aria-label="Claude Code terminal"
+          className={cn("w-full overflow-hidden", expanded ? "min-h-0 flex-1" : "h-96")}
+        />
       </div>
     </div>
   );

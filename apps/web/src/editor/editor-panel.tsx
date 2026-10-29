@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_ROUTES, CueSheetSchema, CutSpecSchema, keptSpansOf, type PlayerEdl } from "@zks/shared";
 import { useEffect, useMemo, useState } from "react";
 import { decideCutCandidates, fetchSpecs, restoreSpecVersion, routeUrl, type SpecAddress } from "../api/client.ts";
-import { playerEdlQuery, queryKeys, specsQuery, specVersionQuery } from "../api/queries.ts";
+import { mediaQuery, playerEdlQuery, projectQuery, queryKeys, specsQuery, specVersionQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { useEventsStore } from "../events/store.ts";
 import { formatDuration } from "../lib/format.ts";
@@ -50,7 +50,14 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
   const cutsVersion = useQuery({ ...specVersionQuery(cutsAddress, selectedVersion ?? undefined), enabled: cutsSummary !== undefined });
   const cuesVersion = useQuery({ ...specVersionQuery({ projectId, videoId: cuesSummary?.videoId ?? "", kind: "cues" }), enabled: cuesSummary !== undefined });
 
-  const footageUrl = cutsSummary === undefined ? undefined : routeUrl(API_ROUTES.streamProxy.path, { projectId, videoId: cutsSummary.videoId });
+  // Before the first cut spec the player shows the untouched clip: its proxy and the source asset's length.
+  const project = useQuery(projectQuery(projectId)).data;
+  const media = useQuery(mediaQuery(projectId)).data;
+  const sourceDurationS = media?.find((asset) => asset.kind === "source")?.durationS ?? 0;
+  const originalVideoId = sourceDurationS > 0 ? project?.videoId : undefined;
+  const footageVideoId = cutsSummary?.videoId ?? originalVideoId;
+  const footageUrl = footageVideoId === undefined ? undefined : routeUrl(API_ROUTES.streamProxy.path, { projectId, videoId: footageVideoId });
+  const isPreparing = footageUrl === undefined && media !== undefined && media.length > 0;
   const cuts = useMemo(() => {
     const parsed = CutSpecSchema.safeParse(cutsVersion.data?.content);
     return parsed.success ? parsed.data : null;
@@ -66,10 +73,14 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
     enabled: isLiveVersion,
   }).data;
   const spans = useMemo(() => {
+    if (cutsSummary === undefined) return originalVideoId === undefined ? NO_SPANS : [{ at: 0, end: sourceDurationS }];
     if (isLiveVersion) return playerEdl === undefined ? NO_SPANS : spansOfEdl(playerEdl);
     return cuts === null ? NO_SPANS : keptSpansOf(cuts);
-  }, [isLiveVersion, playerEdl, cuts]);
-  const tracks = useMemo(() => buildTimelineTracks(cuts, cueSheet), [cuts, cueSheet]);
+  }, [cutsSummary, originalVideoId, sourceDurationS, isLiveVersion, playerEdl, cuts]);
+  const tracks = useMemo(
+    () => buildTimelineTracks(cuts, cueSheet, originalVideoId === undefined ? 0 : sourceDurationS),
+    [cuts, cueSheet, originalVideoId, sourceDurationS],
+  );
   const [clock] = useState(() => createPlaybackClock({ durationS: 0 }));
   useEffect(() => () => clock.pause(), [clock]);
   const composition = usePreviewComposition(projectId, cutsSummary?.videoId, playerEdl?.preview);
@@ -103,14 +114,14 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-ui font-semibold">Preview</h3>
-          <p className="text-ui-sm text-copy-muted">Live preview · not a render</p>
+          <p className="text-ui-sm text-copy-muted">{cutsSummary === undefined ? "Original video · not edited yet" : "Live preview · not a render"}</p>
         </div>
-        <PreviewPlayer cuts={cuts} spans={spans} composition={composition} clock={clock} footageUrl={footageUrl} />
+        <PreviewPlayer cuts={cuts} spans={spans} composition={composition} clock={clock} footageUrl={footageUrl} preparing={isPreparing} />
       </div>
       <div className="flex flex-col gap-3">
         <Timeline
           tracks={tracks}
-          sourceDurationS={cuts?.durationS ?? 0}
+          sourceDurationS={cuts?.durationS ?? (originalVideoId === undefined ? 0 : sourceDurationS)}
           keptSpans={spans}
           clock={clock}
           meta={

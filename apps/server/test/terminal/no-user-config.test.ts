@@ -58,6 +58,8 @@ beforeAll(async () => {
       fetch: () => Promise.resolve(new Response("{}", { status: 200 })),
       logger: createLogger(() => undefined),
       claudeVersion: "2.1.300",
+      // A fixed answer: probing PATH would make the test depend on which agents this machine has, and spawn them.
+      agentVersions: () => Promise.resolve({ codex: { version: null, minVersion: "0.164.0" }, opencode: { version: null, minVersion: "2.2.0" } }),
     });
     const sdkManager = { submit: () => Promise.resolve(), stop: () => Promise.resolve(), kill: () => Promise.resolve(), decide: () => false };
     const openProjectTerminal = createProjectTerminalOpener({

@@ -11,6 +11,8 @@ import { lessonTools } from "./handlers/lesson-tools.ts";
 import { mediaCheckTools } from "./handlers/media-check-tools.ts";
 import { previewTools } from "./handlers/preview-tools.ts";
 import { projectTools } from "./handlers/project-tools.ts";
+import { referenceTools } from "./handlers/reference-tools.ts";
+import { styleTools } from "./handlers/style-tools.ts";
 import { renderTools } from "./render-tools.ts";
 
 export { implementTool, type StudioTool } from "./define-tool.ts";
@@ -28,6 +30,8 @@ export function studioToolCatalog(): readonly StudioTool[] {
     ...renderTools,
     ...assetTools,
     ...lessonTools,
+    ...referenceTools,
+    ...styleTools,
   ];
 }
 

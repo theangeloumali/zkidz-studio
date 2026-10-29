@@ -8,9 +8,6 @@ import type { MediaAssetRow, ProjectRow } from "../dto.ts";
 import type { ToolContext } from "./context.ts";
 import { ToolError } from "./result.ts";
 
-/** Projects have no theme column yet, so every one uses the default pack (plan §7.8). */
-export const PROJECT_THEME_ID = "zkidz";
-
 export async function loadProject(context: ToolContext): Promise<ProjectRow> {
   const [project] = await context.db.select().from(projects).where(eq(projects.id, context.projectId));
   if (project === undefined) throw new ToolError("This project no longer exists");
@@ -27,6 +24,13 @@ export async function findProjectAsset(context: ToolContext, assetId: string): P
     .from(mediaAssets)
     .where(and(eq(mediaAssets.id, assetId), eq(mediaAssets.projectId, context.projectId)));
   if (asset === undefined) throw new ToolError(`Asset ${assetId} is not part of this project`);
+  return asset;
+}
+
+/** An asset an edit cuts from; a reference only shows the look to match. */
+export async function findFootageAsset(context: ToolContext, assetId: string): Promise<MediaAssetRow> {
+  const asset = await findProjectAsset(context, assetId);
+  if (asset.kind === "reference") throw new ToolError(`Asset ${assetId} is a reference: a look to match, never footage`);
   return asset;
 }
 

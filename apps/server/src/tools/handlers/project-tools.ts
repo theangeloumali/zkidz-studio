@@ -11,7 +11,8 @@ import { CAPABILITIES_FILE } from "../../jobs/master-files.ts";
 import { readEnabledRuleTexts } from "../../rules/rule-reader.ts";
 import { implementTool } from "../define-tool.ts";
 import type { MediaAssetRow } from "../../dto.ts";
-import { loadProject, PROJECT_THEME_ID } from "../project-files.ts";
+import { projectThemeId } from "../../projects/project-style.ts";
+import { loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 import { readLatestWords, type TranscriptWord } from "../transcript-store.ts";
 
@@ -21,18 +22,25 @@ const WORDS_PER_PAGE = 400;
 const WORDS_PER_READABLE_LINE = 12;
 
 const projectInfo = implementTool("project_info", {
-  description: "The project's video id, its clips by assetId (duration, fps, rotation, HDR), the theme and the user's style rules.",
+  description:
+    "The project's video id, its clips by assetId (duration, fps, rotation, HDR), the reference videos to match (never footage), the theme and the user's style rules.",
   handler: async (_input, context) => {
     const project = await loadProject(context);
-    const clipRows = await context.db
+    const assetRows = await context.db
       .select()
       .from(mediaAssets)
-      .where(and(eq(mediaAssets.projectId, context.projectId), inArray(mediaAssets.kind, [...CLIP_KINDS])))
+      .where(and(eq(mediaAssets.projectId, context.projectId), inArray(mediaAssets.kind, [...CLIP_KINDS, "reference"])))
       .orderBy(asc(mediaAssets.createdAt));
+    const clips = assetRows.filter((asset) => asset.kind !== "reference").flatMap(toClipInfo);
+    const references = assetRows.filter((asset) => asset.kind === "reference").flatMap(toReferenceInfo);
     const ruleTexts = await readEnabledRuleTexts(context.db);
-    return { output: { videoId: project.videoId, clips: clipRows.flatMap(toClipInfo), theme: PROJECT_THEME_ID, rules: ruleTexts } };
+    return { output: { videoId: project.videoId, clips, references, theme: projectThemeId(project), rules: ruleTexts } };
   },
 });
+
+function toReferenceInfo(asset: MediaAssetRow) {
+  return asset.durationS === null ? [] : [{ assetId: asset.id, name: slugifyTitle(asset.name), durationS: asset.durationS }];
+}
 
 /** A clip the probe could not time is left out: Claude cannot cut what has no duration or frame rate. */
 function toClipInfo(asset: MediaAssetRow) {

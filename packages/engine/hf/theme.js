@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { FAMILIES } = require("./brand/fonts");
+const { optionValue } = require("./cli-args");
 
 const THEMES_DIR = path.resolve(__dirname, "..", "..", "..", "themes");
 const DEFAULT_THEME = "zkidz";
@@ -38,7 +39,36 @@ function validateTheme(theme) {
   return theme;
 }
 
-function loadTheme(id = DEFAULT_THEME) {
+// A project style (work/style.json) may only recolour tokens, swap bundled faces and turn boil: never code, URLs or paths.
+const STYLE_KEYS = ["theme", "tokens", "type", "boil"];
+const HEX_COLOUR = /^#[0-9a-fA-F]{6}$/;
+
+function applyStyle(pack, style) {
+  const fail = (message) => {
+    throw new Error(`theme ${pack.id} style: ${message}`);
+  };
+  if (!isRecord(style)) fail("a style is a JSON object");
+  const extraKey = Object.keys(style).find((key) => !STYLE_KEYS.includes(key));
+  if (extraKey !== undefined) fail(`${extraKey} cannot be set by a style (${STYLE_KEYS.join(", ")})`);
+  if (style.theme !== pack.id) fail(`it names theme ${JSON.stringify(style.theme)}`);
+  const styled = structuredClone(pack);
+  for (const [name, value] of Object.entries(style.tokens ?? {})) {
+    if (!Object.hasOwn(pack.tokens, name)) fail(`the pack has no token ${name}`);
+    if (typeof value !== "string" || !HEX_COLOUR.test(value)) fail(`${name} must be a #rrggbb colour`);
+    styled.tokens[name] = value;
+  }
+  for (const [role, family] of Object.entries(style.type ?? {})) {
+    if (!TYPE_ROLES.includes(role)) fail(`type role ${role} is not one of ${TYPE_ROLES.join(", ")}`);
+    styled.type[role] = { ...pack.type[role], family };
+  }
+  if (style.boil !== undefined) styled.boil = style.boil;
+  return validateTheme(styled);
+}
+
+/** An id draws the pack as it is; `{ id, style }` draws it under a project's style. */
+function loadTheme(ref = DEFAULT_THEME) {
+  if (isRecord(ref)) return applyStyle(loadTheme(ref.id), ref.style);
+  const id = ref;
   if (typeof id !== "string" || !THEME_ID.test(id)) throw new Error(`${JSON.stringify(id)} is not a theme id (lowercase letters, digits and -)`);
   const file = path.join(THEMES_DIR, id, "theme.json");
   if (!fs.existsSync(file)) throw new Error(`no theme ${id} in the repo's themes/ folder`);
@@ -49,4 +79,16 @@ function loadTheme(id = DEFAULT_THEME) {
   return validateTheme(theme);
 }
 
-module.exports = { loadTheme, validateTheme, DEFAULT_THEME, THEMES_DIR };
+/** A project style file (work/style.json, written by the server) as a loadTheme ref; applyStyle checks it on load. */
+function styleRef(file) {
+  const style = JSON.parse(fs.readFileSync(file, "utf8"));
+  return { id: style.theme, style };
+}
+
+/** --style <file> draws a project's style over its theme; else --theme <id>, else the fallback. */
+function themeFrom(args, fallback = DEFAULT_THEME) {
+  if (args.includes("--style")) return styleRef(optionValue(args, "--style"));
+  return args.includes("--theme") ? optionValue(args, "--theme") : fallback;
+}
+
+module.exports = { loadTheme, styleRef, themeFrom, validateTheme, DEFAULT_THEME, THEMES_DIR };

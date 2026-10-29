@@ -2,17 +2,16 @@
 // The only engine runner: spawn with its own process group, so a cancel kills the engine's ffmpeg and Chrome children.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { delimiter, isAbsolute, join } from "node:path";
+import { delimiter, isAbsolute } from "node:path";
 import { ENV, redactText } from "@zks/shared";
-import { loadToolsLock, pinnedExecutablePath, platformKey, type ToolName } from "@zks/shared/node";
 import { z } from "zod";
+import { PINNED_TOOL_ENV, pinnedToolPath, SETUP_HINT, type PinnedToolName } from "../config.ts";
 import { inheritedParentEnv } from "../security/parent-env.ts";
 import { activeSpecSnapshotDir } from "./spec-snapshot.ts";
 
 const STDERR_TAIL_CHARS = 2000;
 const DEFAULT_KILL_GRACE_MS = 5000;
 const ENGINE_DIR_PLACEHOLDER = "<engine>";
-const SETUP_HINT = "Run: pnpm zks setup";
 // ZKS_BACKEND pins the engine's backend: the GPU probe can pass on a host whose Vulkan (libplacebo) still fails. The runner
 // overrides ZKS_FFMPEG and ZKS_CHROME with the pinned tools; the demo runner passes them through.
 const ENGINE_OVERRIDES = ["ZKS_BACKEND", "ZKS_FFMPEG", "ZKS_FFPROBE", "ZKS_CHROME", "ZKS_JOBS", "XDG_CACHE_HOME", "XDG_DATA_HOME"];
@@ -63,14 +62,15 @@ export interface EngineProcessRunner {
 /** The pinned ffmpeg and Chrome the engine must use; an env override wins, and PATH is never a fallback. */
 export function pinnedEngineTools(env: Readonly<Record<string, string | undefined>>, studioHome: string): PinnedEngineTools {
   return {
-    ffmpegPath: env[ENV.ffmpeg] || installedTool(studioHome, "ffmpeg"),
-    chromePath: env[ENV.chrome] || installedTool(studioHome, "chrome-headless-shell"),
+    ffmpegPath: installedTool(env, studioHome, "ffmpeg"),
+    chromePath: installedTool(env, studioHome, "chrome-headless-shell"),
   };
 }
 
-function installedTool(studioHome: string, toolName: ToolName): string {
-  const toolPath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, toolName);
-  if (toolPath === undefined || !existsSync(toolPath)) throw new Error(`${toolName} is not installed. ${SETUP_HINT}`);
+// An env path is trusted as given; a pinned one must be on disk, or the engine would fail mid-job instead.
+function installedTool(env: Readonly<Record<string, string | undefined>>, studioHome: string, toolName: PinnedToolName): string {
+  const toolPath = pinnedToolPath(env, studioHome, toolName);
+  if (!env[PINNED_TOOL_ENV[toolName]] && !existsSync(toolPath)) throw new Error(`${toolName} is not installed. ${SETUP_HINT}`);
   return toolPath;
 }
 

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 const { test } = require("node:test");
 
 // build.js reads ZKS_WORK when it loads; cue images resolve from the work dir's parent (the repo root).
@@ -117,4 +118,15 @@ test("a registered in-place image is allowed", () => {
   } finally {
     delete process.env.ZKS_INPLACE;
   }
+});
+
+test("the build CLI draws a project style file over its theme, as render.js does", () => {
+  sheet("styled", [HOOK]);
+  const stylePath = path.join(ROOT, "style.json");
+  fs.writeFileSync(stylePath, JSON.stringify({ theme: "minimal", tokens: { ink: "#ff0000" } }));
+  const stdout = execFileSync(process.execPath, [path.join(__dirname, "..", "build.js"), "styled", "--style", stylePath], {
+    env: { ...process.env, ZKS_WORK: WORK },
+    encoding: "utf8",
+  });
+  assert.ok(fs.readFileSync(stdout.split("→ ")[1].trim(), "utf8").includes("#ff0000"));
 });

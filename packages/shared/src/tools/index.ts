@@ -6,6 +6,7 @@ import { approve, jobCancel, jobResume, jobStatus, jobWait } from "./jobs.ts";
 import { suggestLessons } from "./knowledge.ts";
 import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projectInfo, readTranscript, transcribe } from "./media.ts";
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
+import { sampleReference, setProjectStyle } from "./style.ts";
 
 export * from "./define.ts";
 // Not in STUDIO_TOOLS until their handlers are registered (plan 2026-10-29, Phase 7).
@@ -48,6 +49,8 @@ export const STUDIO_TOOLS = {
   approve,
   job_resume: jobResume,
   suggest_lessons: suggestLessons,
+  sample_reference: sampleReference,
+  set_project_style: setProjectStyle,
 } as const satisfies Record<string, StudioToolContract>;
 
 export type StudioToolName = keyof typeof STUDIO_TOOLS;

@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { CUE_KINDS } from "../../packages/shared/src/specs/cues.ts";
 
 const SKILLS_DIR = fileURLToPath(new URL("../../plugin/skills", import.meta.url));
 const ATTRIBUTION = "<!-- Created by The Angelo Umali. -->";
@@ -67,8 +68,11 @@ describe("style-rules only asks for data the tools and prompt deliver", () => {
   const tierTable = readFileSync(join(SKILLS_DIR, "style-rules", "references", "card-tiers.md"), "utf8");
   /** @type {{ components: { kind: string, tier: string }[] }} */
   const manifest = JSON.parse(readFileSync(join(THEME_DIR, "index.json"), "utf8"));
+  // list_cue_kinds hides a manifest kind the shared cue schema cannot carry, so the table lists only the ones Claude can place.
+  /** @type {readonly string[]} */
+  const placeableKinds = CUE_KINDS;
   /** @type {[string, string][]} */
-  const kindTiers = manifest.components.map((component) => [component.kind, component.tier]);
+  const kindTiers = manifest.components.filter((component) => placeableKinds.includes(component.kind)).map((component) => [component.kind, component.tier]);
 
   it("never says project_info returns the preset or list_cue_kinds returns a tier", () => {
     // project_info returns rules only; list_cue_kinds returns no tier (packages/shared tools contracts).
@@ -83,9 +87,9 @@ describe("style-rules only asks for data the tools and prompt deliver", () => {
     expect(section).toMatch(new RegExp(`^\\| \`${kind}\` +\\|`, "m"));
   });
 
-  it("card-tiers.md lists no kind the manifest lacks", () => {
+  it("card-tiers.md lists no kind the manifest lacks or list_cue_kinds hides", () => {
     const listedKinds = [...tierTable.matchAll(/^\| `(\w+)` +\|/gm)].map((match) => match[1]);
-    expect(listedKinds.sort()).toEqual(manifest.components.map((component) => component.kind).sort());
+    expect(listedKinds.sort()).toEqual(kindTiers.map(([kind]) => kind).sort());
   });
 
   it.each(readdirSync(join(THEME_DIR, "presets", "styles")))("the preset table matches %s", (fileName) => {

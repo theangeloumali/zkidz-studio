@@ -35,6 +35,20 @@ describe("uploadFile", () => {
     expect(request.body).toBe(file);
   });
 
+  it("marks a style reference with the kind query, never as footage", async () => {
+    const file = new File(["frames"], "ref.mp4", { type: "video/mp4" });
+    const result = uploadFile({ projectId: PROJECT_ID, file, kind: "reference", onProgress: () => undefined, createRequest: () => new FakeUploadRequest() });
+    const request = await vi.waitFor(() => {
+      const created = FakeUploadRequest.instances.at(-1);
+      if (!created) throw new Error("no request was created");
+      return created;
+    });
+    request.respond(201, makeAsset({ kind: "reference" }));
+    await result;
+
+    expect(request.url).toBe(`/api/projects/${PROJECT_ID}/media?kind=reference`);
+  });
+
   it("reports progress as a 0..1 fraction", async () => {
     const fractions: number[] = [];
     const { result, request } = await startUpload((fraction) => fractions.push(fraction));

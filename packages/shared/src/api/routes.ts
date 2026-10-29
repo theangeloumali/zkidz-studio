@@ -77,7 +77,14 @@ export const API_ROUTES = {
   killSession: { method: "POST", path: "/api/projects/:projectId/kill", body: null, response: OkSchema },
 
   listMedia: { method: "GET", path: "/api/projects/:projectId/media", response: z.strictObject({ assets: z.array(MediaAssetSchema) }) },
-  uploadMedia: { method: "POST", path: "/api/projects/:projectId/media", body: "binary", response: MediaAssetSchema },
+  /** `?kind=reference` registers a video as a look to match (sample_reference), never as footage. */
+  uploadMedia: {
+    method: "POST",
+    path: "/api/projects/:projectId/media",
+    query: z.strictObject({ kind: z.literal("reference").optional() }),
+    body: "binary",
+    response: MediaAssetSchema,
+  },
   /** uploadMedia plus PROJECT_TITLE_HEADER: the project exists only if the clip is accepted. */
   createProjectWithMedia: { method: "POST", path: "/api/projects/media", body: "binary", response: ProjectWithAssetSchema },
   /** A file used where it lies, never copied: the project exists only if the file is accepted. */

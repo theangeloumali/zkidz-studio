@@ -2,6 +2,7 @@
 // Tool results as MCP CallToolResult: JSON text for the model plus `structuredContent` for the server.
 import type { CallToolResult, ImageContent } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
+import { openConfined } from "../security/confine-path.ts";
 
 /** An expected failure the model can act on; its message reaches Claude verbatim, so it never carries a path. */
 export class ToolError extends Error {
@@ -21,4 +22,14 @@ export function describeFirstIssue(error: z.ZodError): string {
   const [issue] = error.issues;
   const fieldPath = issue?.path.join(".") ?? "";
   return `Invalid input: ${fieldPath === "" ? "" : `${fieldPath}: `}${issue?.message ?? "rejected"}`;
+}
+
+/** A PNG under the project as an image block; confined at open, so a link the engine left out of the project is never read. */
+export async function readPngImageBlock(projectRoot: string, relPath: string): Promise<ImageContent> {
+  const { handle } = await openConfined(projectRoot, relPath);
+  try {
+    return { type: "image", data: (await handle.readFile()).toString("base64"), mimeType: "image/png" };
+  } finally {
+    await handle.close();
+  }
 }

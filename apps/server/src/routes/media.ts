@@ -23,6 +23,7 @@ import {
   storedProjectBytes,
   withStagedUpload,
   type MediaRouteDeps,
+  type StagedUpload,
 } from "./media-ingest.ts";
 
 export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
@@ -38,6 +39,7 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
 
   app.post(API_ROUTES.uploadMedia.path, async (c) => {
     const project = await findProjectOrThrow(deps.database, c.req.param("projectId"));
+    const { kind } = parseOrBadRequest(API_ROUTES.uploadMedia.query, c.req.query());
     const upload = readUploadRequest(c, deps.uploadLimits);
     const storedBytes = await storedProjectBytes(deps.database, project.id);
     // Read and reserve with no await in between, so a parallel upload always sees this reservation.
@@ -48,7 +50,9 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
       const rawDir = join(projectDir(deps.studioHome, project.slug), "media", "raw");
       const maxBytes = Math.min(deps.uploadLimits.maxFileBytes, remainingProjectBytes);
       const asset = await autoIngest.track(project.id, () =>
-        withStagedUpload(deps, rawDir, { ...upload, maxBytes }, (staged) => commitStagedUpload(deps, project, staged)),
+        withStagedUpload(deps, rawDir, { ...upload, maxBytes }, (staged) =>
+          commitStagedUpload(deps, project, kind === "reference" ? asReference(staged) : staged),
+        ),
       );
       return c.json(asset, 201);
     } finally {
@@ -89,6 +93,12 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
     autoIngest.committed(created.project.id);
     return c.json(created, 201);
   });
+}
+
+/** The probe calls any video "camera"; a reference is a video kept apart so it is never cut as footage. */
+function asReference(staged: StagedUpload): StagedUpload {
+  if (staged.probe.kind !== "camera") throw new HttpError(400, "A reference must be a video");
+  return { ...staged, probe: { ...staged.probe, kind: "reference" } };
 }
 
 /** The project and its first asset commit in one transaction. */

@@ -7,8 +7,36 @@ import tseslint from "typescript-eslint";
 const HTML_SINK_MESSAGE = "Raw HTML sinks are banned: render agent text as React text nodes (plan §9.1).";
 const htmlSinkProperties = ["innerHTML", "outerHTML", "insertAdjacentHTML"].map((property) => ({ property, message: HTML_SINK_MESSAGE }));
 
+// The overlay renderer's Node side (CommonJS, run by node and the engine).
+const RENDERER_NODE_GLOBALS = [
+  "require",
+  "module",
+  "exports",
+  "__dirname",
+  "__filename",
+  "Buffer",
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+];
+const RENDERER_PLATFORM_GLOBALS = ["structuredClone", "URLSearchParams", "TextDecoder", "TextEncoder", "AbortController", "AbortSignal", "performance"];
+
 export default defineConfig(
-  { ignores: ["**/node_modules/", "**/dist/", "design/mockup/", "packages/shared/schema/"] },
+  {
+    ignores: [
+      "**/node_modules/",
+      "**/dist/",
+      "design/mockup/",
+      "packages/shared/schema/",
+      // Page scripts the render page loads by <script> tag; they share globals across files (BRAND, ctx, TYPE), which per-file lint cannot see.
+      "packages/engine/hf/kit/",
+      "packages/engine/hf/overlay/",
+      "packages/engine/hf/components/",
+      "packages/engine/hf/fx/",
+      "packages/engine/hf/preview/player.js",
+    ],
+  },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   {
@@ -20,6 +48,14 @@ export default defineConfig(
     files: ["**/*.{js,mjs,cjs,jsx}"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: { globals: { console: "readonly", process: "readonly", URL: "readonly" } },
+  },
+  {
+    files: ["packages/engine/hf/**/*.js"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: Object.fromEntries([...RENDERER_NODE_GLOBALS, ...RENDERER_PLATFORM_GLOBALS].map((name) => [name, "readonly"])),
+    },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   {
     rules: {

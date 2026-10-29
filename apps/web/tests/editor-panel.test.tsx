@@ -1,19 +1,24 @@
 // Created by The Angelo Umali.
-import { screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { PREVIEW_LOADED_MESSAGE, PREVIEW_SEEK_MESSAGE, type CutSpec, type PlayerEdl } from "@zks/shared";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "../src/api/queries.ts";
 import { EditorPanel } from "../src/editor/editor-panel.tsx";
 import { useEventsStore } from "../src/events/store.ts";
 import { SAMPLE_EVENTS } from "./event-fixtures.ts";
-import { PROJECT_ID, jsonResponse } from "./fakes.ts";
+import { PROJECT_ID, jsonResponse, makeAsset, makeProject } from "./fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "./render.tsx";
 
 const SPECS_URL = `/api/projects/${PROJECT_ID}/specs`;
 const CUTS_URL = `${SPECS_URL}/v1/cuts`;
 const DECIDE_URL = `/api/projects/${PROJECT_ID}/cut-candidates/c-2`;
+const PROJECT_URL = `/api/projects/${PROJECT_ID}`;
+const MEDIA_URL = `${PROJECT_URL}/media`;
+const PROXY_URL = `${PROJECT_URL}/videos/v1/proxy`;
 const EDL_URL = `/api/projects/${PROJECT_ID}/videos/v1/edl`;
 
 function cutSpec(removals: CutSpec["removals"]): CutSpec {
@@ -51,8 +56,12 @@ function playerEdl(overrides: Partial<PlayerEdl> = {}): PlayerEdl {
   };
 }
 
+const SOURCE_ASSET = makeAsset({ kind: "source", name: "v1 source", durationS: 468 });
+
 function stubEditorApi(extra: Parameters<typeof stubFetch>[0] = {}) {
   return stubFetch({
+    [`GET ${PROJECT_URL}`]: () => jsonResponse(makeProject()),
+    [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [SOURCE_ASSET] }),
     [`GET ${EDL_URL}`]: () => jsonResponse(playerEdl()),
     [`GET ${SPECS_URL}`]: () => jsonResponse({ specs: [{ videoId: "v1", kind: "cuts", currentVersion: 3 }] }),
     [`GET ${CUTS_URL}`]: () => jsonResponse(specVersion(3, cutSpec([{ at: 10, end: 12, reason: "pause" }]))),
@@ -63,6 +72,77 @@ function stubEditorApi(extra: Parameters<typeof stubFetch>[0] = {}) {
 
 describe("EditorPanel", () => {
   beforeEach(() => useEventsStore.setState({ feeds: {} }));
+
+  describe("before the first cut spec", () => {
+    const noSpecs = { [`GET ${SPECS_URL}`]: () => jsonResponse({ specs: [] }) };
+
+    it("plays the original through its proxy and says it is not edited yet", async () => {
+      stubEditorApi(noSpecs);
+      const { container } = renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+      expect(await screen.findByText("Original video · not edited yet")).toBeInTheDocument();
+      await waitFor(() => expect(container.querySelector("video")).toHaveAttribute("src", PROXY_URL));
+      expect(screen.queryByText("Live preview · not a render")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
+      expect(screen.queryByRole("list", { name: "Versions of this edit" })).not.toBeInTheDocument();
+    });
+
+    it("lays the whole original on the timeline as one block", async () => {
+      stubEditorApi(noSpecs);
+      renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+      expect(await screen.findByRole("group", { name: "Video, 1 item" })).toBeInTheDocument();
+      expect(screen.getByRole("slider")).toHaveAttribute("aria-valuemax", "468");
+    });
+
+    it("shows a preparing state while the source is being ingested", async () => {
+      stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [makeAsset({ kind: "camera" })] }) });
+      const { container } = renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+      expect(await screen.findByText("Preparing your video…")).toBeInTheDocument();
+      expect(container.querySelector("video")).toBeNull();
+    });
+
+    it("keeps preparing when the source has no duration yet", async () => {
+      stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [makeAsset({ kind: "source", durationS: null })] }) });
+      renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+      expect(await screen.findByText("Preparing your video…")).toBeInTheDocument();
+    });
+
+    it("asks for a clip when the project has no media", async () => {
+      stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [] }) });
+      renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+      expect(await screen.findByText("Add a clip to see it here.")).toBeInTheDocument();
+    });
+
+    it("switches to the edit when a cut spec appears while the original is showing", async () => {
+      let hasCuts = false;
+      stubEditorApi({
+        [`GET ${SPECS_URL}`]: () => jsonResponse({ specs: hasCuts ? [{ videoId: "v1", kind: "cuts", currentVersion: 3 }] : [] }),
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <EditorPanel projectId={PROJECT_ID} />
+        </QueryClientProvider>,
+      );
+      await screen.findByText("Original video · not edited yet");
+
+      hasCuts = true;
+      await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.specs(PROJECT_ID) }));
+
+      expect(await screen.findByText("Edited · 0:28 (from 0:30)")).toBeInTheDocument();
+      expect(screen.getByText("Live preview · not a render")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the edit's own header over an older version picked in the strip", async () => {
+    stubEditorApi();
+    renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+    await userEvent.click(await screen.findByRole("button", { name: "v1" }));
+    expect(await screen.findByText("Edited · 0:30 (from 0:30)")).toBeInTheDocument();
+    expect(screen.getByText("Live preview · not a render")).toBeInTheDocument();
+  });
 
   it("shows the edited length and the version history of the cut", async () => {
     stubEditorApi();

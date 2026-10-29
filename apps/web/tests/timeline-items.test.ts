@@ -34,6 +34,12 @@ describe("buildTimelineTracks", () => {
     expect(tracks.cues.map((block) => block.label)).toEqual(["keyword · Claude"]);
   });
 
+  it("lays the whole original as one block before the first cut spec", () => {
+    const tracks = buildTimelineTracks(null, [], 467.968);
+    expect(tracks.video).toEqual([expect.objectContaining({ variant: "seg", at: 0, end: 467.968, label: "Original" })]);
+    expect(tracks.audio).toEqual([]);
+  });
+
   it("shows nothing but an empty lane before the first cut spec", () => {
     const tracks = buildTimelineTracks(null, []);
     expect(Object.values(tracks).flat()).toEqual([]);

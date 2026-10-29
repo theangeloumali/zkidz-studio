@@ -26,18 +26,28 @@ tool.
 
 Codex CLI, 0.164.0 or newer (`codex.ts`, `codex-lockdown.ts`, `codex-probes.ts`):
 
-- The lockdown is all `-c` config keys and `--disable` flags: `sandbox_mode="read-only"`, `approval_policy="never"`, 19 disabled
-  features (every shell, browser, computer-use, image, plugin, sub-agent and worktree feature) and `web_search="disabled"`.
+- The TUI argv starts with the real `--sandbox read-only` and `--ask-for-approval never` flags. The same values are also set as
+  `-c` keys, along with `include_permissions_instructions=true`, 19 disabled features (every shell, browser, computer-use, image,
+  plugin, sub-agent and worktree feature) and `web_search="disabled"`.
 - Feature flags do not remove Codex 0.164's code-mode `exec` tool or its `collaboration` sub-agent tools, and
   `agents.max_threads=0` is rejected ("must be at least 1"). So the studio writes its own model catalog (`model_catalog_json`): a
   copy of `$CODEX_HOME/models_cache.json` with every model set to direct tool mode, with no multi-agent version, no search tool,
   no experimental tools and no `apply_patch`. A launch with no model list yet is refused.
 - The studio instructions are appended to each model's base prompt in that catalog file, so they never appear in argv or
   `/proc/<pid>/cmdline`.
-- The user's own MCP servers are listed with `codex mcp list --json` and each is switched off for the session. The studio MCP gets
-  its tokens by env var name, never in argv.
-- Before the TUI starts, `codex debug prompt-input` runs with the final args. The launch is refused with `config_conflict` unless
-  every tool it lists is a studio MCP tool (`mcp__studio.*`), `request_user_input` or one of the three MCP-resource tools.
+- Every launch check runs the user's codex with the TUI's exact argv, the project as cwd and the same env, so a trusted project's
+  `.codex/config.toml` is read the way the session reads it. The app-server's `config/read` returns the effective config with
+  every layer merged and starts no MCP server. Each server it lists other than the studio's is switched off. With the final argv
+  the launch is refused if any other server is still enabled, or if any `mcp_servers.studio` key comes from a layer other than
+  the studio's own flags. The studio MCP gets its tokens by env var name, never in argv.
+- Before the TUI starts, `codex debug prompt-input` runs with the final argv. The launch is refused with `config_conflict` unless
+  every tool it lists is a studio MCP tool (`mcp__studio.*`), `request_user_input` or one of the three MCP-resource tools. It must
+  also carry exactly one Codex permissions message, and that message must say `read-only` and `never`. The studio forces the
+  message on, so a config that switches it off and plants a lookalike in `developer_instructions` shows two and is refused.
+- A profile cannot widen the session. On 0.164 a `profile = "..."` key in the user config stops Codex from starting, and a
+  project layer's `profile` and `profiles` are ignored. A profile now comes only from `--profile <name>`, which the studio never
+  passes; tested anyway, a workspace-write profile loses to the studio's `-c sandbox_mode`. `config/read` does not show the CLI
+  flags, so the permissions message is the check of record.
 - Hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse` and `Stop` relay to the studio. `PreToolUse` runs the
   same deny policy as Claude Code. The app-server's `hooks/list` reports every hook Codex would load. The studio passes a
   `hooks.state` override that trusts its own hooks by their current hash and sets `enabled=false` on every other hook (the user's
@@ -76,6 +86,8 @@ OpenCode, 2.2.0 or newer (`opencode.ts`, `opencode-companion.ts`, `opencode-stre
 - Codex: the read-only sandbox limits writes, not reads. Reads outside the project are blocked by the `PreToolUse` policy only.
 - Codex: the user's `AGENTS.md` and skills list are still added to the prompt. The tool allowlist check means they can only
   steer the model, not give it a tool.
+- Codex: a project's own `.codex/config.toml` loads only once the user has trusted that project in Codex. Its MCP servers are
+  switched off and a studio key is refused, but other keys (a model, say) still apply where the studio sets nothing.
 - Codex: the launch checks start the binary three more times, which adds about 8 to 9 seconds before the TUI appears.
 - OpenCode: a managed system config (`/etc/opencode` and its macOS and Windows equivalents) still loads, and the studio cannot
   switch it off. It should show up as a source that is not the studio's and be refused, but that is untested: the test machine

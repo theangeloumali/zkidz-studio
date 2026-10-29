@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-// OpenAI Codex CLI in mode T (ADR 0007): the user's own sign-in, locked down by config flags that codex is asked to confirm before launch.
+// OpenAI Codex CLI in mode T (ADR 0007): the user's own sign-in, locked down by flags that codex is asked to confirm before launch.
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { API_ROUTES, HookPayloadSchema, LOOPBACK_HOST } from "@zks/shared";
@@ -10,8 +10,17 @@ import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../session-files.ts";
 import type { AgentAdapter, AgentLaunchRequest } from "./agent-adapter.ts";
 import { AgentLaunchError, buildTerminalAgentEnv } from "./agent-env.ts";
 import { createAgentFilesDir, removeAgentFiles } from "./agent-files.ts";
-import { assertOnlyStudioHooks, assertOnlyStudioTools, hookStateOverride, writeStudioModelCatalog, type CodexHook } from "./codex-lockdown.ts";
-import { listCodexHooks, listCodexMcpServers, listCodexTools, type CodexProbe } from "./codex-probes.ts";
+import {
+  assertLockedPermissions,
+  assertOnlyStudioHooks,
+  assertOnlyStudioMcp,
+  assertOnlyStudioTools,
+  exposedToolNames,
+  hookStateOverride,
+  writeStudioModelCatalog,
+  type CodexSetup,
+} from "./codex-lockdown.ts";
+import { readCodexPrompt, readCodexSetup, type CodexProbe } from "./codex-probes.ts";
 import { createRolloutUsageReader } from "./codex-usage.ts";
 import { buildAgentInstructions } from "./instructions.ts";
 
@@ -46,19 +55,16 @@ type Environment = Readonly<Record<string, string | undefined>>;
 interface CodexAdapterOptions {
   /** Defaults to process.env; injectable so tests can hand in a hostile parent. */
   readonly parentEnv?: Environment;
-  /** The user's own MCP servers, each switched off for the session; defaults to `codex mcp list --json`. */
-  readonly listUserMcpServers?: (binaryPath: string, env: Readonly<Record<string, string>>) => Promise<readonly string[]>;
-  /** The hooks codex would load with these args; defaults to the app-server's hooks/list. */
-  readonly listHooks?: (probe: CodexProbe) => Promise<readonly CodexHook[]>;
-  /** The tools codex would show the model with these args; defaults to `codex debug prompt-input`. */
-  readonly listExposedTools?: (probe: CodexProbe) => Promise<readonly string[]>;
+  /** The hooks and effective config codex would load with these args; defaults to the app-server's hooks/list and config/read. */
+  readonly readSetup?: (probe: CodexProbe) => Promise<CodexSetup>;
+  /** What codex would show the model with these args; defaults to `codex debug prompt-input`. */
+  readonly readPrompt?: typeof readCodexPrompt;
 }
 
 export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdapter {
   const parentEnv = options.parentEnv ?? process.env;
-  const listUserMcpServers = options.listUserMcpServers ?? listCodexMcpServers;
-  const listHooks = options.listHooks ?? listCodexHooks;
-  const listExposedTools = options.listExposedTools ?? listCodexTools;
+  const readSetup = options.readSetup ?? readCodexSetup;
+  const readPrompt = options.readPrompt ?? readCodexPrompt;
   const codexHome = parentEnv["CODEX_HOME"] ?? join(homedir(), ".codex");
   return {
     kind: "codex",
@@ -68,24 +74,26 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
     minVersion: "0.164.0",
     async prepare(request, tokens, binaryPath) {
       const env = buildTerminalAgentEnv({ parentEnv, inheritNames: ["CODEX_HOME"], extraEnv: tokenEnv(tokens) });
-      const userMcpServers = await listUserMcpServers(binaryPath, env).catch((error: unknown) => {
-        throw new AgentLaunchError("config_conflict", `Codex could not list your MCP servers, so they cannot be switched off: ${String(error)}`);
-      });
-      if (userMcpServers.includes(STUDIO_MCP_NAME))
-        throw new AgentLaunchError("config_conflict", "Your Codex config already has an MCP server named studio; rename it to use ZKidz Studio.");
       const filesDir = await createAgentFilesDir(request.runDir, request.sessionId);
-      const probe = (configArgs: readonly string[]): CodexProbe => ({ binaryPath, configArgs, env, cwd: request.projectDir });
+      const probe = (launchArgs: readonly string[]): CodexProbe => ({ binaryPath, launchArgs, env, cwd: request.projectDir });
       try {
         const catalogPath = await writeStudioModelCatalog(codexHome, filesDir, await buildAgentInstructions(request));
         const relayCommand = buildRelayCommand(request);
-        const baseArgs = buildCodexConfigArgs({ request, userMcpServers, catalogPath, relayCommand });
-        const hookState = hookStateOverride(await asked(listHooks(probe(baseArgs))), relayCommand);
-        const configArgs = [...baseArgs, ...config(hookState)];
-        // Codex is asked again with the final args: the launch is refused unless what it reports is what the studio allows.
-        const [hooks, tools] = await asked(Promise.all([listHooks(probe(configArgs)), listExposedTools(probe(configArgs))]));
-        assertOnlyStudioHooks(hooks, relayCommand, HOOK_EVENTS.length);
-        assertOnlyStudioTools(tools);
-        const args = request.resumeSessionId === undefined ? configArgs : ["resume", ...configArgs, request.resumeSessionId];
+        const baseArgs = buildCodexLaunchArgs({ request, catalogPath, relayCommand });
+        const found = await asked(readSetup(probe(baseArgs)));
+        const userMcpServers = Object.keys(found.mcpServers).filter((name) => name !== STUDIO_MCP_NAME);
+        const launchArgs = [
+          ...baseArgs,
+          ...userMcpServers.flatMap((name) => config(`mcp_servers.${tomlKey(name)}.enabled=false`)),
+          ...config(hookStateOverride(found.hooks, relayCommand)),
+        ];
+        // Codex is asked again with the final argv: the launch is refused unless what it reports is what the studio allows.
+        const [setup, promptInput] = await asked(Promise.all([readSetup(probe(launchArgs)), readPrompt(probe(launchArgs))]));
+        assertOnlyStudioMcp(setup);
+        assertOnlyStudioHooks(setup.hooks, relayCommand, HOOK_EVENTS.length);
+        assertOnlyStudioTools(exposedToolNames(promptInput));
+        assertLockedPermissions(promptInput);
+        const args = request.resumeSessionId === undefined ? launchArgs : ["resume", ...launchArgs, request.resumeSessionId];
         return { file: binaryPath, args, env, cwd: request.projectDir, filesDir };
       } catch (error) {
         await removeAgentFiles(filesDir);
@@ -107,21 +115,22 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
 
 interface CodexArgsRequest {
   readonly request: AgentLaunchRequest;
-  readonly userMcpServers: readonly string[];
   readonly catalogPath: string;
   readonly relayCommand: string;
 }
 
-/** Config keys only, so the TUI, the app-server and prompt-input all read the very same session config. */
-function buildCodexConfigArgs({ request, userMcpServers, catalogPath, relayCommand }: CodexArgsRequest): string[] {
+/** Top-level flags only, so the TUI, the app-server and prompt-input all read the very same session config. */
+function buildCodexLaunchArgs({ request, catalogPath, relayCommand }: CodexArgsRequest): string[] {
   return [
+    // Flags and keys both; prompt-input then confirms what codex actually resolved.
+    ...["--sandbox", "read-only", "--ask-for-approval", "never"],
     ...config('sandbox_mode="read-only"'),
     ...config('approval_policy="never"'),
+    ...config("include_permissions_instructions=true"),
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...config('web_search="disabled"'),
     ...(request.model === undefined ? [] : config(`model=${tomlString(request.model)}`)),
     ...config(`model_catalog_json=${tomlString(catalogPath)}`),
-    ...userMcpServers.flatMap((name) => config(`mcp_servers.${tomlKey(name)}.enabled=false`)),
     ...config(`mcp_servers.studio.command=${tomlString(request.nodePath)}`),
     ...config(`mcp_servers.studio.args=[${tomlString(MCP_SERVER_PATH)}]`),
     // Forwarded by name from codex's env, so the tokens never sit in argv.

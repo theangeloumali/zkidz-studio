@@ -10,7 +10,8 @@ import { SetupRoute } from "../src/routes/setup.tsx";
 import { jsonResponse } from "./fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "./render.tsx";
 
-const NOT_CONNECTED: Connection = { mode: null, keyLast4: null, provider: null, claudeVersion: "2.1.300" };
+const INSTALLED_AGENTS = { codex: { version: "0.164.0", minVersion: "0.164.0" }, opencode: { version: "2.2.0", minVersion: "2.2.0" } };
+const NOT_CONNECTED: Connection = { mode: null, keyLast4: null, provider: null, claudeVersion: "2.1.300", agentVersions: INSTALLED_AGENTS };
 const CHECKS: DoctorCheck[] = [
   { id: "ffmpeg", label: "ffmpeg", status: "pass", detail: "7.1 with NVENC" },
   { id: "chrome", label: "Chrome", status: "fail", detail: "Not found", fix: "Install Google Chrome" },
@@ -48,15 +49,15 @@ describe("SetupRoute", () => {
     expect(await screen.findByText("Style page")).toBeInTheDocument();
   });
 
-  it("offers the three ways in, recommended first", async () => {
+  it("offers the five ways in, recommended first", async () => {
     stubSetup();
     renderWithProviders(<SetupRoute />);
     const group = await screen.findByRole("group", { name: "How should the studio reach Claude?" });
     const options = within(group).getAllByRole("radio");
-    expect(options.map((option) => option.getAttribute("value"))).toEqual(["api_key", "cloud", "terminal"]);
+    expect(options.map((option) => option.getAttribute("value"))).toEqual(["api_key", "cloud", "terminal", "codex_terminal", "opencode_terminal"]);
     expect(within(group).getByText("Recommended")).toBeInTheDocument();
     expect(within(group).getByText("Advanced")).toBeInTheDocument();
-    expect(within(group).getByText("Opt-in")).toBeInTheDocument();
+    expect(within(group).getAllByText("Opt-in")).toHaveLength(3);
     expect(within(group).queryByText(/approval/i)).not.toBeInTheDocument();
   });
 
@@ -190,6 +191,78 @@ describe("SetupRoute", () => {
     await userEvent.click(await screen.findByRole("radio", { name: /Use Claude Code in a terminal/ }));
     expect(screen.getByText(/Claude Code 2\.1\.12 is older than 2\.1\.295/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Update Claude Code/ })).toHaveAttribute("href", "https://code.claude.com/docs/en/setup");
+  });
+
+  for (const agent of [
+    {
+      name: "Codex",
+      mode: "codex_terminal",
+      path: "/api/connect/codex-terminal",
+      version: "0.164.0",
+      minimum: "0.164.0",
+      install: "https://developers.openai.com/codex/cli",
+    },
+    {
+      name: "OpenCode",
+      mode: "opencode_terminal",
+      path: "/api/connect/opencode-terminal",
+      version: "2.2.0",
+      minimum: "2.2.0",
+      install: "https://opencode.ai/docs",
+    },
+  ] as const) {
+    const choose = async () => userEvent.click(await screen.findByRole("radio", { name: new RegExp(`Use ${agent.name} in a terminal`) }));
+
+    it(`enables ${agent.name} only after the disclosure tick and shows the detected version`, async () => {
+      const fetchMock = stubSetup(NOT_CONNECTED, { [`POST ${agent.path}`]: () => jsonResponse({ ...NOT_CONNECTED, mode: agent.mode }) });
+      renderWithProviders(<SetupRoute />);
+      await choose();
+      expect(screen.getByText(`${agent.name} ${agent.version} found on this computer.`)).toBeInTheDocument();
+      const connect = screen.getByRole("button", { name: `Use ${agent.name} in a terminal` });
+      expect(connect).toBeDisabled();
+
+      await userEvent.click(screen.getByRole("checkbox", { name: new RegExp(`my own ${agent.name} sign-in`) }));
+      await userEvent.click(connect);
+      expect(await screen.findByText(`${agent.name} terminal mode is on.`)).toBeInTheDocument();
+      expect(requestBody(fetchMock, agent.path)).toEqual({ hasAcceptedDisclosure: true });
+    });
+
+    it(`keeps ${agent.name} off with an install link when it is missing`, async () => {
+      stubSetup({
+        ...NOT_CONNECTED,
+        agentVersions: { ...INSTALLED_AGENTS, [agent.mode.replace("_terminal", "")]: { version: null, minVersion: agent.minimum } },
+      });
+      renderWithProviders(<SetupRoute />);
+      await choose();
+      expect(screen.getByText(new RegExp(`${agent.name} was not found on this computer`))).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: new RegExp(`Install ${agent.name}`) })).toHaveAttribute("href", agent.install);
+      await userEvent.click(screen.getByRole("checkbox", { name: new RegExp(`my own ${agent.name} sign-in`) }));
+      expect(screen.getByRole("button", { name: `Use ${agent.name} in a terminal` })).toBeDisabled();
+    });
+
+    it(`flags a ${agent.name} older than the version its lockdown was checked on`, async () => {
+      stubSetup({
+        ...NOT_CONNECTED,
+        agentVersions: { ...INSTALLED_AGENTS, [agent.mode.replace("_terminal", "")]: { version: "0.0.1", minVersion: agent.minimum } },
+      });
+      renderWithProviders(<SetupRoute />);
+      await choose();
+      expect(screen.getByText(new RegExp(`${agent.name} 0\\.0\\.1 is older than ${agent.minimum.replaceAll(".", "\\.")}`))).toBeInTheDocument();
+    });
+  }
+
+  it("says the studio never offers a Claude Pro or Max sign-in through OpenCode", async () => {
+    stubSetup();
+    renderWithProviders(<SetupRoute />);
+    await userEvent.click(await screen.findByRole("radio", { name: /Use OpenCode in a terminal/ }));
+    expect(screen.getByText(/never offers a Claude Pro or Max sign-in/)).toBeInTheDocument();
+  });
+
+  it("treats a server without agent versions as having neither agent installed", async () => {
+    stubSetup({ mode: null, keyLast4: null, provider: null, claudeVersion: "2.1.300" });
+    renderWithProviders(<SetupRoute />);
+    await userEvent.click(await screen.findByRole("radio", { name: /Use Codex in a terminal/ }));
+    expect(screen.getByText(/Codex was not found on this computer/)).toBeInTheDocument();
   });
 
   it("lists the machine checks with their one-line fixes and the read-only data backend", async () => {

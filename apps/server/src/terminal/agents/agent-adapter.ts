@@ -46,6 +46,8 @@ export interface PreparedLaunch {
 export interface AgentEventContext {
   readonly projectId: string;
   readonly model?: string;
+  /** The studio's verdict on a PreToolUse, so a hook-driven adapter can report the deny. */
+  readonly decision?: TerminalToolDecision;
 }
 
 /** Hook-driven agents post to the bearer bridge route; stream-driven ones are read by the adapter itself. */

@@ -156,6 +156,18 @@ export const API_ROUTES = {
     body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
     response: ConnectionSchema,
   },
+  connectCodexTerminal: {
+    method: "POST",
+    path: "/api/connect/codex-terminal",
+    body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
+    response: ConnectionSchema,
+  },
+  connectOpenCodeTerminal: {
+    method: "POST",
+    path: "/api/connect/opencode-terminal",
+    body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
+    response: ConnectionSchema,
+  },
 
   /** The server caches the checks; `?refresh=1` runs them again. */
   getDoctor: {

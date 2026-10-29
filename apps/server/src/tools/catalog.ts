@@ -13,6 +13,7 @@ import { previewTools } from "./handlers/preview-tools.ts";
 import { projectTools } from "./handlers/project-tools.ts";
 import { referenceTools } from "./handlers/reference-tools.ts";
 import { styleTools } from "./handlers/style-tools.ts";
+import { skillTools } from "./handlers/skill-tools.ts";
 import { renderTools } from "./render-tools.ts";
 
 export { implementTool, type StudioTool } from "./define-tool.ts";
@@ -32,6 +33,7 @@ export function studioToolCatalog(): readonly StudioTool[] {
     ...lessonTools,
     ...referenceTools,
     ...styleTools,
+    ...skillTools,
   ];
 }
 

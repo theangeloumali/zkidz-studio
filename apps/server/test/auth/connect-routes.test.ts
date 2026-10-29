@@ -14,6 +14,7 @@ import { createLogger } from "../../src/logging/logger.ts";
 import { memoryKeyring } from "./memory-keyring.ts";
 
 const API_KEY = "test-key-0000abcd";
+const AGENT_VERSIONS = { codex: { version: null, minVersion: "0.164.0" }, opencode: { version: null, minVersion: "2.2.0" } };
 
 describe("connect routes", () => {
   let scratchDir = "";
@@ -37,6 +38,7 @@ describe("connect routes", () => {
       logger: createLogger(() => undefined),
       // As in main.ts: the version probe is still running when the routes register.
       claudeVersion: Promise.resolve("2.1.300"),
+      agentVersions: () => Promise.resolve(AGENT_VERSIONS),
       onConnectionChanged: () => {
         changes += 1;
       },
@@ -59,7 +61,7 @@ describe("connect routes", () => {
 
   it("starts disconnected", async () => {
     const response = await send("GET", "/api/connect");
-    expect(await response.json()).toEqual({ mode: null, keyLast4: null, provider: null, claudeVersion: "2.1.300" });
+    expect(await response.json()).toEqual({ mode: null, keyLast4: null, provider: null, claudeVersion: "2.1.300", agentVersions: AGENT_VERSIONS });
   });
 
   it("stores a key that Anthropic accepts and returns only its last 4", async () => {
@@ -68,7 +70,7 @@ describe("connect routes", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).not.toContain(API_KEY);
-    expect(JSON.parse(body)).toEqual({ mode: "api_key", keyLast4: "abcd", provider: null, claudeVersion: "2.1.300" });
+    expect(JSON.parse(body)).toEqual({ mode: "api_key", keyLast4: "abcd", provider: null, claudeVersion: "2.1.300", agentVersions: AGENT_VERSIONS });
     expect(keyring.stored).toBe(API_KEY);
     expect(changes).toBe(1);
   });
@@ -93,7 +95,7 @@ describe("connect routes", () => {
     await send("POST", "/api/connect/api-key", { apiKey: API_KEY });
     const response = await send("POST", "/api/connect/cloud", { provider: "bedrock", values: { AWS_REGION: "us-east-1" } });
 
-    expect(await response.json()).toEqual({ mode: "cloud", keyLast4: null, provider: "bedrock", claudeVersion: "2.1.300" });
+    expect(await response.json()).toEqual({ mode: "cloud", keyLast4: null, provider: "bedrock", claudeVersion: "2.1.300", agentVersions: AGENT_VERSIONS });
     expect(keyring.stored).toBeNull();
     expect(await readConnection(database.db)).toEqual({ mode: "cloud", provider: "bedrock", values: { AWS_REGION: "us-east-1" } });
   });
@@ -105,7 +107,7 @@ describe("connect routes", () => {
     expect(changes).toBe(1);
 
     const response = await send("POST", "/api/connect/terminal", { hasAcceptedDisclosure: true });
-    expect(await response.json()).toEqual({ mode: "terminal", keyLast4: null, provider: null, claudeVersion: "2.1.300" });
+    expect(await response.json()).toEqual({ mode: "terminal", keyLast4: null, provider: null, claudeVersion: "2.1.300", agentVersions: AGENT_VERSIONS });
     expect(await readConnection(database.db)).toEqual({ mode: "terminal" });
     expect(keyring.stored).toBeNull();
     expect(changes).toBe(2);

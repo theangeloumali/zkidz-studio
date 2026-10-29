@@ -6,6 +6,8 @@ import type { Connection } from "../api/agent-client.ts";
 import { connectionQuery } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { ROUTE_PATHS } from "../lib/routes.ts";
+import { AGENT_COPY } from "../copy/agents.ts";
+import { AgentTerminalControls } from "../setup/agent-terminal-card.tsx";
 import { ApiKeyControls } from "../setup/api-key-card.tsx";
 import { ChoiceCard } from "../setup/choice-card.tsx";
 import { CloudControls } from "../setup/cloud-card.tsx";
@@ -33,6 +35,12 @@ const CARDS: readonly { mode: Mode; title: string; badges: readonly string[]; de
     badges: ["Opt-in"],
     description: "Uses the Claude Code you installed and your own Claude plan.",
   },
+  ...(["codex", "opencode"] as const).map((agent) => ({
+    mode: `${agent}_terminal` as const,
+    title: AGENT_COPY[agent].title,
+    badges: ["Opt-in"],
+    description: AGENT_COPY[agent].description,
+  })),
 ];
 
 function ConnectChoices({ connection }: { readonly connection: Connection }) {
@@ -42,6 +50,8 @@ function ConnectChoices({ connection }: { readonly connection: Connection }) {
     api_key: <ApiKeyControls connection={connection} />,
     cloud: <CloudControls connection={connection} />,
     terminal: <TerminalControls connection={connection} />,
+    codex_terminal: <AgentTerminalControls agent="codex" connection={connection} />,
+    opencode_terminal: <AgentTerminalControls agent="opencode" connection={connection} />,
   };
   return (
     <fieldset className="flex flex-col gap-3">

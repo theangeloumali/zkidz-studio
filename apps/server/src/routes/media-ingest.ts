@@ -11,6 +11,7 @@ import type { Context } from "hono";
 import { projectDir } from "../config.ts";
 import { toMediaAssetDto, type ProjectRow } from "../dto.ts";
 import { HttpError } from "../http/http-error.ts";
+import type { AutoIngest } from "../jobs/auto-ingest.ts";
 import { chooseStoredExtension, probeMedia, type ProbeResult } from "../media-io/probe.ts";
 import { assertFreeSpace, commitWithoutReplacing, PART_SUFFIX, UploadTooLargeError, writeCappedPart, type UploadLimits } from "../media-io/store.ts";
 
@@ -19,6 +20,8 @@ export interface MediaRouteDeps {
   readonly studioHome: string;
   readonly ffprobePath: string;
   readonly uploadLimits: UploadLimits;
+  /** Starts a project's ingest once its uploads settle; absent in tests that do not want one. */
+  readonly autoIngest?: AutoIngest;
 }
 
 interface UploadRequest {

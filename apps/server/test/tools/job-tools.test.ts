@@ -9,6 +9,7 @@ import { desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { engineProgressRecordPath } from "../../src/jobs/engine-progress.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
+import { writeProjectTemplate } from "../../src/onboarding/project-template.ts";
 import { registerEngineJobHandlers, type EngineRequest } from "../../src/tools/engine-jobs.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { createToolFixture, insertCameraAsset, JOINED_SOURCE_PROBE, type ToolFixture } from "./tool-fixtures.ts";
@@ -21,6 +22,8 @@ let reportsChunks = false;
 /** Set by a test: the ingest fake writes the engine's per-step records and reads the job row back after each. */
 let ingestSteps: { stage: string; done: number }[] | undefined;
 const ingestRowsSeen: { stage: string | null; pct: number | null }[] = [];
+/** Set by a test: an ingest run waits here, and rejects if its job is cancelled meanwhile. */
+let ingestGate: Promise<void> | undefined;
 beforeAll(async () => {
   server = await createTestServer();
   registerEngineJobHandlers(server.jobRunner, {
@@ -42,6 +45,14 @@ beforeAll(async () => {
           const words = [{ at: 0, end: 0.5, text: "hello" }];
           await writeFile(join(request.workDir, "transcripts", "v1.words.json"), JSON.stringify(words));
           return { wordsPath: "transcripts/v1.words.json", words: 1, chunks: 1 };
+        }
+        if (request.command === "ingest" && ingestGate !== undefined) {
+          const gate = ingestGate;
+          await new Promise<void>((resolve, reject) => {
+            if (request.signal?.aborted === true) reject(new Error("aborted"));
+            request.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+            void gate.then(resolve);
+          });
         }
         if (request.command === "ingest" && ingestSteps !== undefined) {
           const recordPath = engineProgressRecordPath({ studioHome: server.studioHome, workDir: request.workDir, videoId: "v1" });
@@ -171,6 +182,77 @@ describe("ingest", () => {
     const fixture = await createToolFixture(server);
     const result = await callTool(fixture, "ingest", { clips: [{ assetId: crypto.randomUUID() }] });
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("ingest of clips that are already ingested", () => {
+  const ingestRuns = () => engineRequests.filter((request) => request.command === "ingest").length;
+
+  it("answers with the finished job at once, without running the engine again", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const firstJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    await callTool(fixture, "job_wait", { jobId: firstJobId, timeoutS: 10 });
+    const runsBefore = ingestRuns();
+
+    const again = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    const waited = await callTool(fixture, "job_wait", { jobId: again, timeoutS: 10 });
+
+    expect(again).toBe(firstJobId);
+    expect(waited.structuredContent).toMatchObject({ status: "succeeded", result: { frames: 900 } });
+    expect(ingestRuns()).toBe(runsBefore);
+  });
+
+  it("hands back the running job so job_wait follows it", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const firstJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+      const again = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+      expect(again).toBe(firstJobId);
+      release.resolve();
+      const waited = await callTool(fixture, "job_wait", { jobId: again, timeoutS: 10 });
+      expect(waited.structuredContent).toMatchObject({ status: "succeeded" });
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
+  it("starts a new job for a different clip set and stops the open one it replaces", async () => {
+    const fixture = await createToolFixture(server);
+    const [first, second] = [await insertCameraAsset(fixture), await insertCameraAsset(fixture)];
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const firstJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: first?.id }] }));
+      const secondJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: first?.id }, { assetId: second?.id }] }));
+      expect(secondJobId).not.toBe(firstJobId);
+      const [replaced] = await server.database.db.select().from(jobs).where(eq(jobs.id, firstJobId));
+      expect(["cancelled", "interrupted"]).toContain(replaced?.status);
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+    await callTool(fixture, "job_wait", {
+      jobId: (await server.database.db.select().from(jobs).where(eq(jobs.projectId, fixture.context.projectId)).orderBy(desc(jobs.queuedAt)))[0]?.id,
+      timeoutS: 10,
+    });
+  });
+
+  it("runs again when the project's mode now implies a different join", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const firstJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    await callTool(fixture, "job_wait", { jobId: firstJobId, timeoutS: 10 });
+    await writeProjectTemplate(server.database.db, fixture.context.projectId, { templateId: "t", ingestMode: "join" });
+
+    const again = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+
+    expect(again).not.toBe(firstJobId);
+    await callTool(fixture, "job_wait", { jobId: again, timeoutS: 10 });
   });
 });
 

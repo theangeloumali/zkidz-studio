@@ -8,6 +8,7 @@ import { useProjectEvents } from "../events/use-project-events.ts";
 import { useEventsStore } from "../events/store.ts";
 import { EditorPanel } from "../editor/editor-panel.tsx";
 import { formatBytes, formatMediaMeta } from "../lib/format.ts";
+import { StyleSection } from "../style/style-section.tsx";
 
 const STATUS_TEXT = { connecting: "Connecting…", live: "Live", reconnecting: "Reconnecting…" } as const;
 
@@ -37,6 +38,7 @@ export function EditorRoute() {
         </h2>
         <EditorPanel projectId={projectId} />
       </section>
+      <StyleSection projectId={projectId} />
       <section aria-labelledby="media-title" className="flex flex-col gap-4">
         <h2 id="media-title" className="text-ui-lg font-semibold">
           Media

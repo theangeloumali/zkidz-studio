@@ -38,14 +38,17 @@ interface TransferOptions {
 
 interface UploadOptions extends TransferOptions {
   readonly projectId: string;
+  /** `reference` files a look to match instead of footage to cut. */
+  readonly kind?: "reference";
 }
 
 interface CreateWithMediaOptions extends TransferOptions {
   readonly title: string;
 }
 
-export function uploadFile({ projectId, ...transfer }: UploadOptions): Promise<MediaAsset> {
-  const url = routeUrl(API_ROUTES.uploadMedia.path, { projectId });
+export function uploadFile({ projectId, kind, ...transfer }: UploadOptions): Promise<MediaAsset> {
+  const base = routeUrl(API_ROUTES.uploadMedia.path, { projectId });
+  const url = kind === undefined ? base : `${base}?${new URLSearchParams({ kind })}`;
   return sendFile({ method: API_ROUTES.uploadMedia.method, url, schema: API_ROUTES.uploadMedia.response, extraHeaders: {}, ...transfer });
 }
 

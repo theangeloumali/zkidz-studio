@@ -76,7 +76,8 @@ export interface AgentServices {
   /** Approval, question and cut-review cards still waiting, sent to every new event stream. */
   readonly pendingCards: (projectIds: readonly string[]) => StudioEvent[];
   /** Kills every PTY and SDK child so none outlives the server. */
-  readonly shutdown: () => void;
+  /** Resolves once the terminals' exit work is done; close the database after it. */
+  readonly shutdown: () => Promise<void>;
 }
 
 export function createAgentServices(deps: AgentServicesDeps): AgentServices {
@@ -198,8 +199,8 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     registerRoutes,
     pendingCards: (projectIds) => sortById([...broker.pendingCards(projectIds), ...pendingCutReviewCards(projectIds)]),
     shutdown: () => {
-      terminalSessions.killAll();
       manager.closeAll();
+      return terminalSessions.killAll();
     },
   };
 }

@@ -69,7 +69,7 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
-  services.shutdown();
+  await services.shutdown();
   await server.close();
   await rm(stubDir, { recursive: true, force: true });
 });
@@ -154,7 +154,7 @@ describe("createApp with the Phase 2 services", () => {
     const session = services.terminalSessions.find(sessionId);
     if (session === undefined) throw new Error("the opened terminal is not tracked");
     const exited = new Promise<void>((resolve) => session.pty.onExit(() => resolve()));
-    services.shutdown();
+    await services.shutdown();
     await exited;
   });
 });

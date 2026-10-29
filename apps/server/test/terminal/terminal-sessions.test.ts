@@ -90,6 +90,19 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--resume", RESUMED_SESSION_ID]);
   });
 
+  it("killAll resolves only once each killed session has cancelled its jobs and published its exit", async () => {
+    const cancelled: string[] = [];
+    const slowCancel = (projectId: string) => new Promise<void>((resolve) => setTimeout(() => resolve(void cancelled.push(projectId)), 300));
+    fixture = await createTerminalFixture({ cancelProjectJobs: slowCancel });
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+
+    await fixture.sessions.killAll();
+
+    expect(cancelled).toEqual([PROJECT_ID]);
+    expect(fixture.events).toContainEqual(expect.objectContaining({ type: "terminal.state", state: "exited" }));
+  });
+
   it("reports claude_missing when the resolved binary is gone", async () => {
     fixture = await createTerminalFixture({}, { isClaudeMissing: true });
 

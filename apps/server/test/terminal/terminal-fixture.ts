@@ -71,7 +71,7 @@ export async function createTerminalFixture(overrides: Partial<TerminalSessionsD
     cancelledProjects,
     ...(overrides.transcriptRoot === undefined ? {} : { transcriptRoot: overrides.transcriptRoot }),
     async cleanup() {
-      sessions.killAll();
+      await sessions.killAll();
       await rm(studioHome, { recursive: true, force: true });
     },
   };

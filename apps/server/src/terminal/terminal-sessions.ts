@@ -38,7 +38,8 @@ export interface TerminalSessions {
   submitPrompt(projectId: string, text: string): boolean;
   stop(projectId: string): boolean;
   kill(projectId: string): boolean;
-  killAll(): void;
+  /** Resolves once every killed session's exit work is done, so shutdown can close the database after it. */
+  killAll(): Promise<void>;
 }
 
 type PreToolUsePayload = Extract<HookPayload, { hook_event_name: "PreToolUse" }>;
@@ -47,12 +48,16 @@ type StatusLinePayload = Extract<HookPayload, { hook_event_name: "StatusLine" }>
 type StopPayload = Extract<HookPayload, { hook_event_name: "Stop" }>;
 /** Modes that keep the PreToolUse policy's decisions in charge; auto falls back to default when the account can't use it. */
 const ALLOWED_PERMISSION_MODES: ReadonlySet<string> = new Set(["auto", "default"]);
+/** A child that ignores the kill must not hold shutdown forever. */
+const KILL_SETTLE_TIMEOUT_MS = 5_000;
 
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
   const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId);
   // Each launch writes its own files folder; a reopen still waits for the last run's cleanup, so its exit events go out first.
   const pendingCleanups = new Map<string, Promise<void>>();
+  // Per session: settles once its exit has cancelled jobs, removed files and published its events.
+  const exitWork = new Map<string, Promise<void>>();
 
   const publishAll = async (newEvents: readonly NewStudioEvent[]) => {
     for (const newEvent of newEvents) await deps.eventBus.publish(newEvent);
@@ -72,6 +77,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     }, deps.sessionStartTimeoutMs ?? SESSION_START_TIMEOUT_MS);
     record.sessionStartTimer.unref();
 
+    let settleExit: () => void = () => undefined;
+    exitWork.set(record.sessionId, new Promise((resolve) => (settleExit = resolve)));
     record.pty.onExit((exitCode) => {
       clearTimeout(record.sessionStartTimer);
       clearTimeout(record.promptRetryTimer);
@@ -84,16 +91,21 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       if (isUnexpected) {
         exitEvents.push({ type: "session.error", projectId, kind: "terminal_exited", message: `Claude Code exited with code ${exitCode}.`, action: "Restart" });
       }
-      if (record.wasKilled || isUnexpected) {
-        deps.cancelProjectJobs(projectId).catch((error: unknown) => deps.logger.error("terminal job cancel failed", { projectId, error }));
-      }
+      const cancelJobs =
+        record.wasKilled || isUnexpected
+          ? deps.cancelProjectJobs(projectId).catch((error: unknown) => deps.logger.error("terminal job cancel failed", { projectId, error }))
+          : Promise.resolve();
       const cleanup = removeSessionFiles(record.files)
         .catch((error: unknown) => deps.logger.warn("terminal session files not removed", { error }))
         .finally(() => {
           if (pendingCleanups.get(projectId) === cleanup) pendingCleanups.delete(projectId);
-          publishInBackground(exitEvents);
+          return publishAll(exitEvents).catch((error: unknown) => deps.logger.error("terminal event publish failed", { error }));
         });
       pendingCleanups.set(projectId, cleanup);
+      void Promise.all([cancelJobs, cleanup]).then(() => {
+        exitWork.delete(record.sessionId);
+        settleExit();
+      });
     });
   };
 
@@ -408,8 +420,13 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
         publishInBackground([{ type: "terminal.state", projectId, state: "ready" }]);
       }),
     kill: (projectId) => withProjectRecord(projectId, killRecord),
-    killAll() {
-      for (const record of records.values()) killRecord(record);
+    async killAll() {
+      const exits = [...records.values()].map((record) => {
+        killRecord(record);
+        return exitWork.get(record.sessionId) ?? Promise.resolve();
+      });
+      const timeout = new Promise<void>((resolve) => setTimeout(resolve, KILL_SETTLE_TIMEOUT_MS).unref());
+      await Promise.race([Promise.all(exits), timeout]);
     },
   };
 }

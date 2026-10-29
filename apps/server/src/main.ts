@@ -154,10 +154,9 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
-    agent.shutdown();
     previewBuilder.close();
     // Settled, not all: a server that fails to close must not skip draining the jobs and closing the database.
-    void Promise.allSettled([closeServer(server, websocket.server), closeServer(previewServer)])
+    void Promise.allSettled([agent.shutdown(), closeServer(server, websocket.server), closeServer(previewServer)])
       .then(() => jobRunner.idle())
       .then(() => editRecorder.stop())
       .then(() => database.close())

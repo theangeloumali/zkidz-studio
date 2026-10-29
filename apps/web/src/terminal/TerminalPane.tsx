@@ -45,11 +45,13 @@ function writeExpanded(expanded: boolean): void {
 
 interface TerminalPaneProps {
   readonly sessionId: string;
+  /** The connected agent's product name, e.g. "Codex". */
+  readonly agentLabel: string;
   readonly onRestart: () => void;
 }
 
 /** Prompts and Stop go through the server (it owns the paste encoding); this pane carries the user's own keys. */
-export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
+export function TerminalPane({ sessionId, agentLabel, onRestart }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [expanded, setExpanded] = useState(readExpanded);
@@ -130,7 +132,7 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
       {status === "exited" ? (
         <button type="button" className={buttonClass("secondary", "self-start")} onClick={onRestart}>
           <RotateCcw aria-hidden="true" className="size-4" />
-          Restart Claude Code
+          Restart {agentLabel}
         </button>
       ) : null}
       {/* The fit addon sizes the grid from the host, so the host has no padding and a definite height: a box that grows
@@ -139,7 +141,7 @@ export function TerminalPane({ sessionId, onRestart }: TerminalPaneProps) {
         <div
           ref={hostRef}
           role="application"
-          aria-label="Claude Code terminal"
+          aria-label={`${agentLabel} terminal`}
           className={cn("w-full overflow-hidden", expanded ? "min-h-0 flex-1" : "h-96")}
         />
       </div>

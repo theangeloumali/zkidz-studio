@@ -64,7 +64,8 @@ export async function readTranscriptUsage(transcriptPath: string): Promise<Usage
 }
 
 function parseAssistantEntry(line: string): z.infer<typeof AssistantEntrySchema> | null {
-  if (line.trim() === "") return null;
+  // Tool results make most lines large and usage-free; skipping them before JSON.parse keeps a long session cheap.
+  if (!line.includes('"usage"')) return null;
   try {
     const parsed = AssistantEntrySchema.safeParse(JSON.parse(line));
     return parsed.success ? parsed.data : null;

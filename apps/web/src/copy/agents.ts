@@ -1,6 +1,8 @@
 // Created by The Angelo Umali.
 /** User-facing Codex and OpenCode copy that legal review may change; one place to edit it. */
-export type TerminalAgent = "codex" | "opencode";
+import { AGENT_LABELS, type TerminalAgentKind } from "@zks/shared";
+
+export type TerminalAgent = TerminalAgentKind;
 
 export interface TerminalAgentCopy {
   readonly name: string;
@@ -14,7 +16,7 @@ export interface TerminalAgentCopy {
 
 export const AGENT_COPY: Readonly<Record<TerminalAgent, TerminalAgentCopy>> = {
   codex: {
-    name: "Codex",
+    name: AGENT_LABELS.codex,
     title: "Use Codex in a terminal",
     description: "Uses the Codex CLI you installed and your own ChatGPT or OpenAI sign-in.",
     disclosure:
@@ -27,7 +29,7 @@ export const AGENT_COPY: Readonly<Record<TerminalAgent, TerminalAgentCopy>> = {
     ],
   },
   opencode: {
-    name: "OpenCode",
+    name: AGENT_LABELS.opencode,
     title: "Use OpenCode in a terminal",
     description: "Uses the OpenCode you installed and the model providers you signed in to there.",
     disclosure:

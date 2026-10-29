@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // One terminal agent CLI (Claude Code, Codex, OpenCode): how to find it, launch it locked down, and read its events.
 // Phase 7 of docs/plans/zkidz-studio-editing-ux-agents-2026-10-29.md moves launchSession onto this seam.
-import type { AgentKind, UsageFigures } from "@zks/shared";
+import type { TerminalAgentKind, UsageFigures } from "@zks/shared";
 import type { TerminalTokens } from "../../auth/agent-env.ts";
 import type { NewStudioEvent } from "../../events/event-bus.ts";
 import type { TerminalToolDecision, TerminalToolScope } from "../hook-policy.ts";
@@ -60,9 +60,7 @@ export type AgentEventSource =
     };
 
 export interface AgentAdapter {
-  readonly kind: AgentKind;
-  /** Plain text for the UI, e.g. "Codex". */
-  readonly label: string;
+  readonly kind: TerminalAgentKind;
   /** Names searched on PATH, in order (claude, claude.exe, claude.cmd). */
   readonly binaryNames: readonly string[];
   readonly versionArgs: readonly string[];
@@ -73,7 +71,7 @@ export interface AgentAdapter {
   /** For an agent whose SessionStart only comes with its first prompt: the screen text that shows it takes input. */
   readonly inputReady?: RegExp;
   /** The studio's deny-by-default tool policy, for agents whose hooks can block a call. */
-  decideTool?(toolName: string, toolInput: unknown, scope: TerminalToolScope): Promise<TerminalToolDecision>;
+  readonly decideTool?: (toolName: string, toolInput: unknown, scope: TerminalToolScope) => Promise<TerminalToolDecision>;
   /** Where usage comes from for this agent, if anywhere; folded into the edit by the edit recorder. */
   readonly usageSource?: (sessionId: string) => Promise<UsageFigures | null>;
 }

@@ -75,7 +75,7 @@ const TICKET = "t".repeat(32);
 const observed: Element[] = [];
 const EXPANDED_KEY = "zks.terminal.expanded";
 
-function renderPane(ticketStatus = 200) {
+function renderPane(ticketStatus = 200, agentLabel = "Claude Code") {
   stubFetch({
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     "POST /api/terminal/sess-1/ticket": () =>
@@ -92,7 +92,7 @@ function renderPane(ticketStatus = 200) {
     },
   );
   const onRestart = vi.fn();
-  render(<TerminalPane sessionId="sess-1" onRestart={onRestart} />);
+  render(<TerminalPane sessionId="sess-1" agentLabel={agentLabel} onRestart={onRestart} />);
   return { onRestart };
 }
 
@@ -149,6 +149,12 @@ describe("TerminalPane", () => {
     expect(await screen.findByText("Exited")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Restart Claude Code" }));
     expect(onRestart).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the connected agent, not Claude Code, on a Codex session", async () => {
+    renderPane(404, "Codex");
+    expect(await screen.findByRole("button", { name: "Restart Codex" })).toBeInTheDocument();
+    expect(screen.getByRole("application", { name: "Codex terminal" })).toBeInTheDocument();
   });
 
   // The fit addon sizes the grid from this element; padding or a content-driven height made every fit add a row, forever.

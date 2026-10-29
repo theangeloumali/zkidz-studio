@@ -43,12 +43,21 @@ export type DeliverableKind = z.infer<typeof DeliverableKindSchema>;
 export type AuthMode = z.infer<typeof AuthModeSchema>;
 
 /** The modes that run the user's own agent CLI in the studio's terminal pane, and the agent each one runs. */
-export const TERMINAL_AUTH_MODES = ["terminal", "codex_terminal", "opencode_terminal"] as const satisfies readonly AuthMode[];
-const AGENT_OF_TERMINAL_MODE = { terminal: "claude", codex_terminal: "codex", opencode_terminal: "opencode" } as const;
+const AGENT_OF_TERMINAL_MODE = {
+  terminal: "claude",
+  codex_terminal: "codex",
+  opencode_terminal: "opencode",
+} as const satisfies Partial<Record<AuthMode, (typeof AGENT_KINDS)[number]>>;
+type TerminalAuthMode = keyof typeof AGENT_OF_TERMINAL_MODE;
 
-export function isTerminalAuthMode(mode: AuthMode | null | undefined): mode is (typeof TERMINAL_AUTH_MODES)[number] {
-  return mode === "terminal" || mode === "codex_terminal" || mode === "opencode_terminal";
+export function isTerminalAuthMode(mode: AuthMode | null | undefined): mode is TerminalAuthMode {
+  return mode !== null && mode !== undefined && mode in AGENT_OF_TERMINAL_MODE;
 }
+
+/** The product names users see, for UI copy and messages. */
+export const AGENT_LABELS: Readonly<Record<(typeof AGENT_KINDS)[number], string>> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
+/** The agents besides Claude, which run only in the terminal pane through an adapter. */
+export type TerminalAgentKind = Exclude<(typeof AGENT_KINDS)[number], "claude">;
 
 /** Modes A and B run Claude through the SDK, so every non-terminal mode is Claude too. */
 export function agentKindOfAuthMode(mode: AuthMode | null | undefined): (typeof AGENT_KINDS)[number] {

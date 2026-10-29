@@ -1,11 +1,11 @@
 // Created by The Angelo Umali.
 // Connect + settings routes (plan §6.5). The key is checked before it is stored, and never echoed back.
 import type { StudioDatabase } from "@zks/db";
-import { API_ROUTES } from "@zks/shared";
+import { AGENT_LABELS, API_ROUTES, type TerminalAgentKind } from "@zks/shared";
 import type { Hono } from "hono";
 import { HttpError, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
-import { detectTerminalAgentVersions, isSupportedVersion, type TerminalAgentKind, type TerminalAgentVersions } from "../terminal/agents/agent-versions.ts";
+import { detectTerminalAgentVersions, isSupportedVersion, type TerminalAgentVersions } from "../terminal/agents/agent-versions.ts";
 import { CloudConfigError, parseCloudValues } from "./cloud-config.ts";
 import { readConnection, toConnectionDto, writeConnection, type ConnectionRecord } from "./connection-store.ts";
 import { checkApiKey, type FetchFunction, type KeyCheckResult } from "./key-check.ts";
@@ -26,8 +26,6 @@ export interface ConnectRouteDeps {
   /** Lets the agent manager drop sessions built on the old credential. */
   readonly onConnectionChanged?: () => void;
 }
-
-const TERMINAL_AGENT_LABELS: Readonly<Record<TerminalAgentKind, string>> = { codex: "Codex", opencode: "OpenCode" };
 
 export function registerConnectRoutes(app: Hono, deps: ConnectRouteDeps): void {
   const probeAgentVersions = deps.agentVersions ?? (() => detectTerminalAgentVersions());
@@ -99,7 +97,7 @@ function throwUnlessAccepted(result: KeyCheckResult): void {
 
 function throwUnlessSupported(agent: TerminalAgentKind, installed: TerminalAgentVersions[TerminalAgentKind]): void {
   if (isSupportedVersion(installed)) return;
-  const label = TERMINAL_AGENT_LABELS[agent];
+  const label = AGENT_LABELS[agent];
   const found = installed.version === null ? `${label} is not installed` : `${label} ${installed.version} is installed`;
   throw new HttpError(409, `${found}; ZKidz Studio needs ${label} ${installed.minVersion} or newer`);
 }

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { NewStudioEvent } from "../../../src/events/event-bus.ts";
 import { resolveAgentBinary } from "../../../src/terminal/agents/agent-binary.ts";
-import { removeAgentFiles } from "../../../src/terminal/agents/agent-files.ts";
+import { removeSessionFiles } from "../../../src/terminal/session-files.ts";
 import { createOpenCodeAdapter } from "../../../src/terminal/agents/opencode.ts";
 import { createPtyHost, type TerminalPty } from "../../../src/terminal/pty-host.ts";
 import { waitFor } from "../stub-claude.ts";
@@ -32,7 +32,7 @@ afterEach(async () => {
   pty?.kill();
   companion?.kill();
   await bridge?.close();
-  if (filesDir !== undefined) await removeAgentFiles(filesDir);
+  if (filesDir !== undefined) await removeSessionFiles({ dir: filesDir });
 });
 
 describe.skipIf(!isLiveEnabled)("live opencode in mode T", () => {

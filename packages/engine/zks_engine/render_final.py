@@ -262,11 +262,7 @@ def chunk_command(piece, first, spec, source, route, size, encoder, frames_dir, 
 
 def frames_written(report):
     """The last frame count in an ffmpeg -progress file (0 before its first block)."""
-    try:
-        counts = re.findall(r"^frame=(\d+)", report.read_text(encoding="utf-8"), re.M)
-    except OSError:
-        return 0
-    return int(counts[-1]) if counts else 0
+    return ffio.last_progress_value(report, "frame")
 
 
 def count_frames(path):

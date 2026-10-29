@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { AgentLaunchError } from "./agent-env.ts";
-import { writeAgentFile } from "./agent-files.ts";
+import { writeSessionFile } from "../session-files.ts";
 
 const CATALOG_FILE = "codex-models.json";
 const STUDIO_MCP_NAME = "studio";
@@ -83,7 +83,7 @@ export async function writeStudioModelCatalog(codexHome: string, filesDir: strin
     apply_patch_tool_type: null,
     model_messages: { ...model.model_messages, instructions_template: `${model.model_messages.instructions_template}\n\n${instructions}` },
   }));
-  return writeAgentFile(filesDir, CATALOG_FILE, JSON.stringify({ models }));
+  return writeSessionFile(filesDir, CATALOG_FILE, JSON.stringify({ models }));
 }
 
 /** Tool names from `codex debug prompt-input`, namespaced as "<namespace>.<tool>". */

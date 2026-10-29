@@ -2,14 +2,14 @@
 // Opens a Codex or OpenCode session through its adapter (ADR 0007): its locked-down files, its companion server, the PTY.
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { AGENT_LABELS, type TerminalAgentKind } from "@zks/shared";
 import { studioMcpUrl } from "../tools/mcp-paths.ts";
 import type { AgentAdapter, PreparedLaunch } from "./agents/agent-adapter.ts";
 import { resolveAgentBinary } from "./agents/agent-binary.ts";
 import { createCodexAdapter } from "./agents/codex.ts";
 import { createOpenCodeAdapter } from "./agents/opencode.ts";
-import type { TerminalAgentKind } from "./agents/agent-versions.ts";
 import { TerminalLaunchError } from "./pty-host.ts";
+import { removeSessionFiles } from "./session-files.ts";
 import { freshSessionState, type OpenTerminalRequest, type SessionRecord, type TerminalSessionsDeps } from "./session-launch.ts";
 
 /** OpenCode's serve answers within seconds; past this it is stuck, and the session fails instead of hanging. */
@@ -38,7 +38,7 @@ export async function resolveTerminalAgents(env: Readonly<Record<string, string 
   const resolved = await Promise.all(adapters.map(async (adapter) => ({ adapter, binaryPath: await resolveAgentBinary(adapter.binaryNames, env) })));
   const agents = new Map<TerminalAgentKind, TerminalAgent>();
   for (const { adapter, binaryPath } of resolved) {
-    if (binaryPath !== null && (adapter.kind === "codex" || adapter.kind === "opencode")) agents.set(adapter.kind, { adapter, binaryPath });
+    if (binaryPath !== null) agents.set(adapter.kind, { adapter, binaryPath });
   }
   return agents;
 }
@@ -47,8 +47,7 @@ export async function resolveTerminalAgents(env: Readonly<Record<string, string 
 export async function launchAgentSession(deps: TerminalSessionsDeps, request: OpenTerminalRequest, kind: TerminalAgentKind): Promise<SessionRecord> {
   const agent = deps.agents?.get(kind);
   if (agent === undefined) {
-    const label = kind === "codex" ? "Codex" : "OpenCode";
-    const message = `${label} was not found. Install it, then open the terminal again.`;
+    const message = `${AGENT_LABELS[kind]} was not found. Install it, then open the terminal again.`;
     await deps.eventBus.publish({ type: "session.error", projectId: request.projectId, kind: "agent_missing", message });
     throw new TerminalLaunchError("agent_missing", message);
   }
@@ -88,7 +87,7 @@ export async function launchAgentSession(deps: TerminalSessionsDeps, request: Op
     };
   } catch (error) {
     companion?.kill();
-    await rm(launch.filesDir, { recursive: true, force: true });
+    await removeSessionFiles({ dir: launch.filesDir });
     throw error;
   }
 }

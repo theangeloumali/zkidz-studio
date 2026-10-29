@@ -18,7 +18,7 @@ export interface FinishedEdit {
 }
 
 /** numeric columns come back as strings; parsing also narrows the text enum columns. */
-export function toEditSummaryDto(row: EditRow): EditSummary {
+function toEditSummaryDto(row: EditRow): EditSummary {
   const { exportJobId: _exportJobId, ...summary } = row;
   return EditSummarySchema.parse({
     ...summary,

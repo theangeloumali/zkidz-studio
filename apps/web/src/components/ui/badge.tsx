@@ -41,4 +41,4 @@ function Badge({ className, variant = "default", render, ...props }: useRender.C
   });
 }
 
-export { Badge, badgeVariants };
+export { Badge };

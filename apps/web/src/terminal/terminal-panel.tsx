@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
 import { useQuery } from "@tanstack/react-query";
+import { AGENT_LABELS, agentKindOfAuthMode } from "@zks/shared";
 import { openTerminal } from "../api/agent-client.ts";
-import { queryKeys } from "../api/queries.ts";
+import { connectionQuery, queryKeys } from "../api/queries.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { TerminalPane } from "./TerminalPane.tsx";
 
@@ -14,14 +15,16 @@ export function TerminalPanel({ projectId }: { readonly projectId: string }) {
     retry: false,
     refetchOnWindowFocus: false,
   });
+  const connection = useQuery(connectionQuery());
+  const agentLabel = AGENT_LABELS[agentKindOfAuthMode(connection.data?.mode)];
   const restart = () => void terminal.refetch();
 
-  if (terminal.isPending) return <p className="text-ui text-copy-muted">Starting Claude Code…</p>;
+  if (terminal.isPending) return <p className="text-ui text-copy-muted">Starting {agentLabel}…</p>;
   if (terminal.isError)
     return (
       <div className="flex flex-col gap-2">
         <p role="alert" className="text-ui text-danger">
-          Claude Code did not start: {terminal.error.message}
+          {agentLabel} did not start: {terminal.error.message}
         </p>
         <button type="button" className={buttonClass("secondary", "self-start")} onClick={restart} disabled={terminal.isFetching}>
           Try again
@@ -29,5 +32,5 @@ export function TerminalPanel({ projectId }: { readonly projectId: string }) {
       </div>
     );
   const { sessionId } = terminal.data;
-  return <TerminalPane key={`${sessionId}:${terminal.dataUpdatedAt}`} sessionId={sessionId} onRestart={restart} />;
+  return <TerminalPane key={`${sessionId}:${terminal.dataUpdatedAt}`} sessionId={sessionId} agentLabel={agentLabel} onRestart={restart} />;
 }

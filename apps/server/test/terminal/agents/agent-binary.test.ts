@@ -3,7 +3,8 @@ import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isVersionAtLeast, readAgentVersion, resolveAgentBinary } from "../../../src/terminal/agents/agent-binary.ts";
+import { isVersionAtLeast } from "@zks/shared";
+import { readAgentVersion, resolveAgentBinary } from "../../../src/terminal/agents/agent-binary.ts";
 
 async function binDirWith(fileName: string, script: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "zks-agent-bin-"));

@@ -1,14 +1,13 @@
 // Created by The Angelo Umali.
 // Version probes for the non-Claude terminal agents, shown on Setup and checked before a connect.
-import type { AgentVersionSchema } from "@zks/shared";
+import { isVersionAtLeast, type AgentVersionSchema, type TerminalAgentKind } from "@zks/shared";
 import type { z } from "zod";
 import type { AgentAdapter } from "./agent-adapter.ts";
-import { isVersionAtLeast, readAgentVersion, resolveAgentBinary } from "./agent-binary.ts";
+import { readAgentVersion, resolveAgentBinary } from "./agent-binary.ts";
 import { createCodexAdapter } from "./codex.ts";
 import { createOpenCodeAdapter } from "./opencode.ts";
 
 export type AgentVersion = z.infer<typeof AgentVersionSchema>;
-export type TerminalAgentKind = "codex" | "opencode";
 export type TerminalAgentVersions = Readonly<Record<TerminalAgentKind, AgentVersion>>;
 
 type Environment = Readonly<Record<string, string | undefined>>;

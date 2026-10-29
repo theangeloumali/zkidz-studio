@@ -2,14 +2,13 @@
 // OpenAI Codex CLI in mode T (ADR 0007): the user's own sign-in, locked down by flags that codex is asked to confirm before launch.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { API_ROUTES, HookPayloadSchema, LOOPBACK_HOST } from "@zks/shared";
-import type { TerminalTokens } from "../../auth/agent-env.ts";
+import { AGENT_MIN_VERSIONS, HookPayloadSchema } from "@zks/shared";
+import { terminalTokenEnv } from "../../auth/agent-env.ts";
 import { hookToStudioEvents } from "../hook-events.ts";
-import { decideTerminalTool } from "../hook-policy.ts";
-import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../session-files.ts";
+import { terminalHookUrl } from "../../tools/mcp-paths.ts";
+import { HOOK_RELAY_PATH, MCP_SERVER_PATH, withSessionFolder } from "../session-files.ts";
 import type { AgentAdapter, AgentLaunchRequest } from "./agent-adapter.ts";
 import { AgentLaunchError, buildTerminalAgentEnv } from "./agent-env.ts";
-import { createAgentFilesDir, removeAgentFiles } from "./agent-files.ts";
 import {
   assertLockedPermissions,
   assertOnlyStudioHooks,
@@ -68,15 +67,13 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
   const codexHome = parentEnv["CODEX_HOME"] ?? join(homedir(), ".codex");
   return {
     kind: "codex",
-    label: "Codex",
     binaryNames: ["codex", "codex.exe", "codex.cmd"],
     versionArgs: ["--version"],
-    minVersion: "0.164.0",
+    minVersion: AGENT_MIN_VERSIONS.codex,
     async prepare(request, tokens, binaryPath) {
-      const env = buildTerminalAgentEnv({ parentEnv, inheritNames: ["CODEX_HOME"], extraEnv: tokenEnv(tokens) });
-      const filesDir = await createAgentFilesDir(request.runDir, request.sessionId);
+      const env = buildTerminalAgentEnv({ parentEnv, inheritNames: ["CODEX_HOME"], extraEnv: terminalTokenEnv(tokens) });
       const probe = (launchArgs: readonly string[]): CodexProbe => ({ binaryPath, launchArgs, env, cwd: request.projectDir });
-      try {
+      return withSessionFolder(request.runDir, request.sessionId, async (filesDir) => {
         const catalogPath = await writeStudioModelCatalog(codexHome, filesDir, await buildAgentInstructions(request));
         const relayCommand = buildRelayCommand(request);
         const baseArgs = buildCodexLaunchArgs({ request, catalogPath, relayCommand });
@@ -95,10 +92,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
         assertLockedPermissions(promptInput);
         const args = request.resumeSessionId === undefined ? launchArgs : ["resume", ...launchArgs, request.resumeSessionId];
         return { file: binaryPath, args, env, cwd: request.projectDir, filesDir };
-      } catch (error) {
-        await removeAgentFiles(filesDir);
-        throw error;
-      }
+      });
     },
     // Codex fires SessionStart with the first prompt, so its drawn composer is what lets the Prompt box send one.
     inputReady: /›|>_/,
@@ -110,7 +104,6 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
         return hookToStudioEvents(parsed.data, context).map((event) => (event.type === "session.started" ? { ...event, credential: CODEX_CREDENTIAL } : event));
       },
     },
-    decideTool: decideTerminalTool,
     usageSource: createRolloutUsageReader(join(codexHome, "sessions")),
   };
 }
@@ -152,15 +145,10 @@ async function asked<T>(probe: Promise<T>): Promise<T> {
 }
 
 function buildRelayCommand(request: AgentLaunchRequest): string {
-  const hookUrl = `http://${LOOPBACK_HOST}:${request.appPort}${API_ROUTES.terminalHooks.path.replace(":sessionId", request.sessionId)}`;
-  const parts = [request.nodePath, HOOK_RELAY_PATH, hookUrl];
+  const parts = [request.nodePath, HOOK_RELAY_PATH, terminalHookUrl(request.appPort, request.sessionId)];
   if (parts.some((part) => part.includes('"')))
     throw new AgentLaunchError("config_conflict", "The node or studio path contains a quote, so the hook command cannot be built safely.");
   return parts.map((part) => `"${part}"`).join(" ");
-}
-
-function tokenEnv(tokens: TerminalTokens): Record<string, string> {
-  return { ZKS_HOOK_TOKEN: tokens.hookToken, ZKS_MCP_TOKEN: tokens.mcpToken, ZKS_MCP_URL: tokens.mcpUrl };
 }
 
 const config = (override: string) => ["-c", override];

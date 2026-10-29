@@ -2,7 +2,7 @@
 // Turns the event stream into edit rows: open on the first agent activity, close on a delivered export (plan 2026-10-29, slice E).
 import type { StudioDatabase } from "@zks/db";
 import { agentSessions, edits, projects } from "@zks/db/schema";
-import { AgentKindSchema, UsageSourceSchema, type AgentKind, type StudioEvent, type UsageSource, agentKindOfAuthMode } from "@zks/shared";
+import { AgentKindSchema, UsageSourceSchema, type AgentKind, type StudioEvent, type StudioEventType, type UsageSource, agentKindOfAuthMode } from "@zks/shared";
 import { eq } from "drizzle-orm";
 import { readConnection } from "../auth/connection-store.ts";
 import type { EventBus } from "../events/event-bus.ts";
@@ -12,6 +12,14 @@ import { readEditFacts } from "./edit-facts.ts";
 import { listOpenEdits, numberOrNull, type EditRow } from "./edit-store.ts";
 import { UsageLedger, type UsageReading } from "./usage-ledger.ts";
 
+const HANDLED_EVENTS: ReadonlySet<StudioEventType> = new Set([
+  "session.started",
+  "prompt.submitted",
+  "tool.called",
+  "turn.completed",
+  "usage.reported",
+  "job.finished",
+]);
 const DEFAULT_PERSIST_INTERVAL_MS = 2000;
 
 export interface EditRecorderDeps {
@@ -60,7 +68,10 @@ export class EditRecorder {
   /** Recovery is queued first, so events that arrive meanwhile wait for it. */
   start(): Promise<void> {
     const recovered = this.#enqueue(() => this.#recoverOpenEdits());
-    this.#unsubscribe = this.#eventBus.subscribeAll((event) => void this.#enqueue(() => this.#handle(event)));
+    this.#unsubscribe = this.#eventBus.subscribeAll((event) => {
+      // Streamed text arrives per token; only the events #handle reads join the queue.
+      if (HANDLED_EVENTS.has(event.type)) void this.#enqueue(() => this.#handle(event));
+    });
     return recovered;
   }
 

@@ -8,7 +8,7 @@ import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import type { NewStudioEvent } from "../../../src/events/event-bus.ts";
 import { resolveAgentBinary } from "../../../src/terminal/agents/agent-binary.ts";
-import { removeAgentFiles } from "../../../src/terminal/agents/agent-files.ts";
+import { removeSessionFiles } from "../../../src/terminal/session-files.ts";
 import { createCodexAdapter } from "../../../src/terminal/agents/codex.ts";
 import { createPtyHost, type TerminalPty } from "../../../src/terminal/pty-host.ts";
 import { waitFor } from "../stub-claude.ts";
@@ -28,7 +28,7 @@ let filesDir: string | undefined;
 afterEach(async () => {
   pty?.kill();
   await bridge?.close();
-  if (filesDir !== undefined) await removeAgentFiles(filesDir);
+  if (filesDir !== undefined) await removeSessionFiles({ dir: filesDir });
 });
 
 async function liveRequest(projectDir: string, appPort: number) {

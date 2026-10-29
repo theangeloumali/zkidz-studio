@@ -2,11 +2,11 @@
 // OpenCode in mode T (ADR 0007): the user's own sign-in, a password-protected local `opencode serve` the TUI attaches to,
 // and a studio-written config, the only one it loads, that denies every tool but the studio's and asks for each read.
 import { randomBytes, randomInt } from "node:crypto";
-import { LOOPBACK_HOST } from "@zks/shared";
+import { AGENT_MIN_VERSIONS, LOOPBACK_HOST } from "@zks/shared";
 import type { TerminalTokens } from "../../auth/agent-env.ts";
 import type { AgentAdapter, AgentLaunchRequest, PreparedLaunch } from "./agent-adapter.ts";
 import { AgentLaunchError, buildTerminalAgentEnv } from "./agent-env.ts";
-import { createAgentFilesDir, writeAgentFile } from "./agent-files.ts";
+import { withSessionFolder, writeSessionFile } from "../session-files.ts";
 import { buildAgentInstructions } from "./instructions.ts";
 import { MCP_SERVER_PATH } from "../session-files.ts";
 import { assertStudioLockdown, OPENCODE_CONFIG_FILE, OPENCODE_PERMISSIONS, readListeningUrl } from "./opencode-companion.ts";
@@ -38,19 +38,20 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
   const connections = new WeakMap<PreparedLaunch, OpenCodeConnection>();
   return {
     kind: "opencode",
-    label: "OpenCode",
     binaryNames: ["opencode", "opencode.exe", "opencode.cmd"],
     versionArgs: ["--version"],
-    minVersion: "2.2.0",
+    minVersion: AGENT_MIN_VERSIONS.opencode,
     async prepare(request, tokens, binaryPath) {
       const password = randomBytes(32).toString("base64url");
-      const filesDir = await createAgentFilesDir(request.runDir, request.sessionId);
-      const instructionsPath = await writeAgentFile(filesDir, "instructions.md", await buildAgentInstructions(request));
-      await writeAgentFile(filesDir, OPENCODE_CONFIG_FILE, JSON.stringify(buildConfig(request, instructionsPath), null, 2));
-      const env = buildTerminalAgentEnv({
-        parentEnv,
-        inheritNames: INHERITED_DIRS,
-        extraEnv: { [PASSWORD_ENV]: password, XDG_CONFIG_HOME: filesDir, OPENCODE_CONFIG_DIR: filesDir, ...ISOLATION_ENV },
+      const { filesDir, env } = await withSessionFolder(request.runDir, request.sessionId, async (dir) => {
+        const instructionsPath = await writeSessionFile(dir, "instructions.md", await buildAgentInstructions(request));
+        await writeSessionFile(dir, OPENCODE_CONFIG_FILE, JSON.stringify(buildConfig(request, instructionsPath), null, 2));
+        const agentEnv = buildTerminalAgentEnv({
+          parentEnv,
+          inheritNames: INHERITED_DIRS,
+          extraEnv: { [PASSWORD_ENV]: password, XDG_CONFIG_HOME: dir, OPENCODE_CONFIG_DIR: dir, ...ISOLATION_ENV },
+        });
+        return { filesDir: dir, env: agentEnv };
       });
       const sessionId = request.resumeSessionId ?? newSessionId();
       const authorization = basicAuth(password);

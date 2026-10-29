@@ -42,7 +42,7 @@ const ERROR_VIEW: Record<ErrorKind, { title: string; fix: ReactNode }> = {
       </Link>
     ),
   },
-  terminal_exited: { title: "Claude Code exited", fix: "Send a prompt to start it again." },
+  terminal_exited: { title: "The agent exited", fix: "Send a prompt to start it again." },
   unknown: { title: "Claude stopped with an error", fix: "Send the prompt again. If it keeps failing, run the checks in Setup." },
 };
 

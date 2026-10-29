@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CODEX_DISABLED_FEATURES, createCodexAdapter } from "../../../src/terminal/agents/codex.ts";
+import { decideTerminalTool } from "../../../src/terminal/hook-policy.ts";
 import type { CodexHook, CodexSetup } from "../../../src/terminal/agents/codex-lockdown.ts";
 import type { CodexProbe } from "../../../src/terminal/agents/codex-probes.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../../../src/terminal/session-files.ts";
@@ -335,15 +336,19 @@ describe("codex adapter: hooks", () => {
   });
 });
 
+// Codex has no policy of its own: the studio's default decides its tools, so its tool names are checked against that.
 describe("codex adapter: policy", () => {
-  const adapter = createCodexAdapter();
   const scope = { projectDir: "/p", pluginDir: PLUGIN_DIR, studioToolNames: ["mcp__studio__project_info"] };
 
+  it("keeps the studio's default policy", () => {
+    expect(createCodexAdapter().decideTool).toBeUndefined();
+  });
+
   it.each(["apply_patch", "exec_command", "shell", "spawn_agent", "mcp__figma__get_file"])("denies %s", async (toolName) => {
-    expect((await adapter.decideTool?.(toolName, {}, scope))?.isAllowed).toBe(false);
+    expect((await decideTerminalTool(toolName, {}, scope)).isAllowed).toBe(false);
   });
 
   it("allows the studio's own tools", async () => {
-    expect(await adapter.decideTool?.("mcp__studio__project_info", {}, scope)).toEqual({ isAllowed: true });
+    expect(await decideTerminalTool("mcp__studio__project_info", {}, scope)).toEqual({ isAllowed: true });
   });
 });

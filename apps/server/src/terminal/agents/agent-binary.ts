@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-// Finds an agent CLI the way claude-binary.ts finds claude: absolute PATH dirs only, so cwd can never pick the binary.
+// Finds an agent CLI, claude included: absolute PATH dirs only, so cwd can never pick the binary.
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
@@ -39,23 +39,6 @@ export async function readAgentVersion(binaryPath: string | null, versionArgs: r
   } catch {
     return null;
   }
-}
-
-/** Compares major.minor.patch; a pre-release counts as its release, and an unreadable version is never enough. */
-export function isVersionAtLeast(version: string, minVersion: string): boolean {
-  const actual = parseVersion(version);
-  const minimum = parseVersion(minVersion);
-  if (actual === null || minimum === null) return false;
-  for (const [index, part] of actual.entries()) {
-    const minimumPart = minimum[index] ?? 0;
-    if (part !== minimumPart) return part > minimumPart;
-  }
-  return true;
-}
-
-function parseVersion(version: string): readonly number[] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  return match === null ? null : match.slice(1).map(Number);
 }
 
 async function isExecutable(path: string): Promise<boolean> {

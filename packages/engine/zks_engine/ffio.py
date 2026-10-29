@@ -140,13 +140,25 @@ def probe(path):
     }
 
 
-def seconds_written(report):
-    """The media seconds in an ffmpeg -progress file's last block (0 before its first, while ffmpeg prints out_time_us=N/A)."""
+def has_audio(path):
+    probe = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
+                            *user_input_args(path)],
+                           capture_output=True, text=True, check=True)
+    return bool(probe.stdout.strip())
+
+
+def last_progress_value(report, key):
+    """The last numeric `key=` in an ffmpeg -progress file, or 0 before its first block (or while ffmpeg prints N/A)."""
     try:
-        times = re.findall(r"^out_time_us=(\d+)", report.read_text(encoding="utf-8"), re.M)
+        values = re.findall(rf"^{key}=(\d+)", report.read_text(encoding="utf-8"), re.M)
     except OSError:
-        return 0.0
-    return int(times[-1]) / 1_000_000 if times else 0.0
+        return 0
+    return int(values[-1]) if values else 0
+
+
+def seconds_written(report):
+    """The media seconds in an ffmpeg -progress file's last block."""
+    return last_progress_value(report, "out_time_us") / 1_000_000
 
 
 def run_reporting(command, on_seconds):

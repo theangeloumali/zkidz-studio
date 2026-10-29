@@ -55,11 +55,9 @@ def probe(argument):
                                         *ffio.user_input_args(path)],
                                        capture_output=True, text=True, check=True).stdout)["streams"][0]
     num, _, den = stream["r_frame_rate"].partition("/")
-    audio = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
-                            *ffio.user_input_args(path)], capture_output=True, text=True, check=True).stdout.strip()
     return Clip(Path(path), int(stream["nb_read_packets"]), stream.get("color_transfer") in HDR_TRANSFERS, float(zoom or 1),
                 "10" in stream["pix_fmt"], rotation_of(probe_video(path)) % 360, (int(num), int(den or 1)),
-                stream.get("codec_name") in NVDEC_CODECS, bool(audio))
+                stream.get("codec_name") in NVDEC_CODECS, ffio.has_audio(path))
 
 
 def common_rate(clips):

@@ -7,7 +7,7 @@ type UsageField = (typeof USAGE_FIELDS)[number];
 export type UsageReading = Partial<Record<UsageField, number>>;
 export type UsageTotals = Record<UsageField, number | null>;
 
-export const EMPTY_TOTALS: UsageTotals = { costUsd: null, inputTokens: null, outputTokens: null, cacheTokens: null };
+const EMPTY_TOTALS: UsageTotals = { costUsd: null, inputTokens: null, outputTokens: null, cacheTokens: null };
 
 interface SessionReading {
   readonly sessionId: string;

@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 export * from "./primitives.ts";
+export * from "./agent-versions.ts";
 export * from "./enums.ts";
 export * from "./specs/cut-spec.ts";
 export * from "./specs/reel-spec.ts";

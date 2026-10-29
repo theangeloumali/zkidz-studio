@@ -1,7 +1,9 @@
 // Created by The Angelo Umali.
 // Token totals for a Codex thread, read from the rollout file codex writes under sessions/YYYY/MM/DD.
-import { readdir, readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import type { UsageFigures } from "@zks/shared";
 import { z } from "zod";
 
@@ -25,15 +27,14 @@ export function createRolloutUsageReader(sessionsDir: string): (threadId: string
   };
 }
 
+// Streamed, keeping the last count: the rollout grows all session and is read at every Stop.
 async function readLatestTotals(rolloutPath: string): Promise<UsageFigures | null> {
-  const lines = (await readFile(rolloutPath, "utf8")).split("\n").reverse();
-  for (const line of lines) {
-    const totals = parseTokenTotals(line);
-    // OpenAI counts cached input inside input_tokens; the studio reports the two apart.
-    if (totals !== null)
-      return { inputTokens: totals.input_tokens - totals.cached_input_tokens, outputTokens: totals.output_tokens, cacheTokens: totals.cached_input_tokens };
-  }
-  return null;
+  let latest: z.infer<typeof TokenTotalsSchema> | null = null;
+  const lines = createInterface({ input: createReadStream(rolloutPath, { encoding: "utf8" }), crlfDelay: Infinity });
+  for await (const line of lines) latest = parseTokenTotals(line) ?? latest;
+  if (latest === null) return null;
+  // OpenAI counts cached input inside input_tokens; the studio reports the two apart.
+  return { inputTokens: latest.input_tokens - latest.cached_input_tokens, outputTokens: latest.output_tokens, cacheTokens: latest.cached_input_tokens };
 }
 
 /** Today's and yesterday's folders first (local and UTC, past midnight either way); the whole tree only for an older resumed thread. */

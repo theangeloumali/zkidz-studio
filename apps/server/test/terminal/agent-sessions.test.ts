@@ -25,7 +25,6 @@ afterEach(async () => {
 function baseAdapter(kind: "codex" | "opencode"): Omit<AgentAdapter, "events"> {
   return {
     kind,
-    label: kind,
     binaryNames: [kind],
     versionArgs: ["--version"],
     minVersion: "0.0.0",

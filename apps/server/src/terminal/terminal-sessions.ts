@@ -1,7 +1,15 @@
 // Created by The Angelo Umali.
 // Mode T session registry (plan §6.3): hooks → policy + events, Esc to stop, Kill to close.
 import { stripVTControlCharacters } from "node:util";
-import { AskUserQuestionInputSchema, toAskedQuestions, type HookPayload, type HookResponse, type UsageFigures } from "@zks/shared";
+import {
+  AGENT_LABELS,
+  AskUserQuestionInputSchema,
+  toAskedQuestions,
+  type HookPayload,
+  type HookResponse,
+  type UsageFigures,
+  type UsageSource,
+} from "@zks/shared";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import { hookToStudioEvents, QUESTION_TOOL_NAME } from "./hook-events.ts";
 import { decideTerminalTool, type TerminalToolDecision } from "./hook-policy.ts";
@@ -53,6 +61,8 @@ const ALLOWED_PERMISSION_MODES: ReadonlySet<string> = new Set(["auto", "default"
 const KILL_SETTLE_TIMEOUT_MS = 5_000;
 /** A TUI may drop keys while it first draws its input. */
 const INPUT_SETTLE_MS = 2_000;
+/** Enough to hold an input glyph and the escape codes around it. */
+const INPUT_TAIL_CHARS = 256;
 
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
@@ -92,7 +102,13 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       const isUnexpected = !record.wasKilled && exitCode !== 0;
       const exitEvents: NewStudioEvent[] = [{ type: "terminal.state", projectId, state: "exited", exitCode }];
       if (isUnexpected) {
-        exitEvents.push({ type: "session.error", projectId, kind: "terminal_exited", message: `Claude Code exited with code ${exitCode}.`, action: "Restart" });
+        exitEvents.push({
+          type: "session.error",
+          projectId,
+          kind: "terminal_exited",
+          message: `${AGENT_LABELS[record.agent?.adapter.kind ?? "claude"]} exited with code ${exitCode}.`,
+          action: "Restart",
+        });
       }
       const cancelJobs =
         record.wasKilled || isUnexpected
@@ -170,7 +186,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     clearTimeout(timer);
   };
 
-  const publishUsage = (record: SessionRecord, source: "claude_statusline" | "claude_transcript", figures: UsageFigures) =>
+  const publishUsage = (record: SessionRecord, source: UsageSource, figures: UsageFigures) =>
     publishAll([{ type: "usage.reported", projectId: record.projectId, sessionId: record.sessionId, source, ...figures }]);
 
   // Cost and time are session totals that refresh on every assistant message; an unchanged refresh says nothing new.
@@ -235,13 +251,18 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     }
   };
 
+  // A policy that throws blocks the tool: every agent gets an explicit deny, never a silent allow.
+  const decideFailClosed = (record: SessionRecord, payload: PreToolUsePayload, decide = decideTerminalTool): Promise<TerminalToolDecision> =>
+    decide(payload.tool_name, payload.tool_input, { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames }).catch(
+      (error: unknown): TerminalToolDecision => {
+        deps.logger.error("terminal tool policy failed", { error });
+        return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
+      },
+    );
+
   // Always an explicit answer: Claude Code blocks the tool only when the bridge is unreachable (spike 07), not on a 500.
   const answerPreToolUse = async (record: SessionRecord, payload: PreToolUsePayload, signal: AbortSignal | undefined): Promise<HookResponse> => {
-    const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
-    const decision = await decideTerminalTool(payload.tool_name, payload.tool_input, scope).catch((error: unknown): TerminalToolDecision => {
-      deps.logger.error("terminal tool policy failed", { error });
-      return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
-    });
+    const decision = await decideFailClosed(record, payload);
     if (decision.isAllowed && payload.tool_name === QUESTION_TOOL_NAME) return answerQuestion(record, payload, signal);
     record.hasTextSinceTool = false;
     try {
@@ -254,13 +275,9 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
 
   const reportAgentUsage = (record: SessionRecord, agent: AgentRuntime) => {
     const { usageSource, kind } = agent.adapter;
-    if (usageSource === undefined || agent.agentSessionId === undefined || kind === "claude") return;
+    if (usageSource === undefined || agent.agentSessionId === undefined) return;
     usageSource(agent.agentSessionId)
-      .then((figures) =>
-        figures === null
-          ? undefined
-          : publishAll([{ type: "usage.reported", projectId: record.projectId, sessionId: record.sessionId, source: kind, ...figures }]),
-      )
+      .then((figures) => (figures === null ? undefined : publishUsage(record, kind, figures)))
       .catch((error: unknown) => deps.logger.warn("terminal agent usage not read", { error }));
   };
 
@@ -272,13 +289,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     const context = eventContext(record);
     switch (payload.hook_event_name) {
       case "PreToolUse": {
-        const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
-        const decision = await (
-          agent.adapter.decideTool?.(payload.tool_name, payload.tool_input, scope) ?? decideTerminalTool(payload.tool_name, payload.tool_input, scope)
-        ).catch((error: unknown): TerminalToolDecision => {
-          deps.logger.error("terminal agent policy failed", { error });
-          return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
-        });
+        const decision = await decideFailClosed(record, payload, agent.adapter.decideTool);
         await publishAll(events.mapHook(payload, { ...context, decision })).catch((error: unknown) =>
           deps.logger.error("terminal tool event not published", { error }),
         );
@@ -310,11 +321,19 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
   };
 
+  // Each chunk is checked with the end of the one before, so a prompt split across two chunks still matches.
   const startWhenInputDrawn = (record: SessionRecord, inputReady: RegExp) => {
-    const stopWatching = record.pty.onData(() => {
-      if (!inputReady.test(stripVTControlCharacters(record.pty.snapshot()))) return;
+    const isDrawn = (output: string) => inputReady.test(stripVTControlCharacters(output));
+    const settle = () => setTimeout(() => markStarted(record), deps.inputSettleMs ?? INPUT_SETTLE_MS).unref();
+    let tail = record.pty.snapshot();
+    if (isDrawn(tail)) return void settle();
+    tail = tail.slice(-INPUT_TAIL_CHARS);
+    const stopWatching = record.pty.onData((output) => {
+      const recent = tail + output;
+      tail = recent.slice(-INPUT_TAIL_CHARS);
+      if (!isDrawn(recent)) return;
       stopWatching();
-      setTimeout(() => markStarted(record), deps.inputSettleMs ?? INPUT_SETTLE_MS).unref();
+      settle();
     });
   };
 
@@ -383,7 +402,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       const record = records.get(sessionId);
       // The session can end between the route's token check and here; its tools still get an explicit answer.
       if (record === undefined) {
-        return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This Claude session has ended." }) : {};
+        return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This session has ended." }) : {};
       }
       if (record.agent !== undefined) return handleAgentHook(record, record.agent, payload);
       switch (payload.hook_event_name) {

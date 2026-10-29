@@ -20,6 +20,7 @@ const EPHEMERAL_TYPES: ReadonlySet<string> = new Set(EPHEMERAL_EVENT_TYPES);
 export class EventBus {
   readonly #database: StudioDatabase;
   readonly #subscriptions = new Set<Subscription>();
+  readonly #allProjectListeners = new Set<EventListener>();
 
   constructor(database: StudioDatabase) {
     this.#database = database;
@@ -49,6 +50,12 @@ export class EventBus {
     return () => this.#subscriptions.delete(subscription);
   }
 
+  /** For server-side recorders that follow every project, including ones created after they subscribe. */
+  subscribeAll(listener: EventListener): () => void {
+    this.#allProjectListeners.add(listener);
+    return () => this.#allProjectListeners.delete(listener);
+  }
+
   /** Past SSE_REPLAY_LIMIT the client must refetch state instead, so the newest id is all it gets. */
   async replayAfter(projectIds: readonly string[], afterId: number): Promise<ReplayResult> {
     const rows = await this.#database
@@ -69,6 +76,7 @@ export class EventBus {
     for (const subscription of this.#subscriptions) {
       if (subscription.projectIds.has(event.projectId)) subscription.listener(event);
     }
+    for (const listener of this.#allProjectListeners) listener(event);
   }
 }
 

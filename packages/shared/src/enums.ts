@@ -12,7 +12,7 @@ export const JOB_LANES = ["gpu", "whisper", "overlay", "cpu"] as const;
 export const JOB_STATUSES = ["queued", "running", "succeeded", "failed", "cancelled", "interrupted"] as const;
 export const DELIVERABLE_KINDS = ["full", "reels", "cover_a", "cover_b", "reels_cover_a", "reels_cover_b", "caption_txt"] as const;
 /** Plan §6.2: A = API key, B = cloud provider, T = the user's own `claude` in a terminal. */
-export const AUTH_MODES = ["api_key", "cloud", "terminal"] as const;
+export const AUTH_MODES = ["api_key", "cloud", "terminal", "codex_terminal", "opencode_terminal"] as const;
 export const CLOUD_PROVIDERS = ["bedrock", "vertex", "foundry", "anthropicAws"] as const;
 /** The agent CLIs a terminal session can run. */
 export const AGENT_KINDS = ["claude", "codex", "opencode"] as const;

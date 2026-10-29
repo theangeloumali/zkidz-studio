@@ -36,6 +36,7 @@ const EXPECTED_CATALOG = {
   job_cancel: ["auto", false],
   approve: ["permission_prompt", false],
   job_resume: ["auto", false],
+  read_skill: ["auto", true],
 } as const;
 
 const VALID_INPUT_BY_TOOL: Record<keyof typeof EXPECTED_CATALOG, unknown> = {
@@ -69,6 +70,7 @@ const VALID_INPUT_BY_TOOL: Record<keyof typeof EXPECTED_CATALOG, unknown> = {
   job_cancel: { jobId: JOB_ID },
   approve: { tool: "mcp__studio__render_master", input: { target: "full", quality: "4k" } },
   job_resume: { jobId: JOB_ID },
+  read_skill: { name: "edit-director" },
 };
 
 describe("STUDIO_TOOLS catalog (plan §6.8)", () => {

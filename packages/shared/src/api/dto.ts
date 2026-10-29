@@ -147,12 +147,17 @@ export const ProjectStyleSchema = z.strictObject({
   referenceAssetId: IdSchema.optional(),
 });
 
+/** An installed terminal agent's version, null when missing, beside the oldest one its lockdown was checked on. */
+export const AgentVersionSchema = z.strictObject({ version: z.string().nullable(), minVersion: z.string().min(1) });
+
 /** The key itself never leaves the server; the UI shows the last 4 (plan §6.5). */
 export const ConnectionSchema = z.strictObject({
   mode: AuthModeSchema.nullable(),
   keyLast4: z.string().length(4).nullable(),
   provider: CloudProviderSchema.nullable(),
   claudeVersion: z.string().nullable(),
+  /** Optional so a client built before Codex and OpenCode still parses the reply. */
+  agentVersions: z.strictObject({ codex: AgentVersionSchema, opencode: AgentVersionSchema }).optional(),
 });
 
 /** Every global setting, typed. proxyOptIn lets HTTPS_PROXY, NO_PROXY and NODE_EXTRA_CA_CERTS reach the agent and the key check (plan §6.5, §6.6). */

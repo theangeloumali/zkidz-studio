@@ -4,10 +4,11 @@ import type { StudioToolContract } from "./define.ts";
 import { addCue, listCueKinds, makeCaptionPhrases, proposeCuts, removeCue, setCaptions, setCuts, setReel, updateCue, validateSpec } from "./edit.ts";
 import { approve, jobCancel, jobResume, jobStatus, jobWait } from "./jobs.ts";
 import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projectInfo, readTranscript, transcribe } from "./media.ts";
+import { readSkill } from "./knowledge.ts";
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
 
 export * from "./define.ts";
-// Not in STUDIO_TOOLS until their handlers are registered (plan 2026-10-29, Phase 7).
+// suggest_lessons stays out of STUDIO_TOOLS until its handler is registered (plan 2026-10-29, Phase 7).
 export { readSkill, suggestLessons } from "./knowledge.ts";
 export { MAX_REFERENCE_FRAMES, sampleReference, setProjectStyle } from "./style.ts";
 export { CUE_SHEETS, CUE_TIERS } from "./edit.ts";
@@ -46,6 +47,7 @@ export const STUDIO_TOOLS = {
   job_cancel: jobCancel,
   approve,
   job_resume: jobResume,
+  read_skill: readSkill,
 } as const satisfies Record<string, StudioToolContract>;
 
 export type StudioToolName = keyof typeof STUDIO_TOOLS;

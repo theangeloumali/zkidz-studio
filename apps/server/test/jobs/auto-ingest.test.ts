@@ -38,7 +38,7 @@ afterAll(async () => {
   await server.close();
 });
 
-async function upload(projectId: string, kind: "camera" | "image" | "source" | "screen_recording" = "camera") {
+async function upload(projectId: string, kind: "camera" | "image" | "source" | "screen_recording" | "reference" = "camera") {
   return autoIngest.track(projectId, async () => {
     const [asset] = await server.database.db
       .insert(mediaAssets)
@@ -88,6 +88,25 @@ describe("auto ingest", () => {
     await delay(QUIET_MS * 4);
 
     expect(await ingestJobs(project.id)).toHaveLength(0);
+  });
+
+  it("keeps its running ingest when a style reference lands, since a reference is never footage", async () => {
+    const project = await insertProject(server);
+    const release = Promise.withResolvers<void>();
+    runGate = release.promise;
+    try {
+      const camera = await upload(project.id);
+      await vi.waitFor(async () => expect((await ingestJobs(project.id))[0]?.status).toBe("running"));
+      await upload(project.id, "reference");
+      await delay(QUIET_MS * 4);
+
+      const started = await ingestJobs(project.id);
+      expect(started).toHaveLength(1);
+      expect(started[0]?.status).toBe("running");
+      expect(started[0]?.params).toMatchObject({ clips: [{ assetId: camera.id }] });
+    } finally {
+      release.resolve();
+    }
   });
 
   it("replaces its own running ingest when a later clip lands", async () => {

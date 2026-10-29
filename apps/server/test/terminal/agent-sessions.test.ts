@@ -135,6 +135,32 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     await rm(pidFile, { force: true });
   });
 
+  it("closes the session and says why when the companion dies after it started", async () => {
+    const pidFile = join(tmpdir(), `zks-companion-late-${process.pid}-${Date.now()}.pid`);
+    const adapter: AgentAdapter = {
+      ...baseAdapter("opencode"),
+      async prepare(request, tokens, binaryPath) {
+        const launch = await baseAdapter("opencode").prepare(request, tokens, binaryPath);
+        const script = `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => undefined, 1000);`;
+        const connect = async () => {
+          await waitFor(() => existsSync(pidFile));
+          return launch;
+        };
+        return { ...launch, companion: { file: process.execPath, args: ["-e", script], env: { PATH: process.env.PATH ?? "" }, connect } };
+      },
+      events: { kind: "stream", subscribe: () => () => undefined },
+    };
+    const session = await openAgent("opencode", adapter);
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+    process.kill(Number(await readFile(pidFile, "utf8")), "SIGKILL");
+
+    await waitFor(() => fixture.sessions.findByProject(PROJECT_ID) === undefined);
+    const stopped = fixture.events.find((event) => event.type === "session.error");
+    expect(stopped).toMatchObject({ kind: "terminal_exited" });
+    expect(stopped?.type === "session.error" ? stopped.message : "").toMatch(/server stopped/);
+    await rm(pidFile, { force: true });
+  });
+
   it("fails the open at once when the companion dies before it answers", async () => {
     const adapter: AgentAdapter = {
       ...baseAdapter("opencode"),

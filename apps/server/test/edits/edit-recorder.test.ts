@@ -160,7 +160,7 @@ describe("EditRecorder", () => {
     await database.db.insert(editSpecVersions).values({ specId: spec?.id ?? "", version: 1, sha256: "a", content: JSON.stringify(cuts), author: "agent" });
     await prompt();
     await usage("s1", "claude_statusline", { costUsd: 0.62 });
-    recorder.recordAnswers(projectId, { "Which opening should we polish?": "The flat tyre", "Music?": "None" });
+    await recorder.recordAnswers(projectId, { "Which opening should we polish?": "The flat tyre", "Music?": "None" });
 
     await finishExport("failed");
     expect((await onlyEdit()).status).toBe("open");
@@ -204,7 +204,7 @@ describe("EditRecorder", () => {
   it("keeps an open edit's totals across a restart without counting a session's earlier spend again", async () => {
     await prompt();
     await usage("s1", "claude_statusline", { costUsd: 0.4 });
-    recorder.recordAnswers(projectId, { "Music?": "Lo-fi" });
+    await recorder.recordAnswers(projectId, { "Music?": "Lo-fi" });
     await recorder.flush();
     recorder.stop();
 

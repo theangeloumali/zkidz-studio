@@ -20,6 +20,8 @@ export interface TerminalFixture {
   readonly studioHome: string;
   readonly runDir: string;
   readonly projectDir: string;
+  /** The Claude projects folder the sessions read transcripts from, when a test set one. */
+  readonly transcriptRoot?: string;
   /** Every projectId cancelProjectJobs was called with, in order. */
   readonly cancelledProjects: string[];
   readonly cleanup: () => Promise<void>;
@@ -67,6 +69,7 @@ export async function createTerminalFixture(overrides: Partial<TerminalSessionsD
     runDir,
     projectDir,
     cancelledProjects,
+    ...(overrides.transcriptRoot === undefined ? {} : { transcriptRoot: overrides.transcriptRoot }),
     async cleanup() {
       sessions.killAll();
       await rm(studioHome, { recursive: true, force: true });

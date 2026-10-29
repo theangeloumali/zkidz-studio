@@ -38,6 +38,8 @@ async function playTurn(prompt) {
     process.stdout.write(`  ⎿  Denied: ${decision.permissionDecisionReason ?? "blocked by hook"}\n`);
   } else {
     await postHook("PostToolUse");
+    // Claude Code streams the reply through MessageDisplay before its Stop.
+    await postHook("MessageDisplay");
     process.stdout.write(`● ${hookPayload("Stop").last_assistant_message}\n`);
   }
   await postHook("Stop");

@@ -37,6 +37,12 @@ describe("buildFeedItems", () => {
     ]);
   });
 
+  it("names an ingest's step in words", () => {
+    const queued = { ...SAMPLE_EVENTS["job.queued"], kind: "ingest" };
+    const items = buildFeedItems([queued, { ...SAMPLE_EVENTS["job.progress"], stage: "joining", pct: 40, etaS: undefined }]);
+    expect(items).toEqual([expect.objectContaining({ kind: "job", jobKind: "ingest", progress: "Joining clips 40%" })]);
+  });
+
   it("folds a job's lifecycle into one entry with its latest progress", () => {
     const items = buildFeedItems([SAMPLE_EVENTS["job.queued"], SAMPLE_EVENTS["job.started"], SAMPLE_EVENTS["job.progress"]]);
     expect(items).toEqual([expect.objectContaining({ kind: "job", jobKind: "render", status: "running", progress: "encode 42% · about 2 min left" })]);

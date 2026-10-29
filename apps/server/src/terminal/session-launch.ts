@@ -38,6 +38,8 @@ export interface TerminalSessionsDeps {
   /** How long a question card waits for Claude's text about it, so the text lands first in Activity. */
   readonly questionTextWaitMs?: number;
   readonly readTranscriptUsage?: (transcriptPath: string) => Promise<UsageFigures | null>;
+  /** Where claude keeps transcripts; a transcript path outside it is never read. */
+  readonly transcriptRoot?: string;
   /** The installed Codex and OpenCode, for their terminal modes (ADR 0007). */
   readonly agents?: TerminalAgents;
 }

@@ -151,8 +151,6 @@ describe("Style section: theme and reset", () => {
   });
 });
 
-describe("Style section: refresh from the agent", () => {});
-
 describe("Style section: reference slot", () => {
   async function dropReference(name = "tiktok-look.mp4") {
     stubStudio(null);

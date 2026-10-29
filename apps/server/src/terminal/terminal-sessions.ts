@@ -8,7 +8,7 @@ import { encodePrompt, eraseInput } from "./prompt-input.ts";
 import { QUESTION_HOOK_TIMEOUT_S, removeSessionFiles } from "./session-files.ts";
 import type { AgentRuntime } from "./agent-launch.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
-import { isSessionTranscript, readTranscriptUsage } from "./transcript-usage.ts";
+import { defaultTranscriptRoot, isSessionTranscript, isUnderTranscriptRoot, readTranscriptUsage } from "./transcript-usage.ts";
 
 export type { TerminalSession, TerminalSessionsDeps } from "./session-launch.ts";
 
@@ -22,6 +22,8 @@ const QUESTION_DEADLINE_MS = (QUESTION_HOOK_TIMEOUT_S - 60) * 1000;
 /** Claude Code 2.1.312 shows the text before a question while the question's hook is already held (live test). */
 const QUESTION_TEXT_WAIT_MS = 3000;
 const QUESTION_DISMISSED = "The question was dismissed.";
+/** A message longer than this goes out in pieces, so one runaway reply cannot grow a buffer without bound. */
+const MAX_NARRATION_CHARS = 100_000;
 const ALLOW: TerminalToolDecision = { isAllowed: true };
 
 export interface TerminalSessions {
@@ -118,7 +120,16 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   // One narration per assistant message, published on its final batch; Claude Code holds the batch until this answers.
   const handleMessageDisplay = async (record: SessionRecord, payload: MessageDisplayPayload) => {
     const messageKey = payload.message_id ?? payload.turn_id ?? "";
-    const text = (record.displayBuffers.get(messageKey) ?? "") + payload.delta;
+    let text = record.displayBuffers.get(messageKey) ?? "";
+    if (text.length + payload.delta.length > MAX_NARRATION_CHARS) {
+      await publishNarration(record, text);
+      text = "";
+    }
+    text += payload.delta;
+    while (text.length > MAX_NARRATION_CHARS) {
+      await publishNarration(record, text.slice(0, MAX_NARRATION_CHARS));
+      text = text.slice(MAX_NARRATION_CHARS);
+    }
     if (payload.final !== true) {
       record.displayBuffers.set(messageKey, text);
       return;
@@ -164,7 +175,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   const reportTranscriptUsage = (record: SessionRecord, payload: StopPayload) => {
     const transcriptPath = payload.transcript_path;
     if (!isSessionTranscript(transcriptPath, record.sessionId)) return;
-    (deps.readTranscriptUsage ?? readTranscriptUsage)(transcriptPath)
+    isUnderTranscriptRoot(transcriptPath, deps.transcriptRoot ?? defaultTranscriptRoot())
+      .then((isConfined) => (isConfined ? (deps.readTranscriptUsage ?? readTranscriptUsage)(transcriptPath) : null))
       .then((figures) => (figures === null ? undefined : publishUsage(record, "claude_transcript", figures)))
       .catch((error: unknown) => deps.logger.warn("terminal transcript usage not read", { error }));
   };
@@ -246,8 +258,9 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     switch (payload.hook_event_name) {
       case "PreToolUse": {
         const scope = { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames };
-        const decide = agent.adapter.decideTool ?? decideTerminalTool;
-        const decision = await decide(payload.tool_name, payload.tool_input, scope).catch((error: unknown): TerminalToolDecision => {
+        const decision = await (
+          agent.adapter.decideTool?.(payload.tool_name, payload.tool_input, scope) ?? decideTerminalTool(payload.tool_name, payload.tool_input, scope)
+        ).catch((error: unknown): TerminalToolDecision => {
           deps.logger.error("terminal agent policy failed", { error });
           return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
         });
@@ -317,6 +330,13 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       watchLifecycle(record);
       const { agent } = record;
       if (agent?.adapter.events.kind === "stream") agent.unsubscribe = agent.adapter.events.subscribe(agent.launch, eventContext(record), publishInBackground);
+      // The TUI only fails once its server is gone; the record says why and closes. A normal exit has removed it already.
+      agent?.companion?.once("exit", (code) => {
+        if (records.get(record.sessionId) !== record || record.wasKilled) return;
+        const message = `The agent's server stopped (code ${code ?? "none"}).`;
+        publishInBackground([{ type: "session.error", projectId: record.projectId, kind: "terminal_exited", message, action: "Restart" }]);
+        killRecord(record);
+      });
       await publishAll([{ type: "terminal.state", projectId: request.projectId, state: "starting" }]);
       return record;
     },

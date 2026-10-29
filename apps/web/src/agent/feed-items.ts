@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import type { StudioEvent } from "@zks/shared";
+import { stageLabelFor } from "../render/job-display.ts";
 import { describeNote, formatEta, type EventOf, type FeedNote } from "./feed-notes.ts";
 
 type CardEvent = EventOf<"question.asked" | "approval.requested" | "cuts.proposed" | "lessons.suggested" | "session.error">;
@@ -61,7 +62,7 @@ function nextTool(current: ToolItem, event: ToolEvent): ToolItem {
 function nextJob(current: JobItem, event: JobEvent): JobItem {
   if (event.type === "job.progress") {
     const eta = event.etaS === undefined ? "" : ` · ${formatEta(event.etaS)}`;
-    return { ...current, status: "running", progress: `${event.stage} ${Math.round(event.pct)}%${eta}` };
+    return { ...current, status: "running", progress: `${stageLabelFor(current.jobKind, event.stage)} ${Math.round(event.pct)}%${eta}` };
   }
   return { ...current, jobKind: event.kind, status: event.status, progress: event.type === "job.finished" ? null : current.progress };
 }

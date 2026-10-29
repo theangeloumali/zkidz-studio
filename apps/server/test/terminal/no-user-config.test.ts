@@ -127,6 +127,7 @@ describe("mode T and the user's Claude config", { timeout: REAL_PTY_TEST_TIMEOUT
     // A transcript path that names another file (here the credentials) is never opened.
     await waitFor(() => server.fixture.events.some((event) => event.type === "usage.reported"));
     const underUserConfig = touchedPaths.filter((path) => path === userConfigDir || path.startsWith(`${userConfigDir}/`) || path === `${userConfigDir}.json`);
-    expect([...new Set(underUserConfig)]).toEqual([transcriptPath]);
+    // The projects folder is resolved to confine the read; nothing else under ~/.claude is touched.
+    expect([...new Set(underUserConfig)].sort()).toEqual([join(userConfigDir, "projects"), transcriptPath].sort());
   });
 });

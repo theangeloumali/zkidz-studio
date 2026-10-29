@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
-import { readdir, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readdir, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { encodePrompt, eraseInput, PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
 import type { PtyHost, TerminalPty } from "../../src/terminal/pty-host.ts";
@@ -442,6 +443,18 @@ describe("terminal sessions: questions and Claude's text in Activity", { timeout
     expect(fixture.events).toContainEqual({ type: "terminal.state", projectId: PROJECT_ID, state: "ready" });
   });
 
+  it("publishes a runaway message in pieces instead of holding it all", async () => {
+    fixture = await createTerminalFixture();
+    const { sessionId } = await openSession();
+    const line = `${"a".repeat(1000)}\n`;
+    for (let index = 0; index < 300; index++) {
+      await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "MessageDisplay", message_id: "big", delta: line, index }));
+    }
+    const narrations = fixture.events.filter((event) => event.type === "narration");
+    expect(narrations.length).toBeGreaterThan(0);
+    expect(narrations.every((event) => event.type === "narration" && event.text.length <= 100_000)).toBe(true);
+  });
+
   it("lands Claude's text before the card when its last batch races the question", async () => {
     const broker = questionBroker();
     fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 2000 });
@@ -478,7 +491,7 @@ describe("terminal sessions: questions and Claude's text in Activity", { timeout
   });
 
   it("totals the session transcript's tokens at Stop, reading only this session's transcript", async () => {
-    fixture = await createTerminalFixture();
+    fixture = await createTerminalFixture({ transcriptRoot: await mkdtemp(join(tmpdir(), "zks-claude-projects-")) });
     const { sessionId } = await openSession();
     const usage = { input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 5, cache_read_input_tokens: 1000 };
     // One message can span several transcript lines (one per content block), each repeating its usage.
@@ -488,12 +501,24 @@ describe("terminal sessions: questions and Claude's text in Activity", { timeout
       { type: "assistant", message: { id: "msg_1", role: "assistant", usage } },
       { type: "assistant", message: { id: "msg_2", role: "assistant", usage: { ...usage, output_tokens: 30 } } },
     ];
-    const transcriptPath = join(fixture.studioHome, `${sessionId}.jsonl`);
+    const root = fixture.transcriptRoot ?? "";
+    const transcriptPath = join(root, "-studio-projects-demo", `${sessionId}.jsonl`);
+    await mkdir(dirname(transcriptPath), { recursive: true });
     await writeFile(transcriptPath, lines.map((line) => JSON.stringify(line)).join("\n"));
-    const otherPath = join(fixture.studioHome, "someone-else.jsonl");
+    const otherPath = join(root, "someone-else.jsonl");
     await writeFile(otherPath, lines.map((line) => JSON.stringify(line)).join("\n"));
+    // Named right but outside Claude's projects folder, directly or through a symlink: never read.
+    const outsidePath = join(fixture.studioHome, `${sessionId}.jsonl`);
+    await writeFile(outsidePath, lines.map((line) => JSON.stringify(line)).join("\n"));
+    const linkedPath = join(root, "linked", `${sessionId}.jsonl`);
+    await mkdir(dirname(linkedPath), { recursive: true });
+    await symlink(outsidePath, linkedPath);
 
-    await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: otherPath }));
+    for (const path of [otherPath, outsidePath, linkedPath]) {
+      await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: path }));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(fixture.events.some((event) => event.type === "usage.reported")).toBe(false);
     await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: transcriptPath }));
     await waitFor(() => fixture.events.some((event) => event.type === "usage.reported"));
 

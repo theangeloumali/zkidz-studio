@@ -1,7 +1,10 @@
 // Created by The Angelo Umali.
 // A mode T session's token totals from Claude Code's own transcript: the status line only carries the latest call.
-import { readFile } from "node:fs/promises";
-import { basename, isAbsolute } from "node:path";
+import { createReadStream } from "node:fs";
+import { realpath } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, isAbsolute, join } from "node:path";
+import { createInterface } from "node:readline";
 import type { UsageFigures } from "@zks/shared";
 import { z } from "zod";
 
@@ -21,15 +24,32 @@ const AssistantEntrySchema = z.looseObject({
 });
 type TokenUsage = z.infer<typeof AssistantEntrySchema>["message"]["usage"];
 
+/** The PTY's claude runs without CLAUDE_CONFIG_DIR (terminal-env.ts), so its transcripts live under ~/.claude/projects. */
+export function defaultTranscriptRoot(): string {
+  return join(homedir(), ".claude", "projects");
+}
+
 /** The path arrives in a hook payload, so only the transcript named after this very session is read. */
 export function isSessionTranscript(transcriptPath: unknown, sessionId: string): transcriptPath is string {
   return typeof transcriptPath === "string" && isAbsolute(transcriptPath) && basename(transcriptPath) === `${sessionId}.jsonl`;
 }
 
+/** Resolved through symlinks, so a link under the root cannot point the read elsewhere. */
+export async function isUnderTranscriptRoot(transcriptPath: string, root: string): Promise<boolean> {
+  try {
+    const [realFile, realRoot] = await Promise.all([realpath(transcriptPath), realpath(root)]);
+    return realFile.startsWith(`${realRoot}/`) || realFile.startsWith(`${realRoot}\\`);
+  } catch {
+    return false;
+  }
+}
+
 /** One assistant message spans a line per content block, each repeating its usage, so each message id counts once. */
 export async function readTranscriptUsage(transcriptPath: string): Promise<UsageFigures | null> {
   const usageByMessage = new Map<string, TokenUsage>();
-  for (const line of (await readFile(transcriptPath, "utf8")).split("\n")) {
+  // Streamed: a long session's transcript runs to tens of megabytes and is read again at every Stop.
+  const lines = createInterface({ input: createReadStream(transcriptPath, { encoding: "utf8" }), crlfDelay: Infinity });
+  for await (const line of lines) {
     const entry = parseAssistantEntry(line);
     if (entry !== null) usageByMessage.set(entry.message.id, entry.message.usage);
   }

@@ -4,9 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AgentLaunchError } from "../../../src/terminal/agents/agent-env.ts";
 import { CODEX_DISABLED_FEATURES, createCodexAdapter } from "../../../src/terminal/agents/codex.ts";
-import type { CodexHook } from "../../../src/terminal/agents/codex-lockdown.ts";
+import type { CodexHook, CodexSetup } from "../../../src/terminal/agents/codex-lockdown.ts";
 import type { CodexProbe } from "../../../src/terminal/agents/codex-probes.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH } from "../../../src/terminal/session-files.ts";
 
@@ -77,26 +76,50 @@ const studioHooks = (trustStatus: string) =>
 const BEFORE_STATE = [hook(USER_HOOK_KEY, {}), ...studioHooks("untrusted")];
 const AFTER_STATE = [hook(USER_HOOK_KEY, { enabled: false }), ...studioHooks("trusted")];
 
+const STUDIO_ORIGINS = { "mcp_servers.studio.command": { name: { type: "sessionFlags" } } };
+const permissionsMessage = (sandbox: string, approval: string) => ({
+  type: "message",
+  role: "developer",
+  content: [{ type: "input_text", text: `<permissions instructions>\n\`sandbox_mode\` is \`${sandbox}\`.\nApproval policy is currently ${approval}.` }],
+});
+/** prompt-input's shape: tools grouped by namespace, then codex's own permissions message. */
+const promptInput = (toolNames: readonly string[], sandbox: string) => [
+  {
+    type: "additional_tools",
+    tools: toolNames.map((name) => {
+      const [namespace = "", ...rest] = name.split(".");
+      return { type: "namespace", name: namespace, tools: [{ type: "function", name: rest.join(".") }] };
+    }),
+  },
+  permissionsMessage(sandbox, "never"),
+];
+
 interface FakeCodex {
   readonly userMcpServers?: readonly string[];
   readonly hooksAfterState?: readonly CodexHook[];
+  readonly serversAfterState?: CodexSetup["mcpServers"];
+  readonly origins?: CodexSetup["origins"];
   readonly exposedTools?: readonly string[];
+  readonly sandbox?: string;
   readonly cache?: unknown;
 }
 
 async function adapterWith(fake: FakeCodex = {}) {
   const probes: CodexProbe[] = [];
-  const hasHookState = (probe: CodexProbe) => probe.configArgs.some((arg) => arg.startsWith("hooks.state="));
+  const hasHookState = (probe: CodexProbe) => probe.launchArgs.some((arg) => arg.startsWith("hooks.state="));
+  const userServers = fake.userMcpServers ?? ["figma", "my server"];
+  const servers = (enabled: boolean) => ({ ...Object.fromEntries(userServers.map((name) => [name, { enabled }] as const)), studio: { enabled: true } });
   const adapter = createCodexAdapter({
     parentEnv: { PATH: "/usr/bin", HOME: "/home/user", OPENAI_API_KEY: "sk-parent", CODEX_HOME: await codexHome(fake.cache) },
-    listUserMcpServers: () => Promise.resolve(fake.userMcpServers ?? ["figma", "my server"]),
-    listHooks: (probe) => {
+    readSetup: (probe) => {
       probes.push(probe);
-      return Promise.resolve(hasHookState(probe) ? (fake.hooksAfterState ?? AFTER_STATE) : BEFORE_STATE);
+      const origins = fake.origins ?? STUDIO_ORIGINS;
+      if (!hasHookState(probe)) return Promise.resolve({ hooks: BEFORE_STATE, mcpServers: servers(true), origins });
+      return Promise.resolve({ hooks: fake.hooksAfterState ?? AFTER_STATE, mcpServers: fake.serversAfterState ?? servers(false), origins });
     },
-    listExposedTools: (probe) => {
+    readPrompt: (probe) => {
       probes.push(probe);
-      return Promise.resolve(fake.exposedTools ?? STUDIO_TOOLS);
+      return Promise.resolve(promptInput(fake.exposedTools ?? STUDIO_TOOLS, fake.sandbox ?? "read-only"));
     },
   });
   return { adapter, probes };
@@ -108,10 +131,16 @@ function expectedArgs(catalogPath: string): string[] {
     ...HOOK_EVENTS.map((event, index) => `${JSON.stringify(`/<session-flags>/config.toml:${event}:0:0`)}={trusted_hash="${hashOf(index)}"}`),
   ];
   return [
+    "--sandbox",
+    "read-only",
+    "--ask-for-approval",
+    "never",
     "-c",
     'sandbox_mode="read-only"',
     "-c",
     'approval_policy="never"',
+    "-c",
+    "include_permissions_instructions=true",
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     "-c",
     'web_search="disabled"',
@@ -119,10 +148,6 @@ function expectedArgs(catalogPath: string): string[] {
     'model="gpt-5.6-luna"',
     "-c",
     `model_catalog_json=${JSON.stringify(catalogPath)}`,
-    "-c",
-    "mcp_servers.figma.enabled=false",
-    "-c",
-    'mcp_servers."my server".enabled=false',
     "-c",
     'mcp_servers.studio.command="/usr/bin/node"',
     "-c",
@@ -135,6 +160,10 @@ function expectedArgs(catalogPath: string): string[] {
       "-c",
       `hooks.${event}=[{matcher="*",hooks=[{type="command",command=${JSON.stringify(RELAY)}}]}]`,
     ]),
+    "-c",
+    "mcp_servers.figma.enabled=false",
+    "-c",
+    'mcp_servers."my server".enabled=false',
     "-c",
     `hooks.state={${hookState.join(",")}}`,
   ];
@@ -193,15 +222,16 @@ describe("codex adapter: launch", () => {
     expect(await modeOf(catalogPath)).toBe(0o600);
   });
 
-  it("asks codex what it would load with exactly the args the session runs with", async () => {
+  it("asks codex what it would load with exactly the argv, cwd and env the session runs with", async () => {
     const { adapter, probes } = await adapterWith();
     const request = await launchRequest();
     const launch = await adapter.prepare(request, TOKENS, "/opt/codex/bin/codex");
-    const finalProbes = probes.filter((probe) => probe.configArgs.some((arg) => arg.startsWith("hooks.state=")));
+    const finalProbes = probes.filter((probe) => probe.launchArgs.some((arg) => arg.startsWith("hooks.state=")));
 
+    expect(probes).toHaveLength(3);
+    for (const probe of probes) expect(probe).toMatchObject({ binaryPath: "/opt/codex/bin/codex", env: launch.env, cwd: request.projectDir });
     expect(finalProbes).toHaveLength(2);
-    for (const probe of finalProbes)
-      expect(probe).toEqual({ binaryPath: "/opt/codex/bin/codex", configArgs: launch.args, env: launch.env, cwd: request.projectDir });
+    for (const probe of finalProbes) expect(probe.launchArgs).toEqual(launch.args);
   });
 
   it("resumes the codex thread with the same lockdown", async () => {
@@ -212,14 +242,9 @@ describe("codex adapter: launch", () => {
     expect(launch.args.some((arg) => arg.startsWith("model_catalog_json=") || arg.startsWith("hooks.state="))).toBe(true);
   });
 
-  it("refuses to start when the user has an MCP server named studio", async () => {
-    const { adapter } = await adapterWith({ userMcpServers: ["studio"] });
-    await expect(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex")).rejects.toThrow(AgentLaunchError);
-  });
-
-  it("refuses to start when the user's MCP servers cannot be listed", async () => {
-    const adapter = createCodexAdapter({ parentEnv: { PATH: "/usr/bin" }, listUserMcpServers: async () => Promise.reject(new Error("codex failed")) });
-    await expect(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex")).rejects.toThrow(AgentLaunchError);
+  it("refuses to start when the user's config already sets a key on an MCP server named studio", async () => {
+    const { adapter } = await adapterWith({ origins: { ...STUDIO_ORIGINS, "mcp_servers.studio.url": { name: { type: "user" } } } });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /named studio/);
   });
 
   it("refuses to start when codex has no model list to lock down", async () => {
@@ -237,6 +262,16 @@ describe("codex adapter: what the session may expose and run", () => {
     },
   );
 
+  it("refuses to start when an MCP server stays on, such as one a trusted project's .codex adds", async () => {
+    const { adapter } = await adapterWith({ serversAfterState: { studio: { enabled: true }, planted: { enabled: true } } });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /planted/);
+  });
+
+  it("refuses to start when codex would not run read-only", async () => {
+    const { adapter } = await adapterWith({ sandbox: "workspace-write" });
+    await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /workspace-write/);
+  });
+
   it("refuses to start when a hook the studio did not write would still run", async () => {
     const managed = hook("/etc/codex/managed.toml:pre_tool_use:0:0", { source: "mdm", trustStatus: "managed" });
     const { adapter } = await adapterWith({ hooksAfterState: [...AFTER_STATE, managed] });
@@ -251,9 +286,8 @@ describe("codex adapter: what the session may expose and run", () => {
   it("refuses to start when codex cannot be asked", async () => {
     const adapter = createCodexAdapter({
       parentEnv: { PATH: "/usr/bin", CODEX_HOME: await codexHome() },
-      listUserMcpServers: () => Promise.resolve([]),
-      listHooks: () => Promise.reject(new Error("app-server crashed")),
-      listExposedTools: () => Promise.resolve(STUDIO_TOOLS),
+      readSetup: () => Promise.reject(new Error("app-server crashed")),
+      readPrompt: () => Promise.resolve(promptInput(STUDIO_TOOLS, "read-only")),
     });
     await rejectsWithConflict(adapter.prepare(await launchRequest(), TOKENS, "/opt/codex/bin/codex"), /app-server crashed/);
   });

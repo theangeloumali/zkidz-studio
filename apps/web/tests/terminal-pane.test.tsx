@@ -2,6 +2,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TERMINAL_TRUST_HINT } from "../src/copy/claude.ts";
 import { TerminalPane } from "../src/terminal/TerminalPane.tsx";
 import { jsonResponse } from "./fakes.ts";
 import { stubFetch } from "./render.tsx";
@@ -75,7 +76,7 @@ const TICKET = "t".repeat(32);
 const observed: Element[] = [];
 const EXPANDED_KEY = "zks.terminal.expanded";
 
-function renderPane(ticketStatus = 200, agentLabel = "Claude Code") {
+function renderPane(ticketStatus = 200, { agentLabel = "Claude Code", hint = TERMINAL_TRUST_HINT }: { agentLabel?: string; hint?: string | null } = {}) {
   stubFetch({
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     "POST /api/terminal/sess-1/ticket": () =>
@@ -92,7 +93,7 @@ function renderPane(ticketStatus = 200, agentLabel = "Claude Code") {
     },
   );
   const onRestart = vi.fn();
-  render(<TerminalPane sessionId="sess-1" agentLabel={agentLabel} onRestart={onRestart} />);
+  render(<TerminalPane sessionId="sess-1" agentLabel={agentLabel} {...(hint === null ? {} : { hint })} onRestart={onRestart} />);
   return { onRestart };
 }
 
@@ -151,10 +152,11 @@ describe("TerminalPane", () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
-  it("names the connected agent, not Claude Code, on a Codex session", async () => {
-    renderPane(404, "Codex");
+  it("names the connected agent, not Claude Code, on a Codex session, and leaves out Claude's trust hint", async () => {
+    renderPane(404, { agentLabel: "Codex", hint: null });
     expect(await screen.findByRole("button", { name: "Restart Codex" })).toBeInTheDocument();
     expect(screen.getByRole("application", { name: "Codex terminal" })).toBeInTheDocument();
+    expect(screen.queryByText(TERMINAL_TRUST_HINT)).not.toBeInTheDocument();
   });
 
   // The fit addon sizes the grid from this element; padding or a content-driven height made every fit add a row, forever.

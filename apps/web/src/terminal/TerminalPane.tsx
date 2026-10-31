@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { fetchTerminalTicket } from "../api/agent-client.ts";
 import { buttonClass } from "../components/button-class.ts";
-import { TERMINAL_TRUST_HINT } from "../copy/claude.ts";
 import { openTerminalConnection, type TerminalStatus } from "./terminal-connection.ts";
 
 const STATUS_TEXT: Record<TerminalStatus, string> = {
@@ -47,11 +46,13 @@ interface TerminalPaneProps {
   readonly sessionId: string;
   /** The connected agent's product name, e.g. "Codex". */
   readonly agentLabel: string;
+  /** First-run advice for this agent's own screens, when it has any. */
+  readonly hint?: string;
   readonly onRestart: () => void;
 }
 
 /** Prompts and Stop go through the server (it owns the paste encoding); this pane carries the user's own keys. */
-export function TerminalPane({ sessionId, agentLabel, onRestart }: TerminalPaneProps) {
+export function TerminalPane({ sessionId, agentLabel, hint, onRestart }: TerminalPaneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [expanded, setExpanded] = useState(readExpanded);
@@ -112,8 +113,8 @@ export function TerminalPane({ sessionId, agentLabel, onRestart }: TerminalPaneP
   return (
     <div data-testid="terminal-pane" className={cn("flex min-h-0 flex-1 flex-col gap-2", expanded && "fixed inset-0 z-50 overscroll-contain bg-bg p-4")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-ui-sm text-copy-muted">{TERMINAL_TRUST_HINT}</p>
-        <div className="flex items-center gap-2">
+        {hint === undefined ? null : <p className="text-ui-sm text-copy-muted">{hint}</p>}
+        <div className="ml-auto flex items-center gap-2">
           <p role="status" className="font-mono text-ui-sm text-copy-muted">
             {STATUS_TEXT[status]}
           </p>

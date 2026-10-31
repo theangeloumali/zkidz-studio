@@ -42,7 +42,7 @@ export function AgentPane({ projectId, events, mode }: AgentPaneProps) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      {isTerminal ? <PaneTabs active={tab} onSelect={setTab} panels={{ activity, terminal: <TerminalPanel projectId={projectId} /> }} /> : activity}
+      {isTerminal ? <PaneTabs active={tab} onSelect={setTab} panels={{ activity, terminal: <TerminalPanel projectId={projectId} mode={mode} /> }} /> : activity}
       <div className="flex flex-col gap-3 border-t border-line pt-4">
         <UsageMeter summary={summary} mode={mode} openEdit={openEdit} />
         {summary.isWorking ? (

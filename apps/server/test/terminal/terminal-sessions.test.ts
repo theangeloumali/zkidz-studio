@@ -220,6 +220,24 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.sessions.find(session.sessionId)).toBeUndefined();
   });
 
+  it("denies a tool and kills the terminal when the mode changes mid-session to one that skips the studio's checks", async () => {
+    fixture = await createTerminalFixture();
+    const session = await openSession();
+    await startSession(session);
+    const answer = await fixture.sessions.handleHook(
+      session.sessionId,
+      hook(session.sessionId, {
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: { file_path: "cuts.json" },
+        permission_mode: "bypassPermissions",
+      }),
+    );
+
+    expect(answer).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    await waitFor(() => fixture.sessions.find(session.sessionId) === undefined);
+  });
+
   it("hands the pane to the user, without killing it, when SessionStart never arrives", async () => {
     fixture = await createTerminalFixture({ sessionStartTimeoutMs: 50 });
     const session = await openSession();

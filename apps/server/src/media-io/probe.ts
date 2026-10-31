@@ -127,6 +127,16 @@ async function rejectPlaylistText(filePath: string): Promise<void> {
   }
 }
 
+/** For ffmpeg reading user video: local files and container demuxers only, so no image pattern or playlist can be opened. */
+export const VIDEO_INPUT_OPTIONS: readonly string[] = [
+  "-protocol_whitelist",
+  "file,pipe",
+  "-format_whitelist",
+  Object.keys(STORED_EXTENSIONS)
+    .filter((format) => !IMAGE_FORMATS.has(format))
+    .join(","),
+];
+
 async function runFfprobe(ffprobePath: string, filePath: string): Promise<string> {
   const args = ["-v", "error", "-protocol_whitelist", "file,pipe", "-format_whitelist", FORMAT_WHITELIST, "-pattern_type", "none"];
   args.push("-print_format", "json", "-show_format", "-show_streams", `file:${filePath}`);

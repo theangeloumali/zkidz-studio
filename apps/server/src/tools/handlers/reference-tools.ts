@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { MAX_REFERENCE_FRAMES } from "@zks/shared";
 import { pinnedToolPath } from "../../config.ts";
+import { VIDEO_INPUT_OPTIONS } from "../../media-io/probe.ts";
 import { confinePath } from "../../security/confine-path.ts";
 import { implementTool } from "../define-tool.ts";
 import { assetFilePath, findProjectAsset, loadProject, projectRootOf } from "../project-files.ts";
@@ -28,7 +29,10 @@ const sampleReference = implementTool("sample_reference", {
     if (asset.kind !== "reference") throw new ToolError(`Asset ${asset.id} is not a reference: upload the look to match with kind=reference`);
     if (asset.durationS === null || asset.durationS <= 0) throw new ToolError(`Reference ${asset.id} has no duration to sample`);
     const durationS = asset.durationS;
-    const ffmpeg = (args: string[]) => runFfmpeg(context.studioHome, ["-hide_banner", "-nostats", "-i", assetFilePath(projectRoot, asset), ...args]);
+    // An upload is confined to the project; an in-place file is the realpath registered when it was picked.
+    const inputPath = asset.relPath === null ? assetFilePath(projectRoot, asset) : await confinePath(projectRoot, asset.relPath);
+    const inputArgs = ["-hide_banner", "-nostats", ...VIDEO_INPUT_OPTIONS, "-i", `file:${inputPath}`];
+    const ffmpeg = (args: string[]) => runFfmpeg(context.studioHome, [...inputArgs, ...args]);
 
     const outputRel = `work/reference/${asset.id}`;
     await mkdir(join(projectRoot, outputRel), { recursive: true });
@@ -97,5 +101,5 @@ function roundTo(value: number, decimals: number): number {
   return Math.round(value * scale) / scale;
 }
 
-// Confined at open, so a file swapped for a link out of the project is never read back to the model.
+// The PNGs are confined at open too, so a file swapped for a link out of the project is never read back to the model.
 export const referenceTools = [sampleReference];

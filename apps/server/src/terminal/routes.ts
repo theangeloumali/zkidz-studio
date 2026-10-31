@@ -8,7 +8,7 @@ import { z } from "zod";
 import { HttpError, notFound, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
 import type { TicketStore, WebSocketUpgradeOptions, WebSocketUpgradeResult } from "../security/ws-guard.ts";
-import type { TerminalSession, TerminalSessions } from "./terminal-sessions.ts";
+import { preToolUseAnswer, type TerminalSession, type TerminalSessions } from "./terminal-sessions.ts";
 
 const MAX_INPUT_CHARS = 64 * 1024;
 const MAX_TERMINAL_CELLS = 1000;
@@ -62,13 +62,23 @@ export function registerTerminalRoutes(app: Hono, deps: TerminalRouteDeps): void
     const sessionId = c.req.param("sessionId");
     const authorization = c.req.header("authorization");
     const presentedToken = authorization?.startsWith(BEARER_PREFIX) ? authorization.slice(BEARER_PREFIX.length) : undefined;
+    const body = await readJsonBody(c);
+    // Claude Code runs the tool on any error status, so a tool check the bridge cannot accept is answered with a deny.
+    const refuse = (status: 400 | 401, message: string) => {
+      if (isToolCheck(body)) return c.json(preToolUseAnswer({ isAllowed: false, reason: `ZKidz Studio refused this tool check: ${message}.` }));
+      throw new HttpError(status, message);
+    };
     // Unknown session and wrong token answer alike, so the bridge does not reveal which sessions exist.
-    if (!deps.sessions.isHookAuthorized(sessionId, presentedToken)) throw new HttpError(401, "Unauthorized");
-    const payload = parseOrBadRequest(HookPayloadSchema, await readJsonBody(c));
+    if (!deps.sessions.isHookAuthorized(sessionId, presentedToken)) return refuse(401, "Unauthorized");
+    const parsed = HookPayloadSchema.safeParse(body);
+    if (!parsed.success && isToolCheck(body)) return refuse(400, "malformed hook");
+    const payload = parsed.success ? parsed.data : parseOrBadRequest(HookPayloadSchema, body);
     // The request aborts when Claude Code drops the hook (Esc, timeout), which dismisses a waiting question card.
     return c.json(await deps.sessions.handleHook(sessionId, payload, c.req.raw.signal));
   });
 }
+
+const isToolCheck = (body: unknown) => typeof body === "object" && body !== null && "hook_event_name" in body && body.hook_event_name === "PreToolUse";
 
 function bridgeSocket(session: TerminalSession, logger: Logger) {
   const unsubscribers: (() => void)[] = [];

@@ -94,8 +94,9 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
         return { file: binaryPath, args, env, cwd: request.projectDir, filesDir };
       });
     },
-    // Codex fires SessionStart with the first prompt, so its drawn composer is what lets the Prompt box send one.
-    inputReady: /›|>_/,
+    // Codex fires SessionStart with the first prompt, so its drawn composer lets the Prompt box send one. Only the composer
+    // has this hint: an update or sign-in menu also draws ›, and an Enter there would pick its first choice.
+    inputReady: /\? for shortcuts/,
     events: {
       kind: "hooks",
       mapHook(payload, context) {
@@ -124,6 +125,8 @@ function buildCodexLaunchArgs({ request, catalogPath, relayCommand }: CodexArgsR
     ...config("include_permissions_instructions=true"),
     ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...config('web_search="disabled"'),
+    // The update menu would take the studio's prompt keys and could install an unvetted codex inside the session.
+    ...config("check_for_update_on_startup=false"),
     ...(request.model === undefined ? [] : config(`model=${tomlString(request.model)}`)),
     ...config(`model_catalog_json=${tomlString(catalogPath)}`),
     ...config(`mcp_servers.studio.command=${tomlString(request.nodePath)}`),

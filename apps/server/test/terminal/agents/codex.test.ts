@@ -146,6 +146,8 @@ function expectedArgs(catalogPath: string): string[] {
     "-c",
     'web_search="disabled"',
     "-c",
+    "check_for_update_on_startup=false",
+    "-c",
     'model="gpt-5.6-luna"',
     "-c",
     `model_catalog_json=${JSON.stringify(catalogPath)}`,
@@ -333,6 +335,23 @@ describe("codex adapter: hooks", () => {
 
   it("ignores a payload that is not a hook", () => {
     expect(mapHook({ hook_event_name: "Nope" }, { projectId: PROJECT_ID })).toEqual([]);
+  });
+});
+
+// Captured from codex 0.165.0: the composer's footer, and the update and sign-in menus that put a › on a choice.
+describe("codex adapter: input readiness", () => {
+  const { inputReady } = createCodexAdapter();
+
+  it("counts the composer, with its shortcuts hint, as ready for a prompt", () => {
+    expect(inputReady?.test("   >_ OpenAI Codex (v0.165.0)     › Ask Codex to do anything    ? for shortcuts")).toBe(true);
+  });
+
+  it.each([
+    ["the startup banner", "   >_ OpenAI Codex (v0.165.0)     loading"],
+    ["the update menu", "Update available! 0.165.0 -> 0.166.0  › 1. Update now  2. Skip  3. Skip until next version"],
+    ["the sign-in picker", "Sign in with ChatGPT  › 1. Sign in with ChatGPT  2. Provide your own API key"],
+  ])("does not count %s", (_name, screen) => {
+    expect(inputReady?.test(screen)).toBe(false);
   });
 });
 

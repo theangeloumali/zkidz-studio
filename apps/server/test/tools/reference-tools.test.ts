@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
 // sample_reference over real clips made by ffmpeg, and project_info keeping references apart from footage (slice D).
 import { execFile } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -67,6 +68,30 @@ describe.skipIf(!ffmpegAvailable)("sample_reference", () => {
     const result = await callTool(fixture, "sample_reference", { assetId: reference.id, frames: 2 });
     expect(result.isError, messageOf(result)).toBeFalsy();
     expect(result.structuredContent).toMatchObject({ durationS: 1.5, shotChangesPerMinute: 0, averageShotS: 1.5, loudnessLufs: null });
+  });
+
+  it("opens the reference only as a local file under a container whitelist, never as a playlist or image pattern", async () => {
+    const fixture = await createToolFixture(server);
+    const reference = await insertReferenceAsset(fixture);
+    // A stand-in ffmpeg that records each argv and fails, so the first call's arguments are what is checked.
+    const binDir = await mkdtemp(join(tmpdir(), "zks-fake-ffmpeg-"));
+    const argsLog = join(binDir, "args.json");
+    const fakeFfmpeg = join(binDir, "ffmpeg");
+    await writeFile(fakeFfmpeg, `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(argsLog)}\nexit 1\n`, { mode: 0o755 });
+    vi.stubEnv("ZKS_FFMPEG", fakeFfmpeg);
+    try {
+      const result = await callTool(fixture, "sample_reference", { assetId: reference.id, frames: 1 });
+      expect(result.isError).toBe(true);
+    } finally {
+      vi.stubEnv("ZKS_FFMPEG", (await runFile("which", ["ffmpeg"])).stdout.trim());
+    }
+    const args = (await readFile(argsLog, "utf8")).trim().split("\n");
+    const input = args.indexOf("-i");
+    const formats = args[args.indexOf("-format_whitelist") + 1]?.split(",") ?? [];
+    expect(args.slice(0, input)).toEqual(expect.arrayContaining(["-protocol_whitelist", "file,pipe", "-format_whitelist"]));
+    expect(formats).toContain("mov");
+    expect(formats.filter((format) => ["image2", "hls", "concat"].includes(format))).toEqual([]);
+    expect(args[input + 1]).toBe(`file:${join(fixture.projectRoot, reference.relPath ?? "")}`);
   });
 
   it("refuses footage: only a reference is sampled", async () => {

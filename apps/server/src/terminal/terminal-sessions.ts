@@ -57,6 +57,9 @@ type StatusLinePayload = Extract<HookPayload, { hook_event_name: "StatusLine" }>
 type StopPayload = Extract<HookPayload, { hook_event_name: "Stop" }>;
 /** Modes that keep the PreToolUse policy's decisions in charge; auto falls back to default when the account can't use it. */
 const ALLOWED_PERMISSION_MODES: ReadonlySet<string> = new Set(["auto", "default"]);
+const MODE_REFUSED_REASON = "ZKidz Studio runs Claude Code in auto or default mode only, so this session was closed.";
+/** Hooks that carry no mode keep the session; one that names another mode ends it. */
+const isStudioPermissionMode = (mode: string | undefined) => mode === undefined || ALLOWED_PERMISSION_MODES.has(mode);
 /** A child that ignores the kill must not hold shutdown forever. */
 const KILL_SETTLE_TIMEOUT_MS = 5_000;
 /** A TUI may drop keys while it first draws its input. */
@@ -405,6 +408,11 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
         return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: "This session has ended." }) : {};
       }
       if (record.agent !== undefined) return handleAgentHook(record, record.agent, payload);
+      // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run; Shift+Tab can change it mid-session.
+      if (!isStudioPermissionMode(payload.permission_mode)) {
+        killRecord(record);
+        return payload.hook_event_name === "PreToolUse" ? preToolUseAnswer({ isAllowed: false, reason: MODE_REFUSED_REASON }) : {};
+      }
       switch (payload.hook_event_name) {
         case "PreToolUse":
           return answerPreToolUse(record, payload, signal);
@@ -424,12 +432,6 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
           record.hasTextSinceTool = false;
           break;
         case "SessionStart":
-          clearTimeout(record.sessionStartTimer);
-          // §6.3: another mode could skip the PreToolUse policy's prompts, so the session does not run.
-          if (payload.permission_mode !== undefined && !ALLOWED_PERMISSION_MODES.has(payload.permission_mode)) {
-            killRecord(record);
-            return {};
-          }
           markStarted(record);
           break;
         default:
@@ -466,7 +468,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   };
 }
 
-function preToolUseAnswer(decision: TerminalToolDecision, updatedInput?: Record<string, unknown>): HookResponse {
+export function preToolUseAnswer(decision: TerminalToolDecision, updatedInput?: Record<string, unknown>): HookResponse {
   const reason = decision.isAllowed ? {} : { permissionDecisionReason: decision.reason };
   const rewrite = updatedInput === undefined ? {} : { updatedInput };
   return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision.isAllowed ? "allow" : "deny", ...reason, ...rewrite } };

@@ -166,7 +166,11 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       fetch: deps.fetch ?? globalThis.fetch,
       logger: deps.logger,
       claudeVersion: deps.claudeVersion,
-      onConnectionChanged: () => manager.closeAll(),
+      // A terminal runs the agent it was opened with, so a new connection closes it and the next open starts the new one.
+      onConnectionChanged: () => {
+        manager.closeAll();
+        void terminalSessions.killAll();
+      },
     });
     const openTerminal = createProjectTerminalOpener({
       database: deps.database,
@@ -181,8 +185,9 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
         find: (sessionId) => terminalSessions.find(sessionId),
         isHookAuthorized: (sessionId, token) =>
           terminalSessions.isHookAuthorized(sessionId, token) || printSessions?.isHookAuthorized(sessionId, token) === true,
-        handleHook: (sessionId, payload) =>
-          printSessions?.find(sessionId) === undefined ? terminalSessions.handleHook(sessionId, payload) : printSessions.handleHook(sessionId, payload),
+        // The signal aborts when Claude Code drops the hook, which dismisses a waiting question card.
+        handleHook: (sessionId, payload, signal) =>
+          printSessions?.find(sessionId) === undefined ? terminalSessions.handleHook(sessionId, payload, signal) : printSessions.handleHook(sessionId, payload),
       },
       tickets: createTicketStore(),
       checkWebSocketUpgrade,

@@ -49,13 +49,15 @@ card per 10 seconds for `zkidz`, none for `plain`, one per beat for `loud`.
 When the user drops a reference video (`project_info` lists it under `references`, never under `clips`) and asks for its
 look:
 
-1. Call `sample_reference` with its `assetId` and look at the contact sheet and frames it returns.
-2. Map what you see onto the style: the theme (`zkidz` for paper and ink, `minimal` for flat and clean), the colour tokens
+1. Call `project_info` again, even if you called it earlier this session: the user often drops the reference after your
+   first look, and an earlier result does not list it. Use the `assetId` it lists under `references`.
+2. Call `sample_reference` with that `assetId` and look at the contact sheet and frames it returns.
+3. Map what you see onto the style: the theme (`zkidz` for paper and ink, `minimal` for flat and clean), the colour tokens
    closest to its palette, a bundled face per role (Newsreader, Inter, Caveat, JetBrains Mono), boil on for hand-drawn
    wobble, `sfx` from how busy its sound is, and `shotLengthS` from its `averageShotS`.
-3. Call `set_project_style` with that style and the reference's `assetId` as `referenceAssetId`. Read its `warnings`: each
+4. Call `set_project_style` with that style and the reference's `assetId` as `referenceAssetId`. Read its `warnings`: each
    one is a token or id that was dropped.
-4. Tell the user plainly what you could not match: a face that is not bundled, the colour grade of the footage itself, and
+5. Tell the user plainly what you could not match: a face that is not bundled, the colour grade of the footage itself, and
    any custom motion or effect the theme does not draw.
 
 A reference is a look to match, not footage: never cut it, caption it or ingest it.

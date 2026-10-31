@@ -29,6 +29,8 @@ export function buildRulesPromptBlock({ style, ruleTexts }: RulesPromptInput): s
 }
 
 const MS_PER_MINUTE = 60_000;
+/** Titles and answers are user text that reaches every new session's prompt, so each is kept short. */
+const MAX_USER_TEXT_CHARS = 200;
 const TOKENS_PER_THOUSAND = 1000;
 
 /** Recent edits as data lines, escaped like the rules block since titles and answers are user text. */
@@ -47,8 +49,11 @@ function describeEdit({ title, finishedAt, durationMs, costUsd, tokens, facts }:
   const kept = facts?.keptS === undefined || facts.sourceS === undefined ? null : `kept ${Math.round(facts.keptS)} s of ${Math.round(facts.sourceS)} s`;
   const parts = [
     kept === null ? null : facts?.segments === undefined ? kept : `${kept} in ${facts.segments} segments`,
-    facts?.opening === undefined ? null : `opening: ${facts.opening}`,
+    facts?.opening === undefined ? null : `opening: ${capped(facts.opening)}`,
     usage.filter((part) => part !== null).join(", "),
   ];
-  return `"${title}", ${finishedAt.toISOString().slice(0, 10)}: ${parts.filter((part) => part !== null).join("; ")}`;
+  // JSON quoting escapes a quote inside the title, so the title cannot end its own quotes and run on as text.
+  return `${JSON.stringify(capped(title))}, ${finishedAt.toISOString().slice(0, 10)}: ${parts.filter((part) => part !== null).join("; ")}`;
 }
+
+const capped = (text: string) => (text.length > MAX_USER_TEXT_CHARS ? `${text.slice(0, MAX_USER_TEXT_CHARS)}…` : text);

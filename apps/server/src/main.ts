@@ -32,6 +32,7 @@ import { createSecurity } from "./security/index.ts";
 import { resolveTerminalAgents } from "./terminal/agent-launch.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
+import { shutDownInOrder } from "./shutdown.ts";
 
 const WEB_DIST_DIR = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
@@ -155,12 +156,13 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
     previewBuilder.close();
-    // Settled, not all: a server that fails to close must not skip draining the jobs and closing the database.
-    void Promise.allSettled([agent.shutdown(), closeServer(server, websocket.server), closeServer(previewServer)])
-      .then(() => jobRunner.idle())
-      .then(() => editRecorder.stop())
-      .then(() => database.close())
-      .finally(() => process.exit(0));
+    void shutDownInOrder({
+      stopAgents: () => agent.shutdown(),
+      closeServers: () => [closeServer(server, websocket.server), closeServer(previewServer)],
+      drainJobs: () => jobRunner.idle(),
+      stopEditRecorder: () => editRecorder.stop(),
+      closeDatabase: () => database.close(),
+    }).finally(() => process.exit(0));
   };
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));

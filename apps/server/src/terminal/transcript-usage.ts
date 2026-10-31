@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // A mode T session's token totals from Claude Code's own transcript: the status line only carries the latest call.
 import { createReadStream } from "node:fs";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -34,13 +34,14 @@ export function isSessionTranscript(transcriptPath: unknown, sessionId: string):
   return typeof transcriptPath === "string" && isAbsolute(transcriptPath) && basename(transcriptPath) === `${sessionId}.jsonl`;
 }
 
-/** Resolved through symlinks, so a link under the root cannot point the read elsewhere. */
-export async function isUnderTranscriptRoot(transcriptPath: string, root: string): Promise<boolean> {
+/** The resolved file to read, or null: a link cannot point outside the root, and a FIFO or folder would hang the read. */
+export async function resolveTranscriptFile(transcriptPath: string, root: string): Promise<string | null> {
   try {
     const [realFile, realRoot] = await Promise.all([realpath(transcriptPath), realpath(root)]);
-    return realFile.startsWith(`${realRoot}/`) || realFile.startsWith(`${realRoot}\\`);
+    const isUnderRoot = realFile.startsWith(`${realRoot}/`) || realFile.startsWith(`${realRoot}\\`);
+    return isUnderRoot && (await stat(realFile)).isFile() ? realFile : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

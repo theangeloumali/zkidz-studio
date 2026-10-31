@@ -17,7 +17,7 @@ import { encodePrompt, eraseInput } from "./prompt-input.ts";
 import { QUESTION_HOOK_TIMEOUT_S, removeSessionFiles } from "./session-files.ts";
 import type { AgentRuntime } from "./agent-launch.ts";
 import { launchSession, type OpenTerminalRequest, type SessionRecord, type TerminalSession, type TerminalSessionsDeps } from "./session-launch.ts";
-import { defaultTranscriptRoot, isSessionTranscript, isUnderTranscriptRoot, readTranscriptUsage } from "./transcript-usage.ts";
+import { defaultTranscriptRoot, isSessionTranscript, readTranscriptUsage, resolveTranscriptFile } from "./transcript-usage.ts";
 
 export type { TerminalSession, TerminalSessionsDeps } from "./session-launch.ts";
 
@@ -209,8 +209,8 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   const reportTranscriptUsage = (record: SessionRecord, payload: StopPayload) => {
     const transcriptPath = payload.transcript_path;
     if (!isSessionTranscript(transcriptPath, record.sessionId)) return;
-    isUnderTranscriptRoot(transcriptPath, deps.transcriptRoot ?? defaultTranscriptRoot())
-      .then((isConfined) => (isConfined ? (deps.readTranscriptUsage ?? readTranscriptUsage)(transcriptPath) : null))
+    resolveTranscriptFile(transcriptPath, deps.transcriptRoot ?? defaultTranscriptRoot())
+      .then((filePath) => (filePath === null ? null : (deps.readTranscriptUsage ?? readTranscriptUsage)(filePath)))
       .then((figures) => (figures === null ? undefined : publishUsage(record, "claude_transcript", figures)))
       .catch((error: unknown) => deps.logger.warn("terminal transcript usage not read", { error }));
   };
@@ -254,14 +254,16 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     }
   };
 
-  // A policy that throws blocks the tool: every agent gets an explicit deny, never a silent allow.
-  const decideFailClosed = (record: SessionRecord, payload: PreToolUsePayload, decide = decideTerminalTool): Promise<TerminalToolDecision> =>
-    decide(payload.tool_name, payload.tool_input, { projectDir: record.projectDir, pluginDir: deps.pluginDir, studioToolNames: deps.studioToolNames }).catch(
-      (error: unknown): TerminalToolDecision => {
-        deps.logger.error("terminal tool policy failed", { error });
-        return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
-      },
-    );
+  // One policy for every agent; one that throws blocks the tool with an explicit deny, never a silent allow.
+  const decideFailClosed = (record: SessionRecord, payload: PreToolUsePayload): Promise<TerminalToolDecision> =>
+    decideTerminalTool(payload.tool_name, payload.tool_input, {
+      projectDir: record.projectDir,
+      pluginDir: deps.pluginDir,
+      studioToolNames: deps.studioToolNames,
+    }).catch((error: unknown): TerminalToolDecision => {
+      deps.logger.error("terminal tool policy failed", { error });
+      return { isAllowed: false, reason: "ZKidz Studio could not check this tool, so it is blocked." };
+    });
 
   // Always an explicit answer: Claude Code blocks the tool only when the bridge is unreachable (spike 07), not on a 500.
   const answerPreToolUse = async (record: SessionRecord, payload: PreToolUsePayload, signal: AbortSignal | undefined): Promise<HookResponse> => {
@@ -292,7 +294,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     const context = eventContext(record);
     switch (payload.hook_event_name) {
       case "PreToolUse": {
-        const decision = await decideFailClosed(record, payload, agent.adapter.decideTool);
+        const decision = await decideFailClosed(record, payload);
         await publishAll(events.mapHook(payload, { ...context, decision })).catch((error: unknown) =>
           deps.logger.error("terminal tool event not published", { error }),
         );
@@ -458,10 +460,9 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       }),
     kill: (projectId) => withProjectRecord(projectId, killRecord),
     async killAll() {
-      const exits = [...records.values()].map((record) => {
-        killRecord(record);
-        return exitWork.get(record.sessionId) ?? Promise.resolve();
-      });
+      for (const record of records.values()) killRecord(record);
+      // Every exit still settling, including sessions that left `records` before this call.
+      const exits = [...exitWork.values()];
       const timeout = new Promise<void>((resolve) => setTimeout(resolve, KILL_SETTLE_TIMEOUT_MS).unref());
       await Promise.race([Promise.all(exits), timeout]);
     },

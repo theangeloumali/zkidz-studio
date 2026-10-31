@@ -6,9 +6,8 @@ import { AGENT_MIN_VERSIONS, LOOPBACK_HOST } from "@zks/shared";
 import type { TerminalTokens } from "../../auth/agent-env.ts";
 import type { AgentAdapter, AgentLaunchRequest, PreparedLaunch } from "./agent-adapter.ts";
 import { AgentLaunchError, buildTerminalAgentEnv } from "./agent-env.ts";
-import { withSessionFolder, writeSessionFile } from "../session-files.ts";
 import { buildAgentInstructions } from "./instructions.ts";
-import { MCP_SERVER_PATH } from "../session-files.ts";
+import { MCP_SERVER_PATH, withSessionFolder, writeSessionFile } from "../session-files.ts";
 import { assertStudioLockdown, OPENCODE_CONFIG_FILE, OPENCODE_PERMISSIONS, readListeningUrl } from "./opencode-companion.ts";
 import { type OpenCodeConnection, subscribeOpenCodeEvents } from "./opencode-stream.ts";
 
@@ -38,7 +37,7 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
   const connections = new WeakMap<PreparedLaunch, OpenCodeConnection>();
   return {
     kind: "opencode",
-    binaryNames: ["opencode", "opencode.exe", "opencode.cmd"],
+    binaryNames: ["opencode", "opencode.exe"],
     versionArgs: ["--version"],
     minVersion: AGENT_MIN_VERSIONS.opencode,
     async prepare(request, tokens, binaryPath) {

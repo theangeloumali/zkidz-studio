@@ -1,12 +1,11 @@
 // Created by The Angelo Umali.
-import { API_ROUTES } from "@zks/shared";
+import { API_ROUTES, isVersionAtLeast } from "@zks/shared";
 import { useState } from "react";
 import type { Connection } from "../api/agent-client.ts";
 import { requestJson } from "../api/client.ts";
 import { ExternalLink } from "../components/external-link.tsx";
 import { Button } from "@/components/ui/button";
 import { AGENT_COPY, type TerminalAgent, type TerminalAgentCopy } from "../copy/agents.ts";
-import { meetsMinimumVersion } from "./claude-version.ts";
 import { StatusLine, errorText } from "./status-line.tsx";
 import { useConnect } from "./use-connect.ts";
 
@@ -27,7 +26,7 @@ function VersionNote({ copy, installed }: { readonly copy: TerminalAgentCopy; re
       </p>
     );
   }
-  if (!meetsMinimumVersion(installed.version, installed.minVersion)) {
+  if (!isVersionAtLeast(installed.version, installed.minVersion)) {
     return (
       <p className="text-ui text-danger">
         {copy.name} {installed.version} is older than {installed.minVersion}, the oldest version the studio supports.{" "}
@@ -47,7 +46,7 @@ export function AgentTerminalControls({ agent, connection }: { readonly agent: T
   const installed = connection.agentVersions?.[agent];
   const [hasAccepted, setHasAccepted] = useState(false);
   const enable = useConnect(connectAgent(agent));
-  const isUsable = installed?.version != null && meetsMinimumVersion(installed.version, installed.minVersion);
+  const isUsable = installed?.version != null && isVersionAtLeast(installed.version, installed.minVersion);
   const isOn = connection.mode === `${agent}_terminal`;
 
   return (

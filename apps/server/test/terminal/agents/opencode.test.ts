@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { OPENCODE_PERMISSIONS } from "../../../src/terminal/agents/opencode-companion.ts";
@@ -103,6 +104,16 @@ describe("opencode adapter: launch", () => {
 
     const cancelled = await connectWith(fakeServer());
     await expect(cancelled.prepared.companion?.connect(silent(), AbortSignal.timeout(50))).rejects.toThrow();
+  });
+
+  it("never launches a .cmd shim, which would pass its arguments through cmd.exe", () => {
+    expect(adapterWith().binaryNames.filter((name) => name.endsWith(".cmd"))).toEqual([]);
+  });
+
+  it("removes its session folder when a step of prepare fails", async () => {
+    const request = { ...(await launchRequest()), pluginDir: join(tmpdir(), "zks-no-such-plugin") };
+    await expect(adapterWith().prepare(request, TOKENS, BINARY)).rejects.toThrow();
+    expect(await readdir(request.runDir)).toEqual([]);
   });
 
   it("resumes the user's opencode session by its id", async () => {

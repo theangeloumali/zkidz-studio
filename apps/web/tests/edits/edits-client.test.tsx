@@ -1,10 +1,10 @@
 // Created by The Angelo Umali.
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { StudioEvent } from "@zks/shared";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
-import { editFigures, useProjectEdits } from "../../src/edits/edits-client.ts";
+import { editFigures, latestEditsQuery, useProjectEdits } from "../../src/edits/edits-client.ts";
 import { sampleEvent } from "../event-fixtures.ts";
 import { PROJECT_ID, jsonResponse } from "../fakes.ts";
 import { stubFetch } from "../render.tsx";
@@ -46,5 +46,28 @@ describe("useProjectEdits", () => {
     await waitFor(() => expect(editFetches()).toBe(2));
     rerender({ feed: [sampleEvent("edit.closed")] });
     await waitFor(() => expect(editFetches()).toBe(3));
+  });
+
+  it("refetches the cross-project latest list only when an edit closes, even if usage arrives in the same batch", async () => {
+    const latestPath = "/api/edits/latest";
+    const fetchMock = stubFetch({
+      [`GET ${PROJECT_EDITS_PATH}`]: () => jsonResponse({ edits: [makeOpenEdit()] }),
+      [`GET ${latestPath}`]: () => jsonResponse({ edits: [makeEdit()] }),
+    });
+    const latestFetches = () => fetchMock.mock.calls.filter(([url]) => url === latestPath).length;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { readonly children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ feed }) => ({ project: useProjectEdits(PROJECT_ID, feed), latest: useQuery(latestEditsQuery()) }), {
+      wrapper,
+      initialProps: { feed: [] as readonly StudioEvent[] },
+    });
+    await waitFor(() => expect(result.current.latest.data).toHaveLength(1));
+
+    rerender({ feed: [sampleEvent("usage.reported", { inputTokens: 5 })] });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(latestFetches()).toBe(1);
+
+    rerender({ feed: [sampleEvent("edit.closed"), sampleEvent("usage.reported", { inputTokens: 9 })] });
+    await waitFor(() => expect(latestFetches()).toBe(2));
   });
 });

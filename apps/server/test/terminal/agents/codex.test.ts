@@ -339,6 +339,10 @@ describe("codex adapter: hooks", () => {
 });
 
 // Captured from codex 0.165.0: the composer's footer, and the update and sign-in menus that put a › on a choice.
+it("never launches a .cmd shim, which would pass the -c values through cmd.exe", () => {
+  expect(createCodexAdapter().binaryNames.filter((name) => name.endsWith(".cmd"))).toEqual([]);
+});
+
 describe("codex adapter: input readiness", () => {
   const { inputReady } = createCodexAdapter();
 
@@ -355,13 +359,9 @@ describe("codex adapter: input readiness", () => {
   });
 });
 
-// Codex has no policy of its own: the studio's default decides its tools, so its tool names are checked against that.
+// The studio's one policy decides Codex's tools too, so Codex's own tool names are checked against it.
 describe("codex adapter: policy", () => {
   const scope = { projectDir: "/p", pluginDir: PLUGIN_DIR, studioToolNames: ["mcp__studio__project_info"] };
-
-  it("keeps the studio's default policy", () => {
-    expect(createCodexAdapter().decideTool).toBeUndefined();
-  });
 
   it.each(["apply_patch", "exec_command", "shell", "spawn_agent", "mcp__figma__get_file"])("denies %s", async (toolName) => {
     expect((await decideTerminalTool(toolName, {}, scope)).isAllowed).toBe(false);

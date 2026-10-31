@@ -67,7 +67,8 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): AgentAdap
   const codexHome = parentEnv["CODEX_HOME"] ?? join(homedir(), ".codex");
   return {
     kind: "codex",
-    binaryNames: ["codex", "codex.exe", "codex.cmd"],
+    // No .cmd shim: cmd.exe would expand % and & inside the -c values, and execFile cannot run one without a shell.
+    binaryNames: ["codex", "codex.exe"],
     versionArgs: ["--version"],
     minVersion: AGENT_MIN_VERSIONS.codex,
     async prepare(request, tokens, binaryPath) {

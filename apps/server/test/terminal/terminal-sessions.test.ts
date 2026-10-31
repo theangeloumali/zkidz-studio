@@ -1,7 +1,9 @@
 // Created by The Angelo Umali.
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readdir, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { encodePrompt, eraseInput, PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
 import type { PtyHost, TerminalPty } from "../../src/terminal/pty-host.ts";
@@ -88,6 +90,20 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     const reopened = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
     await waitFor(() => reopened.pty.snapshot().includes("READY"));
     expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--resume", RESUMED_SESSION_ID]);
+  });
+
+  it("killAll also waits for a session killed just before it, whose exit work is still running", async () => {
+    const cancelled: string[] = [];
+    const slowCancel = (projectId: string) => new Promise<void>((resolve) => setTimeout(() => resolve(void cancelled.push(projectId)), 300));
+    fixture = await createTerminalFixture({ cancelProjectJobs: slowCancel });
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+    fixture.sessions.kill(PROJECT_ID);
+    await waitFor(() => fixture.sessions.findByProject(PROJECT_ID) === undefined);
+
+    await fixture.sessions.killAll();
+
+    expect(cancelled).toEqual([PROJECT_ID]);
   });
 
   it("killAll resolves only once each killed session has cancelled its jobs and published its exit", async () => {
@@ -545,7 +561,12 @@ describe("terminal sessions: questions and Claude's text in Activity", { timeout
     await mkdir(dirname(linkedPath), { recursive: true });
     await symlink(outsidePath, linkedPath);
 
-    for (const path of [otherPath, outsidePath, linkedPath]) {
+    // A FIFO named right under the root would block the read forever; only a regular file is opened.
+    const fifoPath = join(root, "fifo", `${sessionId}.jsonl`);
+    await mkdir(dirname(fifoPath), { recursive: true });
+    await promisify(execFile)("mkfifo", [fifoPath]);
+
+    for (const path of [otherPath, outsidePath, linkedPath, fifoPath]) {
       await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: path }));
     }
     await new Promise((resolve) => setTimeout(resolve, 200));

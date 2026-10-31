@@ -4,7 +4,7 @@
 import type { TerminalAgentKind, UsageFigures } from "@zks/shared";
 import type { TerminalTokens } from "../../auth/agent-env.ts";
 import type { NewStudioEvent } from "../../events/event-bus.ts";
-import type { TerminalToolDecision, TerminalToolScope } from "../hook-policy.ts";
+import type { TerminalToolDecision } from "../hook-policy.ts";
 
 export interface AgentLaunchRequest {
   readonly sessionId: string;
@@ -70,8 +70,6 @@ export interface AgentAdapter {
   readonly events: AgentEventSource;
   /** For an agent whose SessionStart only comes with its first prompt: the screen text that shows it takes input. */
   readonly inputReady?: RegExp;
-  /** The studio's deny-by-default tool policy, for agents whose hooks can block a call. */
-  readonly decideTool?: (toolName: string, toolInput: unknown, scope: TerminalToolScope) => Promise<TerminalToolDecision>;
   /** Where usage comes from for this agent, if anywhere; folded into the edit by the edit recorder. */
   readonly usageSource?: (sessionId: string) => Promise<UsageFigures | null>;
 }

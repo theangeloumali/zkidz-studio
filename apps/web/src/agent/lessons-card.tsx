@@ -37,8 +37,9 @@ export function LessonsCard({ event }: { readonly event: EventOf<"lessons.sugges
   return (
     <CardShell eyebrow="Learned from this edit" title="Save what should carry over to your next edits">
       <ul className="flex flex-col gap-3">
-        {event.lessons.map((lesson) => (
-          <LessonRow key={lesson} lesson={lesson} />
+        {/* The list never reorders, so the position keeps two suggestions with the same text apart. */}
+        {event.lessons.map((lesson, index) => (
+          <LessonRow key={`${index}:${lesson}`} lesson={lesson} />
         ))}
       </ul>
     </CardShell>

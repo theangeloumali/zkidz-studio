@@ -1,13 +1,13 @@
 // Created by The Angelo Umali.
 // Codex and OpenCode sessions through the adapter seam (ADR 0007), with fake adapters over the stub binary.
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HookPayload } from "@zks/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentAdapter } from "../../src/terminal/agents/agent-adapter.ts";
-import { createPtyHost } from "../../src/terminal/pty-host.ts";
+import { createPtyHost, type PtyHost, type TerminalPty } from "../../src/terminal/pty-host.ts";
 import { encodePrompt } from "../../src/terminal/prompt-input.ts";
 import type { TerminalSession } from "../../src/terminal/terminal-sessions.ts";
 import { REAL_PTY_TEST_TIMEOUT_MS, waitFor, writeStubClaude } from "./stub-claude.ts";
@@ -43,6 +43,41 @@ async function openAgent(kind: "codex" | "opencode", adapter: AgentAdapter): Pro
   return fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, model: "haiku", rulesText: "rules", agentKind: kind });
 }
 
+/** A PTY the test feeds by hand: `print` sends a chunk, and `written` is everything the studio typed. */
+function scriptedPtyHost(initialScreen: string) {
+  const dataListeners: ((output: string) => void)[] = [];
+  let screen = initialScreen;
+  let written = "";
+  const pty: TerminalPty = {
+    sessionId: "",
+    write: (data) => void (written += data),
+    resize: () => undefined,
+    interrupt: () => undefined,
+    kill: () => undefined,
+    snapshot: () => screen,
+    onData: (listener) => {
+      dataListeners.push(listener);
+      return () => void dataListeners.splice(dataListeners.indexOf(listener), 1);
+    },
+    onExit: () => () => undefined,
+  };
+  const host: PtyHost = { claudePath: process.execPath, launch: () => Promise.resolve(pty), get: () => pty };
+  const print = (output: string) => {
+    screen += output;
+    for (const listener of [...dataListeners]) listener(output);
+  };
+  return { host, print, written: () => written };
+}
+
+async function openScripted(initialScreen: string) {
+  const scripted = scriptedPtyHost(initialScreen);
+  const adapter: AgentAdapter = { ...baseAdapter("codex"), inputReady: /\? for shortcuts/, events: { kind: "hooks", mapHook: () => [] } };
+  stubDir = await mkdtemp(join(tmpdir(), "zks-agent-stub-"));
+  fixture = await createTerminalFixture({ ptyHost: scripted.host, agents: new Map([["codex", { adapter, binaryPath: process.execPath }]]), inputSettleMs: 0 });
+  await fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, model: "haiku", rulesText: "rules", agentKind: "codex" });
+  return scripted;
+}
+
 function isRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -57,15 +92,10 @@ function hook(sessionId: string, fields: Record<string, unknown>) {
 }
 
 describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
-  it("runs a hook-driven agent through its adapter's policy, readiness and usage", async () => {
-    const decided: string[] = [];
+  it("runs a hook-driven agent through the studio's policy, readiness and usage", async () => {
     const adapter: AgentAdapter = {
       ...baseAdapter("codex"),
       events: { kind: "hooks", mapHook: (payload) => [{ type: "narration", projectId: PROJECT_ID, text: (payload as HookPayload).hook_event_name }] },
-      decideTool: (toolName) => {
-        decided.push(toolName);
-        return Promise.resolve(toolName === "Bash" ? { isAllowed: false, reason: "no shell" } : { isAllowed: true });
-      },
       usageSource: (agentSessionId) => Promise.resolve(agentSessionId === AGENT_SESSION_ID ? { inputTokens: 40, outputTokens: 2 } : null),
     };
     const session = await openAgent("codex", adapter);
@@ -77,10 +107,9 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     expect(fixture.sessions.isMcpCallAllowed(sessionId, session.mcpToken)).toBe(true);
     expect(
       await fixture.sessions.handleHook(sessionId, hook(AGENT_SESSION_ID, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "id" } })),
-    ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "no shell" } });
+    ).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
     await fixture.sessions.handleHook(sessionId, hook(AGENT_SESSION_ID, { hook_event_name: "Stop", last_assistant_message: "done" }));
 
-    expect(decided).toEqual(["Bash"]);
     await waitFor(() => fixture.events.some((event) => event.type === "usage.reported"));
     expect(fixture.events).toContainEqual({ type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "codex", inputTokens: 40, outputTokens: 2 });
     expect(fixture.events.filter((event) => event.type === "narration").map((event) => event.type === "narration" && event.text)).toEqual([
@@ -98,6 +127,36 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
 
     await waitFor(() => session.pty.snapshot().includes("cut it"));
     expect(fixture.sessions.isMcpCallAllowed(session.sessionId, session.mcpToken)).toBe(true);
+  });
+
+  it("holds a Prompt-box prompt through the banner and sends it once the composer's hint arrives, even split across chunks", async () => {
+    const scripted = await openScripted("");
+    fixture.sessions.submitPrompt(PROJECT_ID, "cut it");
+    scripted.print("   >_ OpenAI Codex (v0.165.0)     loading");
+    scripted.print("  › Ask Codex to do anything    ? for sh");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(scripted.written()).not.toContain("cut it");
+
+    scripted.print("ortcuts");
+
+    await waitFor(() => scripted.written().includes("cut it"));
+  });
+
+  it("sends a Prompt-box prompt at once when the composer was already drawn before the watch began", async () => {
+    const scripted = await openScripted("› Ask Codex to do anything    ? for shortcuts");
+    fixture.sessions.submitPrompt(PROJECT_ID, "cut it");
+
+    await waitFor(() => scripted.written().includes("cut it"));
+  });
+
+  it("names the agent that crashed, not Claude Code, when a Codex session exits on its own", async () => {
+    const session = await openAgent("codex", { ...baseAdapter("codex"), events: { kind: "hooks", mapHook: () => [] } });
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+
+    session.pty.write("EXIT 3\r");
+
+    await waitFor(() => fixture.events.some((event) => event.type === "session.error"));
+    expect(fixture.events).toContainEqual(expect.objectContaining({ type: "session.error", kind: "terminal_exited", message: "Codex exited with code 3." }));
   });
 
   it("starts a stream-driven agent's companion first, publishes its stream, and stops both with Kill", async () => {
@@ -185,6 +244,8 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     await expect(openAgent("opencode", adapter)).rejects.toThrow(/exited \(code 3\)/);
     expect(Date.now() - startedAt).toBeLessThan(10_000);
     expect(fixture.sessions.findByProject(PROJECT_ID)).toBeUndefined();
+    // The session's files hold its config; a failed launch leaves none behind.
+    expect(await readdir(fixture.runDir)).toEqual([]);
   });
 
   it("reports a missing agent instead of starting claude in its place", async () => {

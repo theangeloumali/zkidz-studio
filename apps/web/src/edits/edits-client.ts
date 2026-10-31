@@ -34,13 +34,15 @@ export const latestEditsQuery = () => queryOptions({ queryKey: editsQueryKeys.la
 export function useProjectEdits(projectId: string, events: readonly StudioEvent[]) {
   const queryClient = useQueryClient();
   const lastChange = events.findLast((event) => EDIT_CHANGING_EVENTS.has(event.type));
+  // Tracked apart: a usage event in the same batch must not hide the close that the latest list waits for.
+  const lastClose = events.findLast((event) => event.type === "edit.closed");
+  // Usage refreshes on every assistant message, so it refetches only this project.
   useEffect(() => {
-    if (lastChange === undefined) return;
-    // Usage refreshes on every assistant message, so it refetches only this project; the latest list moves on a close.
-    const queryKey = lastChange.type === "edit.closed" ? editsQueryKeys.all : editsQueryKeys.project(projectId);
-    // Two mounted users of this hook see the same event; the second joins the first's fetch instead of restarting it.
-    void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+    if (lastChange !== undefined) void queryClient.invalidateQueries({ queryKey: editsQueryKeys.project(projectId) });
   }, [lastChange, projectId, queryClient]);
+  useEffect(() => {
+    if (lastClose !== undefined) void queryClient.invalidateQueries({ queryKey: editsQueryKeys.latest });
+  }, [lastClose, queryClient]);
   return useQuery(projectEditsQuery(projectId));
 }
 

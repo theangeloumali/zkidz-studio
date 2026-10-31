@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { UsageFigures } from "@zks/shared";
 import { z } from "zod";
+import { resolveTranscriptFile } from "../transcript-usage.ts";
 
 const THREAD_ID = /^[0-9A-Za-z-]+$/;
 const DAY_MS = 86_400_000;
@@ -20,7 +21,9 @@ export function createRolloutUsageReader(sessionsDir: string): (threadId: string
   const rolloutPaths = new Map<string, string>();
   return async (threadId) => {
     if (!THREAD_ID.test(threadId)) return null;
-    const rolloutPath = rolloutPaths.get(threadId) ?? (await findRollout(sessionsDir, threadId));
+    const found = rolloutPaths.get(threadId) ?? (await findRollout(sessionsDir, threadId));
+    // Same rule as Claude's transcript: only a regular file that resolves under the sessions folder is read.
+    const rolloutPath = found === null ? null : await resolveTranscriptFile(found, sessionsDir);
     if (rolloutPath === null) return null;
     rolloutPaths.set(threadId, rolloutPath);
     return readLatestTotals(rolloutPath);

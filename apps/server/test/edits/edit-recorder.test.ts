@@ -126,6 +126,13 @@ describe("EditRecorder", () => {
     expect(await onlyEdit()).toMatchObject({ costUsd: "0.500000", costSource: "sdk", turns: 2 });
   });
 
+  it("saves the cost of an SDK turn that opened the edit itself, with no tool call before it", async () => {
+    await sessionStarted("text-only");
+    await turnCompleted(0.4);
+
+    await expect.poll(async () => (await editRows())[0]?.costUsd).toBe("0.400000");
+  });
+
   it("leaves cost empty for a sign-in plan that reports only tokens", async () => {
     await prompt();
     await usage("s1", "claude_transcript", { inputTokens: 10, outputTokens: 5 });

@@ -161,7 +161,10 @@ export class EditRecorder {
   async #completeTurn(projectId: string, state: ProjectState, costUsd: number | undefined): Promise<void> {
     if (state.isClosedMidTurn) state.isClosedMidTurn = false;
     else await this.#countTurn(projectId, state);
-    if (costUsd !== undefined && state.currentSessionId !== undefined) state.ledger.observe(state.currentSessionId, "sdk", { costUsd });
+    if (costUsd === undefined || state.currentSessionId === undefined) return;
+    state.ledger.observe(state.currentSessionId, "sdk", { costUsd });
+    // A turn that opened the edit marked nothing dirty, so its cost is saved from here.
+    if (state.openEdit !== undefined) this.#markDirty(projectId);
   }
 
   #observe(projectId: string, state: ProjectState, report: { readonly sessionId: string; readonly source: UsageSource } & UsageReading): void {

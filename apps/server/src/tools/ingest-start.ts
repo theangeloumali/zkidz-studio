@@ -22,7 +22,7 @@ const OPEN_OR_DONE = ["queued", "running", "succeeded"] as const;
 
 /**
  * Starts an ingest of `input`, or returns the job that already covers it: a running one to follow, or the
- * latest succeeded one. An open ingest of anything else is stopped, since every ingest writes the same source.
+ * latest succeeded one. Every other open ingest is stopped, since every ingest writes the same source.
  */
 export async function startIngest(deps: IngestStartDeps, target: { projectId: string; videoId: string; input: IngestInput }): Promise<{ jobId: string }> {
   const template = await readProjectTemplate(deps.db, target.projectId);
@@ -34,10 +34,13 @@ export async function startIngest(deps: IngestStartDeps, target: { projectId: st
     .orderBy(desc(jobs.queuedAt));
   const open = ingests.filter((job) => job.status !== "succeeded");
   const latestSucceeded = ingests.find((job) => job.status === "succeeded");
-  const reusable = [...open, ...(latestSucceeded === undefined ? [] : [latestSucceeded])].find((job) => comparable(job.params) === wanted);
-  if (reusable !== undefined && (reusable.status !== "succeeded" || (await producedSource(deps, reusable.id, target.projectId)))) return { jobId: reusable.id };
+  const candidate = [...open, ...(latestSucceeded === undefined ? [] : [latestSucceeded])].find((job) => comparable(job.params) === wanted);
+  const reusable =
+    candidate !== undefined && (candidate.status !== "succeeded" || (await producedSource(deps, candidate.id, target.projectId))) ? candidate : undefined;
+  // Any other open ingest would write over the source this call settles on, the reused one included.
+  for (const job of open) if (job.id !== reusable?.id) await deps.jobs.cancel(job.id);
+  if (reusable !== undefined) return { jobId: reusable.id };
 
-  for (const job of open) await deps.jobs.cancel(job.id);
   const params = { ...target.input, mode: ingestModeFor(target.input, template?.ingestMode) };
   const started = await deps.jobs.enqueue({ projectId: target.projectId, kind: "ingest", videoId: target.videoId, lane: "gpu", params });
   return { jobId: started.id };

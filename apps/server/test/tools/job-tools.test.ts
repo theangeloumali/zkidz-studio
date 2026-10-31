@@ -254,6 +254,26 @@ describe("ingest of clips that are already ingested", () => {
     });
   });
 
+  it("stops a different open ingest when it hands back an earlier finished one, so nothing overwrites that source", async () => {
+    const fixture = await createToolFixture(server);
+    const [first, second] = [await insertCameraAsset(fixture), await insertCameraAsset(fixture)];
+    const finishedJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: first?.id }] }));
+    await callTool(fixture, "job_wait", { jobId: finishedJobId, timeoutS: 10 });
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const otherJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: second?.id }] }));
+
+      expect(jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: first?.id }] }))).toBe(finishedJobId);
+
+      const [other] = await server.database.db.select().from(jobs).where(eq(jobs.id, otherJobId));
+      expect(["cancelled", "interrupted"]).toContain(other?.status);
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
   it("runs again when the project's mode now implies a different join", async () => {
     const fixture = await createToolFixture(server);
     const asset = await insertCameraAsset(fixture);

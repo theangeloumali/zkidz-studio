@@ -3,12 +3,12 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access } from "node:fs/promises";
-import type { AgentKind, UsageFigures } from "@zks/shared";
+import type { AgentKind, TerminalAgentKind, UsageFigures } from "@zks/shared";
 import type { TerminalTokens } from "../auth/agent-env.ts";
 import type { NewStudioEvent } from "../events/event-bus.ts";
 import type { Logger } from "../logging/logger.ts";
 import type { AskedQuestions, QuestionAnswers } from "../tools/context.ts";
-import { launchAgentSession, type AgentRuntime, type TerminalAgents } from "./agent-launch.ts";
+import { launchAgentSession, type AgentRuntime, type TerminalAgent, type TerminalAgents } from "./agent-launch.ts";
 import { buildTerminalArgs } from "./launch-args.ts";
 import { TerminalLaunchError, type PtyHost, type TerminalPty } from "./pty-host.ts";
 import { HOOK_RELAY_PATH, MCP_SERVER_PATH, removeSessionFiles, writeSessionFiles, type SessionFiles } from "./session-files.ts";
@@ -44,6 +44,8 @@ export interface TerminalSessionsDeps {
   readonly transcriptRoot?: string;
   /** The installed Codex and OpenCode, for their terminal modes (ADR 0007). */
   readonly agents?: TerminalAgents;
+  /** Looks an agent up again when it was not installed at startup. */
+  readonly findAgent?: (kind: TerminalAgentKind) => Promise<TerminalAgent | undefined>;
 }
 
 export interface OpenTerminalRequest {
@@ -86,6 +88,8 @@ export interface SessionRecord extends TerminalSession {
   readonly displayBuffers: Map<string, string>;
   /** Claude's text went out since the last tool call or prompt, so a question now needs no wait for it. */
   hasTextSinceTool: boolean;
+  /** False until an agent that names an input marker has drawn it; unset for agents that take input at once. */
+  isInputReady?: boolean;
   /** Question cards waiting for that text. */
   readonly textWaiters: (() => void)[];
   /** A MessageDisplay narration went out this turn, so Stop's last message would only repeat it. */

@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
-import type { StudioEvent } from "@zks/shared";
+import type { StudioEvent, TerminalAgentKind } from "@zks/shared";
 import type { Hono } from "hono";
 import { DecisionBroker, sortById } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
@@ -30,7 +30,7 @@ import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts
 import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
 import { createPtyHost } from "./terminal/pty-host.ts";
 import { registerTerminalRoutes } from "./terminal/routes.ts";
-import type { TerminalAgents } from "./terminal/agent-launch.ts";
+import { resolveTerminalAgents, type TerminalAgents } from "./terminal/agent-launch.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
@@ -58,6 +58,8 @@ export interface AgentServicesDeps {
   readonly claudePath: string | null;
   /** The installed Codex and OpenCode, resolved at startup like claude (ADR 0007). */
   readonly terminalAgents?: TerminalAgents;
+  /** Tests pin it; the server searches PATH. */
+  readonly resolveTerminalAgents?: (env: Readonly<Record<string, string | undefined>>) => Promise<TerminalAgents>;
   /** main.ts probes both after the server listens; the routes that need them await them. */
   readonly claudeVersion: string | null | Promise<string | null>;
   readonly secretStore: SecretStore;
@@ -114,12 +116,24 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     describeGate: (project, tool, input) => describeStudioGate(toolContextFor(project.id), tool, input),
     cancelProjectJobs,
   });
+  const terminalAgents = new Map(deps.terminalAgents ?? []);
+  const ptyHost = createPtyHost({
+    claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME),
+    agentPaths: [...terminalAgents.values()].map((agent) => agent.binaryPath),
+  });
+  // Connect accepts an agent installed after startup, so the terminal looks for it again before calling it missing.
+  const findAgent = async (kind: TerminalAgentKind) => {
+    const found = (await (deps.resolveTerminalAgents ?? resolveTerminalAgents)(process.env)).get(kind);
+    if (found !== undefined) {
+      ptyHost.allowBinary(found.binaryPath);
+      terminalAgents.set(kind, found);
+    }
+    return found;
+  };
   const terminalSessions = createTerminalSessions({
-    ptyHost: createPtyHost({
-      claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME),
-      agentPaths: [...(deps.terminalAgents?.values() ?? [])].map((agent) => agent.binaryPath),
-    }),
-    ...(deps.terminalAgents === undefined ? {} : { agents: deps.terminalAgents }),
+    ptyHost,
+    agents: terminalAgents,
+    findAgent,
     eventBus: deps.eventBus,
     runDir: deps.runDir,
     appPort: deps.appPort,

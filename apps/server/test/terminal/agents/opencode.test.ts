@@ -106,6 +106,13 @@ describe("opencode adapter: launch", () => {
     await expect(cancelled.prepared.companion?.connect(silent(), AbortSignal.timeout(50))).rejects.toThrow();
   });
 
+  // Captured from opencode 2.2.5 through the studio's own launch: the banner, then the prompt box's footer.
+  it("counts the prompt box's footer, not the banner, as ready for a prompt", () => {
+    const { inputReady } = adapterWith();
+    expect(inputReady?.test("┃┃┃┃Build·GPT-6.1 Sol FastOpenAI·high╹")).toBe(true);
+    expect(inputReady?.test("2.2.5   q⊙ 1 MCP/mcps")).toBe(false);
+  });
+
   it("never launches a .cmd shim, which would pass its arguments through cmd.exe", () => {
     expect(adapterWith().binaryNames.filter((name) => name.endsWith(".cmd"))).toEqual([]);
   });

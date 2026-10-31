@@ -49,6 +49,8 @@ export interface PtyHost {
   readonly claudePath: string;
   launch(sessionId: string, launch: PtyLaunch): Promise<TerminalPty>;
   get(sessionId: string): TerminalPty | undefined;
+  /** Adds an agent binary resolved after startup; still only an absolute path. */
+  allowBinary(binaryPath: string): void;
 }
 
 export interface PtyHostOptions {
@@ -61,8 +63,11 @@ export interface PtyHostOptions {
 }
 
 export function createPtyHost(options: PtyHostOptions): PtyHost {
+  const assertAbsolute = (binaryPath: string) => {
+    if (!isAbsolute(binaryPath)) throw new Error("Every terminal binary path must be absolute.");
+  };
   const launchable = new Set([options.claudePath, ...(options.agentPaths ?? [])]);
-  if ([...launchable].some((binaryPath) => !isAbsolute(binaryPath))) throw new Error("Every terminal binary path must be absolute.");
+  launchable.forEach(assertAbsolute);
   const maxSessions = options.maxSessions ?? MAX_TERMINAL_SESSIONS;
   const livePtys = new Map<string, TerminalPty>();
 
@@ -80,6 +85,10 @@ export function createPtyHost(options: PtyHostOptions): PtyHost {
 
   return {
     claudePath: options.claudePath,
+    allowBinary(binaryPath) {
+      assertAbsolute(binaryPath);
+      launchable.add(binaryPath);
+    },
     async launch(sessionId, launch) {
       const spawn = options.spawn ?? (await loadNodePty()).spawn;
       // Checked after the await, so two concurrent launches cannot both pass the session cap.

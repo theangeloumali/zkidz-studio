@@ -61,7 +61,7 @@ function scriptedPtyHost(initialScreen: string) {
     },
     onExit: () => () => undefined,
   };
-  const host: PtyHost = { claudePath: process.execPath, launch: () => Promise.resolve(pty), get: () => pty };
+  const host: PtyHost = { claudePath: process.execPath, launch: () => Promise.resolve(pty), get: () => pty, allowBinary: () => undefined };
   const print = (output: string) => {
     screen += output;
     for (const listener of [...dataListeners]) listener(output);
@@ -69,13 +69,16 @@ function scriptedPtyHost(initialScreen: string) {
   return { host, print, written: () => written };
 }
 
-async function openScripted(initialScreen: string) {
+async function openScripted(initialScreen: string, kind: "codex" | "opencode" = "codex") {
   const scripted = scriptedPtyHost(initialScreen);
-  const adapter: AgentAdapter = { ...baseAdapter("codex"), inputReady: /\? for shortcuts/, events: { kind: "hooks", mapHook: () => [] } };
+  const adapter: AgentAdapter =
+    kind === "codex"
+      ? { ...baseAdapter("codex"), inputReady: /\? for shortcuts/, events: { kind: "hooks", mapHook: () => [] } }
+      : { ...baseAdapter("opencode"), inputReady: /Build·/, events: { kind: "stream", subscribe: () => () => undefined } };
   stubDir = await mkdtemp(join(tmpdir(), "zks-agent-stub-"));
-  fixture = await createTerminalFixture({ ptyHost: scripted.host, agents: new Map([["codex", { adapter, binaryPath: process.execPath }]]), inputSettleMs: 0 });
-  await fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, model: "haiku", rulesText: "rules", agentKind: "codex" });
-  return scripted;
+  fixture = await createTerminalFixture({ ptyHost: scripted.host, agents: new Map([[kind, { adapter, binaryPath: process.execPath }]]), inputSettleMs: 0 });
+  const session = await fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, model: "haiku", rulesText: "rules", agentKind: kind });
+  return { ...scripted, session };
 }
 
 function isRunning(pid: number): boolean {
@@ -145,6 +148,19 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
   it("sends a Prompt-box prompt at once when the composer was already drawn before the watch began", async () => {
     const scripted = await openScripted("› Ask Codex to do anything    ? for shortcuts");
     fixture.sessions.submitPrompt(PROJECT_ID, "cut it");
+
+    await waitFor(() => scripted.written().includes("cut it"));
+  });
+
+  it("lets OpenCode's studio tools work from launch, but holds a prompt until its composer is drawn", async () => {
+    const scripted = await openScripted("", "opencode");
+    expect(fixture.sessions.isMcpCallAllowed(scripted.session.sessionId, scripted.session.mcpToken)).toBe(true);
+    fixture.sessions.submitPrompt(PROJECT_ID, "cut it");
+    scripted.print("2.2.5   ⊙ 1 MCP");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(scripted.written()).not.toContain("cut it");
+
+    scripted.print("┃┃┃┃Build·GPT-6.1 Sol FastOpenAI·high╹");
 
     await waitFor(() => scripted.written().includes("cut it"));
   });
@@ -246,6 +262,21 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     expect(fixture.sessions.findByProject(PROJECT_ID)).toBeUndefined();
     // The session's files hold its config; a failed launch leaves none behind.
     expect(await readdir(fixture.runDir)).toEqual([]);
+  });
+
+  it("opens an agent installed after startup, looking it up again instead of reporting it missing", async () => {
+    stubDir = await mkdtemp(join(tmpdir(), "zks-agent-stub-"));
+    const binaryPath = await writeStubClaude(stubDir);
+    const adapter: AgentAdapter = { ...baseAdapter("codex"), events: { kind: "hooks", mapHook: () => [] } };
+    fixture = await createTerminalFixture({
+      ptyHost: createPtyHost({ claudePath: binaryPath }),
+      agents: new Map(),
+      findAgent: (kind) => Promise.resolve(kind === "codex" ? { adapter, binaryPath } : undefined),
+    });
+
+    const session = await fixture.sessions.open({ projectId: PROJECT_ID, projectDir: fixture.projectDir, rulesText: "rules", agentKind: "codex" });
+
+    await waitFor(() => session.pty.snapshot().includes("READY"));
   });
 
   it("reports a missing agent instead of starting claude in its place", async () => {

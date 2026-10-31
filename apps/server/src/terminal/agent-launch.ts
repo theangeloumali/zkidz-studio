@@ -45,7 +45,7 @@ export async function resolveTerminalAgents(env: Readonly<Record<string, string 
 
 /** Fresh sessions only: these agents mint their own session ids, so the studio cannot hand one back to resume. */
 export async function launchAgentSession(deps: TerminalSessionsDeps, request: OpenTerminalRequest, kind: TerminalAgentKind): Promise<SessionRecord> {
-  const agent = deps.agents?.get(kind);
+  const agent = deps.agents?.get(kind) ?? (await deps.findAgent?.(kind));
   if (agent === undefined) {
     const message = `${AGENT_LABELS[kind]} was not found. Install it, then open the terminal again.`;
     await deps.eventBus.publish({ type: "session.error", projectId: request.projectId, kind: "agent_missing", message });

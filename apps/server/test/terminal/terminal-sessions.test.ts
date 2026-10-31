@@ -47,6 +47,7 @@ function instantExitPtyHost(): PtyHost {
       return Promise.resolve(pty);
     },
     get: (sessionId) => ptys.get(sessionId),
+    allowBinary: () => undefined,
   };
 }
 

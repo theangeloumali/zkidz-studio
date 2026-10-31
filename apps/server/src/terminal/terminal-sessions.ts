@@ -319,17 +319,29 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     return {};
   };
 
+  const canTakePrompt = (record: SessionRecord) => record.hasStarted && record.isInputReady !== false;
+  const flushQueuedPrompts = (record: SessionRecord) => {
+    if (canTakePrompt(record)) for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+  };
+
   const markStarted = (record: SessionRecord) => {
     clearTimeout(record.sessionStartTimer);
     if (record.hasStarted) return;
     record.hasStarted = true;
-    for (const text of record.queuedPrompts.splice(0)) writePrompt(record, text);
+    flushQueuedPrompts(record);
+  };
+
+  // Codex starts only with its first prompt, so its drawn composer is its start; OpenCode started at launch.
+  const markInputReady = (record: SessionRecord) => {
+    record.isInputReady = true;
+    if (record.hasStarted) flushQueuedPrompts(record);
+    else markStarted(record);
   };
 
   // Each chunk is checked with the end of the one before, so a prompt split across two chunks still matches.
   const startWhenInputDrawn = (record: SessionRecord, inputReady: RegExp) => {
     const isDrawn = (output: string) => inputReady.test(stripVTControlCharacters(output));
-    const settle = () => setTimeout(() => markStarted(record), deps.inputSettleMs ?? INPUT_SETTLE_MS).unref();
+    const settle = () => setTimeout(() => markInputReady(record), deps.inputSettleMs ?? INPUT_SETTLE_MS).unref();
     let tail = record.pty.snapshot();
     if (isDrawn(tail)) return void settle();
     tail = tail.slice(-INPUT_TAIL_CHARS);
@@ -381,7 +393,10 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
       records.set(record.sessionId, record);
       watchLifecycle(record);
       const { agent } = record;
-      if (agent?.adapter.inputReady !== undefined) startWhenInputDrawn(record, agent.adapter.inputReady);
+      if (agent?.adapter.inputReady !== undefined) {
+        record.isInputReady = false;
+        startWhenInputDrawn(record, agent.adapter.inputReady);
+      }
       if (agent?.adapter.events.kind === "stream") agent.unsubscribe = agent.adapter.events.subscribe(agent.launch, eventContext(record), publishInBackground);
       // The TUI only fails once its server is gone; the record says why and closes. A normal exit has removed it already.
       agent?.companion?.once("exit", (code) => {
@@ -445,7 +460,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     // Before SessionStart the folder-trust dialog may own the pane, and the prompt's Enter would pick its "No, exit" default.
     submitPrompt: (projectId, text) =>
       withProjectRecord(projectId, (record) => {
-        if (record.hasStarted) writePrompt(record, text);
+        if (canTakePrompt(record)) writePrompt(record, text);
         else record.queuedPrompts.push(text);
       }),
     // Claude Code fires no Stop hook on a user interrupt, so the turn's end is reported here.

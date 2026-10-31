@@ -189,7 +189,7 @@ describe("EditRecorder", () => {
     expect(published.filter((event) => event.type === "edit.closed")).toMatchObject([{ editId: closed.id, costUsd: 0.62 }]);
   });
 
-  it("opens a second edit on the next prompt, not on the export turn's tail, and counts only new spend", async () => {
+  it("opens a second edit on the next prompt, not on the export turn's tail, which the closed edit keeps", async () => {
     await prompt();
     await usage("s1", "claude_statusline", { costUsd: 0.5 });
     await finishExport();
@@ -203,7 +203,7 @@ describe("EditRecorder", () => {
 
     const rows = await editRows();
     expect(rows.map((row) => [row.status, row.costUsd])).toEqual([
-      ["closed", "0.500000"],
+      ["closed", "0.550000"],
       ["open", "0.250000"],
     ]);
   });

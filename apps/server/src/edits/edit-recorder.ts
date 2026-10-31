@@ -44,6 +44,8 @@ interface ProjectState {
   openEdit: OpenEdit | undefined;
   /** Set when an export closes an edit, so that turn's tail does not open the next one. */
   isClosedMidTurn: boolean;
+  /** The edit an export just closed: the rest of that turn's usage still lands on it, until the next edit opens. */
+  closingEditId: string | undefined;
 }
 
 export class EditRecorder {
@@ -113,6 +115,7 @@ export class EditRecorder {
     const state = this.#stateOf(event.projectId);
     switch (event.type) {
       case "session.started":
+        await this.#finishClosingEdit(state);
         state.currentSessionId = event.sessionId;
         state.isClosedMidTurn = false;
         return this.#seedResumedSpend(state, event.sessionId);
@@ -135,7 +138,13 @@ export class EditRecorder {
   #stateOf(projectId: string): ProjectState {
     const existing = this.#projects.get(projectId);
     if (existing !== undefined) return existing;
-    const created: ProjectState = { ledger: new UsageLedger(), currentSessionId: undefined, openEdit: undefined, isClosedMidTurn: false };
+    const created: ProjectState = {
+      ledger: new UsageLedger(),
+      currentSessionId: undefined,
+      openEdit: undefined,
+      isClosedMidTurn: false,
+      closingEditId: undefined,
+    };
     this.#projects.set(projectId, created);
     return created;
   }
@@ -164,12 +173,15 @@ export class EditRecorder {
     if (costUsd === undefined || state.currentSessionId === undefined) return;
     state.ledger.observe(state.currentSessionId, "sdk", { costUsd });
     // A turn that opened the edit marked nothing dirty, so its cost is saved from here.
-    if (state.openEdit !== undefined) this.#markDirty(projectId);
+    if (state.openEdit !== undefined || state.closingEditId !== undefined) this.#markDirty(projectId);
   }
 
   #observe(projectId: string, state: ProjectState, report: { readonly sessionId: string; readonly source: UsageSource } & UsageReading): void {
     state.ledger.observe(report.sessionId, report.source, report);
-    if (state.openEdit === undefined) return;
+    if (state.openEdit === undefined) {
+      if (state.closingEditId !== undefined) this.#markDirty(projectId);
+      return;
+    }
     const reportingAgent = AgentKindSchema.safeParse(report.source);
     if (reportingAgent.success) state.openEdit.agentKind = reportingAgent.data;
     this.#markDirty(projectId);
@@ -177,6 +189,8 @@ export class EditRecorder {
 
   async #ensureOpen(projectId: string, state: ProjectState, turns = 0): Promise<void> {
     if (state.openEdit !== undefined) return;
+    // Opening a tally ends the closed edit's: from here on its growth belongs to this edit.
+    await this.#finishClosingEdit(state);
     const [project] = await this.#database.select({ videoId: projects.videoId }).from(projects).where(eq(projects.id, projectId));
     if (project === undefined) return;
     // The connected mode names the agent, so an edit that never reports usage still says who ran it.
@@ -198,7 +212,7 @@ export class EditRecorder {
     const facts = await readEditFacts(this.#database, { projectId, videoId: openEdit.videoId, answers: openEdit.answers });
     await this.#updateEdit(projectId, { ...this.#runningValues(state, openEdit), status: "closed", finishedAt, exportJobId, facts });
     state.openEdit = undefined;
-    state.ledger.closeEdit();
+    state.closingEditId = openEdit.id;
     state.isClosedMidTurn = true;
     this.#dirtyProjectIds.delete(projectId);
     const figures = Object.fromEntries(Object.entries(totals).filter((entry): entry is [string, number] => entry[1] !== null));
@@ -227,20 +241,32 @@ export class EditRecorder {
     for (const projectId of projectIds) {
       const state = this.#projects.get(projectId);
       if (state?.openEdit !== undefined) await this.#updateEdit(projectId, this.#runningValues(state, state.openEdit));
+      else if (state?.closingEditId !== undefined) await this.#database.update(edits).set(this.#usageValues(state)).where(eq(edits.id, state.closingEditId));
     }
   }
 
   #runningValues(state: ProjectState, openEdit: OpenEdit) {
+    return { agentKind: openEdit.agentKind, turns: openEdit.turns, ...this.#usageValues(state) };
+  }
+
+  #usageValues(state: ProjectState) {
     const totals = state.ledger.totals();
     return {
-      agentKind: openEdit.agentKind,
-      turns: openEdit.turns,
       costUsd: totals.costUsd === null ? null : totals.costUsd.toFixed(6),
       costSource: state.ledger.costSource,
       inputTokens: totals.inputTokens,
       outputTokens: totals.outputTokens,
       cacheTokens: totals.cacheTokens,
     };
+  }
+
+  /** Saves the closed edit's last usage, then stops counting for it: the next edit or session takes it from here. */
+  async #finishClosingEdit(state: ProjectState): Promise<void> {
+    const editId = state.closingEditId;
+    if (editId === undefined) return;
+    state.closingEditId = undefined;
+    await this.#database.update(edits).set(this.#usageValues(state)).where(eq(edits.id, editId));
+    state.ledger.closeEdit();
   }
 
   /** A deleted project took its edit with it (cascade), so the recorder forgets the edit too. */

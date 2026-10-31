@@ -38,6 +38,8 @@ export function createOpenCodeAdapter(options: OpenCodeAdapterOptions = {}): Age
   return {
     kind: "opencode",
     binaryNames: ["opencode", "opencode.exe"],
+    // The prompt box's footer (agent · model) is drawn once the TUI takes input; keys typed before it are lost.
+    inputReady: /Build·/,
     versionArgs: ["--version"],
     minVersion: AGENT_MIN_VERSIONS.opencode,
     async prepare(request, tokens, binaryPath) {

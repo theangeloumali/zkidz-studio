@@ -25,8 +25,15 @@ async function openSession(overrides: { resumeSessionId?: string } = {}): Promis
 
 /** Exits the moment it is killed, so a reopen lands while the old session's files are still being removed. */
 function instantExitPtyHost(): PtyHost {
+  return exitControlledPtyHost({ exitOnKill: true });
+}
+
+/** A PTY host whose killed PTYs exit only on `exitKilled()`, like a real agent taking its time to quit. */
+function exitControlledPtyHost({ exitOnKill }: { readonly exitOnKill: boolean }): PtyHost & { exitKilled(): void } {
   const ptys = new Map<string, TerminalPty>();
+  const killed: (() => void)[] = [];
   return {
+    exitKilled: () => killed.splice(0).forEach((exit) => exit()),
     claudePath: process.execPath,
     launch(sessionId) {
       const exitListeners: ((exitCode: number) => void)[] = [];
@@ -35,7 +42,11 @@ function instantExitPtyHost(): PtyHost {
         write: () => undefined,
         resize: () => undefined,
         interrupt: () => undefined,
-        kill: () => exitListeners.forEach((listener) => listener(0)),
+        kill: () => {
+          const exit = () => exitListeners.forEach((listener) => listener(0));
+          if (exitOnKill) exit();
+          else killed.push(exit);
+        },
         snapshot: () => "",
         onData: () => () => undefined,
         onExit: (listener) => {
@@ -373,6 +384,28 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     finished.pty.write("EXIT 0");
     await waitFor(() => fixture.sessions.find(finished.sessionId) === undefined);
     expect(fixture.cancelledProjects).toEqual([PROJECT_ID]);
+  });
+
+  it("never hands back a killed session that is still exiting, and starts the next one once it has exited", async () => {
+    const ptyHost = exitControlledPtyHost({ exitOnKill: false });
+    fixture = await createTerminalFixture({ ptyHost });
+    const first = await openSession();
+
+    expect(fixture.sessions.kill(PROJECT_ID)).toBe(true);
+    expect(fixture.sessions.findByProject(PROJECT_ID)).toBeUndefined();
+    let isReopened = false;
+    const reopening = openSession().then((session) => {
+      isReopened = true;
+      return session;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(isReopened).toBe(false);
+    ptyHost.exitKilled();
+    const reopened = await reopening;
+
+    expect(reopened.sessionId).not.toBe(first.sessionId);
+    const states = fixture.events.flatMap((event) => (event.type === "terminal.state" && event.state !== "waiting" ? [event.state] : []));
+    expect(states).toEqual(["starting", "exited", "starting"]);
   });
 
   it("keeps a resumed session's files when the killed session's cleanup finishes after the reopen", async () => {

@@ -69,7 +69,8 @@ const INPUT_TAIL_CHARS = 256;
 
 export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSessions {
   const records = new Map<string, SessionRecord>();
-  const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId);
+  // A killed record stays until its PTY exits; it is never the project's terminal again (a backend switch reopened it as "Exited").
+  const findRecordByProject = (projectId: string) => [...records.values()].find((record) => record.projectId === projectId && !record.wasKilled);
   // Each launch writes its own files folder; a reopen still waits for the last run's cleanup, so its exit events go out first.
   const pendingCleanups = new Map<string, Promise<void>>();
   // Per session: settles once its exit has cancelled jobs, removed files and published its events.
@@ -390,6 +391,9 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
 
   return {
     async open(request) {
+      // The old agent's exit and cleanup land before the new one starts, so its "exited" never follows the new "starting".
+      const exiting = [...records.values()].filter((record) => record.projectId === request.projectId && record.wasKilled);
+      await Promise.all(exiting.map((record) => exitWork.get(record.sessionId)));
       await pendingCleanups.get(request.projectId);
       const record = await launchSession(deps, request);
       records.set(record.sessionId, record);

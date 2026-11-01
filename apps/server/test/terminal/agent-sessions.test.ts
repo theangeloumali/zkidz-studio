@@ -213,7 +213,7 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     expect(session.pty.snapshot().split(encodePrompt("cut it")).length).toBeLessThanOrEqual(2);
 
     fixture.sessions.kill(PROJECT_ID);
-    await waitFor(() => fixture.sessions.findByProject(PROJECT_ID) === undefined);
+    await waitFor(() => fixture.events.some((event) => event.type === "terminal.state" && event.state === "exited"));
     expect(unsubscribed).toBe(true);
     await waitFor(() => !isRunning(companionPid));
     await rm(pidFile, { force: true });
@@ -238,7 +238,7 @@ describe("terminal sessions for Codex and OpenCode", { timeout: REAL_PTY_TEST_TI
     await waitFor(() => session.pty.snapshot().includes("READY"));
     process.kill(Number(await readFile(pidFile, "utf8")), "SIGKILL");
 
-    await waitFor(() => fixture.sessions.findByProject(PROJECT_ID) === undefined);
+    await waitFor(() => fixture.events.some((event) => event.type === "terminal.state" && event.state === "exited"));
     const stopped = fixture.events.find((event) => event.type === "session.error");
     expect(stopped).toMatchObject({ kind: "terminal_exited" });
     expect(stopped?.type === "session.error" ? stopped.message : "").toMatch(/server stopped/);

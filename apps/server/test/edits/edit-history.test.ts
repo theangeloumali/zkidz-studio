@@ -52,4 +52,23 @@ describe("the edit history in a new session's prompt", () => {
       '- "Coast road", 2026-10-02: 5 min, 2k tokens',
     ]);
   });
+
+  it("counts cached input in an edit's tokens", async () => {
+    const project = await insertProject(server);
+    await server.database.db.update(projects).set({ title: "Cached run" }).where(eq(projects.id, project.id));
+    const startedAt = day(20);
+    await server.database.db.insert(edits).values({
+      projectId: project.id,
+      videoId: "v1",
+      agentKind: "claude",
+      status: "closed",
+      startedAt,
+      finishedAt: new Date(startedAt.getTime() + 5 * 60_000),
+      inputTokens: 12,
+      outputTokens: 310,
+      cacheTokens: 41_800,
+    });
+
+    expect(await loadRulesPromptBlock(server.database.db)).toContain('- "Cached run", 2026-10-20: 5 min, 42k tokens');
+  });
 });

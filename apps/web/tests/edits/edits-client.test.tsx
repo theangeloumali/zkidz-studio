@@ -21,7 +21,7 @@ describe("editFigures", () => {
     expect(editFigures(makeEdit(), new Date())).toEqual({
       durationMs: FOURTEEN_MINUTES_MS,
       costUsd: 0.62,
-      inputTokens: 200_000,
+      inputTokens: 150_000,
       outputTokens: 10_000,
       cacheTokens: 50_000,
     });

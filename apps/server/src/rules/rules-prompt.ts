@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // The user's style preset and rules as one delimited block appended to the system prompt (plan §6.9), same text for every mode.
-import type { StylePreset } from "@zks/shared";
+import { formatTokenCount, type StylePreset } from "@zks/shared";
 import type { FinishedEdit } from "../edits/edit-store.ts";
 
 export const RULES_BLOCK_OPEN = "<studio_user_rules>";
@@ -31,7 +31,6 @@ export function buildRulesPromptBlock({ style, ruleTexts }: RulesPromptInput): s
 const MS_PER_MINUTE = 60_000;
 /** Titles and answers are user text that reaches every new session's prompt, so each is kept short. */
 const MAX_USER_TEXT_CHARS = 200;
-const TOKENS_PER_THOUSAND = 1000;
 
 /** Recent edits as data lines, escaped like the rules block since titles and answers are user text. */
 export function buildEditHistoryBlock(finishedEdits: readonly FinishedEdit[]): string {
@@ -44,7 +43,7 @@ function describeEdit({ title, finishedAt, durationMs, costUsd, tokens, facts }:
   const usage = [
     `${Math.max(1, Math.round(durationMs / MS_PER_MINUTE))} min`,
     costUsd === null ? null : `about $${costUsd.toFixed(2)} (estimate)`,
-    tokens === null ? null : `${Math.round(tokens / TOKENS_PER_THOUSAND)}k tokens`,
+    tokens === null ? null : formatTokenCount(tokens),
   ];
   const kept = facts?.keptS === undefined || facts.sourceS === undefined ? null : `kept ${Math.round(facts.keptS)} s of ${Math.round(facts.sourceS)} s`;
   const parts = [

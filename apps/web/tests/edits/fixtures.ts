@@ -18,7 +18,7 @@ export function makeEdit(overrides: Partial<EditSummary> = {}): EditSummary {
     finishedAt: "2026-10-29T10:14:00.000Z",
     costUsd: 0.62,
     costSource: "sdk",
-    inputTokens: 200_000,
+    inputTokens: 150_000,
     outputTokens: 10_000,
     cacheTokens: 50_000,
     turns: 6,

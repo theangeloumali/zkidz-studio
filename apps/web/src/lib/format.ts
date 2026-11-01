@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import type { MediaAsset, UsageFigures } from "@zks/shared";
+import { formatTokenCount, type MediaAsset, type UsageFigures } from "@zks/shared";
 
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
@@ -56,15 +56,14 @@ export function formatTimecode(totalSeconds: number): string {
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
-const TOKENS_PER_THOUSAND = 1000;
-
 /** "14 min · ≈ $0.62 estimate · 210k tokens"; each part only when it was reported. */
 export function formatUsage(figures: UsageFigures): string {
-  const tokens = (figures.inputTokens ?? 0) + (figures.outputTokens ?? 0);
+  // Every agent reports cached input apart, and a cached session reads almost all of its input from the cache.
+  const tokens = (figures.inputTokens ?? 0) + (figures.outputTokens ?? 0) + (figures.cacheTokens ?? 0);
   const parts = [
     figures.durationMs === undefined ? null : `${Math.max(1, Math.round(figures.durationMs / 1000 / SECONDS_PER_MINUTE))} min`,
     figures.costUsd === undefined ? null : `≈ $${figures.costUsd.toFixed(2)} estimate`,
-    tokens === 0 ? null : `${Math.round(tokens / TOKENS_PER_THOUSAND)}k tokens`,
+    tokens === 0 ? null : formatTokenCount(tokens),
   ];
   return parts.filter((part) => part !== null).join(" · ");
 }

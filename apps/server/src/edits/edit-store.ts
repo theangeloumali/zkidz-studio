@@ -59,13 +59,14 @@ export async function listRecentFinishedEdits(database: StudioDatabase, limit: n
 }
 
 function toFinishedEdit(edit: EditRow, finishedAt: Date, title: string): FinishedEdit {
-  const isTokenless = edit.inputTokens === null && edit.outputTokens === null;
+  const isTokenless = edit.inputTokens === null && edit.outputTokens === null && edit.cacheTokens === null;
   return {
     title,
     finishedAt,
     durationMs: finishedAt.getTime() - edit.startedAt.getTime(),
     costUsd: numberOrNull(edit.costUsd),
-    tokens: isTokenless ? null : (edit.inputTokens ?? 0) + (edit.outputTokens ?? 0),
+    // Cached input counts: a cached session reads almost all of its input from the cache.
+    tokens: isTokenless ? null : (edit.inputTokens ?? 0) + (edit.outputTokens ?? 0) + (edit.cacheTokens ?? 0),
     facts: edit.facts,
   };
 }

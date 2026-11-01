@@ -392,8 +392,11 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   return {
     async open(request) {
       // The old agent's exit and cleanup land before the new one starts, so its "exited" never follows the new "starting".
-      const exiting = [...records.values()].filter((record) => record.projectId === request.projectId && record.wasKilled);
-      await Promise.all(exiting.map((record) => exitWork.get(record.sessionId)));
+      const exiting = [...records.values()].flatMap((record) => {
+        const exit = record.projectId === request.projectId && record.wasKilled ? exitWork.get(record.sessionId) : undefined;
+        return exit === undefined ? [] : [exit];
+      });
+      await Promise.all(exiting);
       await pendingCleanups.get(request.projectId);
       const record = await launchSession(deps, request);
       records.set(record.sessionId, record);

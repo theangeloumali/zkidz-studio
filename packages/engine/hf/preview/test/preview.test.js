@@ -118,3 +118,17 @@ test("a rebuild replaces the page in place", () => {
 test("the video id cannot climb out of the work folder", () => {
   assert.throws(() => buildPreview({ work: workWith({}), video: "../v1" }), /video id/);
 });
+
+test("the preview draws the project style the renders use", () => {
+  const work = workWith({ cues: [{ kind: "keyword", at: 1, end: 2, text: "styled" }] });
+  fs.writeFileSync(path.join(work, "style.json"), JSON.stringify({ theme: "zkidz", tokens: { goldBright: "#ff0000" } }));
+  const { dir } = buildPreview({ work, video: "v1" });
+  assert.match(fs.readFileSync(path.join(dir, "preview.css"), "utf8"), /--glow: #ff0000;/);
+});
+
+test("a style value that is not a colour never reaches the preview page", () => {
+  const work = workWith({});
+  fs.writeFileSync(path.join(work, "style.json"), JSON.stringify({ theme: "zkidz", tokens: { goldBright: "url(https://x.test/a)" } }));
+  assert.throws(() => buildPreview({ work, video: "v1" }), /goldBright/);
+  assert.equal(fs.existsSync(path.join(work, "preview", "v1", "index.html")), false);
+});

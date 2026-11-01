@@ -15,7 +15,8 @@ HEADER_WORDS = ("Rendering", "Encoding", "Compositing", "Mixing", "Drawing")
 HEADER_SECONDS = 3
 STAGE_WORDS = {
     "transcribe": "transcribing the voice",
-    "join": "joining the clips",
+    "joining": "joining the clips",
+    "proxy": "building the review proxy",
     "audio": "mixing the voice",
     "events": "placing the sound cues",
     "sfx": "mixing the sound effects",

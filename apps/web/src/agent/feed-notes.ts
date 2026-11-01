@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import type { StudioEvent } from "@zks/shared";
+import { formatUsage } from "../lib/format.ts";
 
 export type EventOf<Type extends StudioEvent["type"]> = Extract<StudioEvent, { type: Type }>;
 export interface FeedNote {
@@ -36,15 +37,15 @@ function describeTurn(event: EventOf<"turn.completed">): string {
 }
 
 const TERMINAL_TEXT = {
-  starting: "Claude Code is starting.",
-  ready: "Claude Code is ready.",
-  working: "Claude Code is working.",
-  waiting: "Claude Code is waiting for you.",
+  starting: "The agent is starting.",
+  ready: "The agent is ready.",
+  working: "The agent is working.",
+  waiting: "The agent is waiting for you.",
 } as const;
 
 function describeTerminal(event: EventOf<"terminal.state">): string {
   if (event.state !== "exited") return TERMINAL_TEXT[event.state];
-  return event.exitCode === undefined ? "Claude Code exited." : `Claude Code exited (code ${event.exitCode}).`;
+  return event.exitCode === undefined ? "The agent exited." : `The agent exited (code ${event.exitCode}).`;
 }
 
 /** One-line events: the note to show, or null for events the feed folds or draws as cards. */
@@ -70,6 +71,12 @@ export function describeNote(event: StudioEvent): FeedNote | null {
       return { tone: "info", text: "Older conversation was summarized to make room." };
     case "terminal.state":
       return { tone: event.state === "exited" ? "warn" : "info", text: describeTerminal(event) };
+    case "style.changed":
+      return { tone: "info", text: "Updated the project's look." };
+    case "edit.closed": {
+      const totals = formatUsage(event);
+      return { tone: "info", text: totals === "" ? "Edit finished." : `Edit finished: ${totals}.` };
+    }
     default:
       return null;
   }

@@ -8,6 +8,7 @@ import { asc, eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import { projectDir } from "../config.ts";
 import { toMediaAssetDto, toProjectDto, type ProjectRow } from "../dto.ts";
+import { noAutoIngest } from "../jobs/auto-ingest.ts";
 import { HttpError, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import { assertLoopbackPeer } from "../http/loopback-peer.ts";
 import { INCOMING_DIR, UploadTooLargeError } from "../media-io/store.ts";
@@ -22,11 +23,13 @@ import {
   storedProjectBytes,
   withStagedUpload,
   type MediaRouteDeps,
+  type StagedUpload,
 } from "./media-ingest.ts";
 
 export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
   /** Declared bytes of uploads still streaming, per project: the DB only counts finished ones. */
   const inFlightBytes = new Map<string, number>();
+  const autoIngest = deps.autoIngest ?? noAutoIngest;
 
   app.get(API_ROUTES.listMedia.path, async (c) => {
     const project = await findProjectOrThrow(deps.database, c.req.param("projectId"));
@@ -36,6 +39,7 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
 
   app.post(API_ROUTES.uploadMedia.path, async (c) => {
     const project = await findProjectOrThrow(deps.database, c.req.param("projectId"));
+    const { kind } = parseOrBadRequest(API_ROUTES.uploadMedia.query, c.req.query());
     const upload = readUploadRequest(c, deps.uploadLimits);
     const storedBytes = await storedProjectBytes(deps.database, project.id);
     // Read and reserve with no await in between, so a parallel upload always sees this reservation.
@@ -45,7 +49,11 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
     try {
       const rawDir = join(projectDir(deps.studioHome, project.slug), "media", "raw");
       const maxBytes = Math.min(deps.uploadLimits.maxFileBytes, remainingProjectBytes);
-      const asset = await withStagedUpload(deps, rawDir, { ...upload, maxBytes }, (staged) => commitStagedUpload(deps, project, staged));
+      const asset = await autoIngest.track(project.id, () =>
+        withStagedUpload(deps, rawDir, { ...upload, maxBytes }, (staged) =>
+          commitStagedUpload(deps, project, kind === "reference" ? asReference(staged) : staged),
+        ),
+      );
       return c.json(asset, 201);
     } finally {
       const stillInFlight = (inFlightBytes.get(project.id) ?? 0) - upload.declaredBytes;
@@ -72,6 +80,7 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
       }
       return committed;
     });
+    autoIngest.committed(created.project.id);
     return c.json(created, 201);
   });
 
@@ -81,8 +90,15 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
     const { path, title } = parseOrBadRequest(API_ROUTES.createProjectInPlace.body, await readJsonBody(c));
     const file = await inspectInPlaceFile(deps, path);
     const created = await createProjectWithAsset(deps, title, (transaction, project) => insertInPlaceAsset(transaction, project.id, file));
+    autoIngest.committed(created.project.id);
     return c.json(created, 201);
   });
+}
+
+/** The probe calls any video "camera"; a reference is a video kept apart so it is never cut as footage. */
+function asReference(staged: StagedUpload): StagedUpload {
+  if (staged.probe.kind !== "camera") throw new HttpError(400, "A reference must be a video");
+  return { ...staged, probe: { ...staged.probe, kind: "reference" } };
 }
 
 /** The project and its first asset commit in one transaction. */

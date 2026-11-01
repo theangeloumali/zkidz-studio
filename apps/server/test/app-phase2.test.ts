@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { API_ROUTES, CSRF_HEADER } from "@zks/shared";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAgentServices, type AgentServices } from "../src/agent-services.ts";
 import { writeConnection } from "../src/auth/connection-store.ts";
 import { createSecretStore } from "../src/auth/secret-store.ts";
@@ -69,7 +69,7 @@ beforeAll(async () => {
   });
 });
 afterAll(async () => {
-  services.shutdown();
+  await services.shutdown();
   await server.close();
   await rm(stubDir, { recursive: true, force: true });
 });
@@ -143,6 +143,66 @@ describe("createApp with the Phase 2 services", () => {
     expect((await readJob(server, job.id)).error).toMatch(/^v1 has not passed QC: engine not installed in tests/);
   });
 
+  const openProjectTerminal = async () => {
+    const project = await insertProject(server);
+    await mkdir(projectDir(server.studioHome, project.slug), { recursive: true });
+    await writeConnection(server.database.db, { mode: "terminal" });
+    const { sessionId } = (await (await browserPost(projectPath(API_ROUTES.openTerminal.path, project.id))).json()) as { sessionId: string };
+    const session = services.terminalSessions.find(sessionId);
+    if (session === undefined) throw new Error("the opened terminal is not tracked");
+    return { project, session };
+  };
+
+  it.skipIf(isWindows)(
+    "closes the open terminal when the connection changes, so the next open runs the newly connected agent",
+    { timeout: 30_000 },
+    async () => {
+      const { project, session } = await openProjectTerminal();
+      const exited = new Promise<void>((resolve) => session.pty.onExit(() => resolve()));
+
+      const connected = await send(API_ROUTES.connectTerminal.path, {
+        method: "POST",
+        headers: { origin: ORIGIN, [CSRF_HEADER]: csrfToken, "content-type": "application/json" },
+        body: JSON.stringify({ hasAcceptedDisclosure: true }),
+      });
+
+      expect(connected.status).toBe(200);
+      await exited;
+      expect(services.terminalSessions.findByProject(project.id)).toBeUndefined();
+    },
+  );
+
+  it.skipIf(isWindows)("dismisses a question card when Claude Code drops the hook request", { timeout: 30_000 }, async () => {
+    const { project, session } = await openProjectTerminal();
+    const hookPath = API_ROUTES.terminalHooks.path.replace(":sessionId", session.sessionId);
+    const question = {
+      session_id: session.sessionId,
+      hook_event_name: "PreToolUse",
+      tool_name: "AskUserQuestion",
+      tool_input: {
+        questions: [{ question: "Which opening?", header: "Opening", multiSelect: false, options: [{ label: "The pop", description: "Start on it" }] }],
+      },
+    };
+    const dropped = new AbortController();
+    const held = server.app.request(
+      hookPath,
+      {
+        method: "POST",
+        headers: { host: TEST_HOST, authorization: `Bearer ${session.hookToken}`, "content-type": "application/json" },
+        body: JSON.stringify(question),
+        signal: dropped.signal,
+      },
+      connectionFrom("127.0.0.1"),
+    );
+    await vi.waitFor(() => expect(services.pendingCards([project.id])).not.toEqual([]), { timeout: 10_000 });
+
+    dropped.abort();
+
+    await vi.waitFor(() => expect(services.pendingCards([project.id])).toEqual([]), { timeout: 10_000 });
+    await Promise.resolve(held).catch(() => undefined);
+    services.terminalSessions.kill(project.id);
+  });
+
   it.skipIf(isWindows)("opens a terminal in terminal mode, and shutdown kills it", async () => {
     const project = await insertProject(server);
     await mkdir(projectDir(server.studioHome, project.slug), { recursive: true });
@@ -154,7 +214,7 @@ describe("createApp with the Phase 2 services", () => {
     const session = services.terminalSessions.find(sessionId);
     if (session === undefined) throw new Error("the opened terminal is not tracked");
     const exited = new Promise<void>((resolve) => session.pty.onExit(() => resolve()));
-    services.shutdown();
+    await services.shutdown();
     await exited;
   });
 });

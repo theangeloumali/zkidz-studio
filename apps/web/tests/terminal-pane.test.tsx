@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TERMINAL_TRUST_HINT } from "../src/copy/claude.ts";
 import { TerminalPane } from "../src/terminal/TerminalPane.tsx";
 import { jsonResponse } from "./fakes.ts";
 import { stubFetch } from "./render.tsx";
@@ -72,8 +73,10 @@ class FakeSocket {
 }
 
 const TICKET = "t".repeat(32);
+const observed: Element[] = [];
+const EXPANDED_KEY = "zks.terminal.expanded";
 
-function renderPane(ticketStatus = 200) {
+function renderPane(ticketStatus = 200, { agentLabel = "Claude Code", hint = TERMINAL_TRUST_HINT }: { agentLabel?: string; hint?: string | null } = {}) {
   stubFetch({
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     "POST /api/terminal/sess-1/ticket": () =>
@@ -83,12 +86,14 @@ function renderPane(ticketStatus = 200) {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      observe(): void {}
+      observe(target: Element): void {
+        observed.push(target);
+      }
       disconnect(): void {}
     },
   );
   const onRestart = vi.fn();
-  render(<TerminalPane sessionId="sess-1" onRestart={onRestart} />);
+  render(<TerminalPane sessionId="sess-1" agentLabel={agentLabel} {...(hint === null ? {} : { hint })} onRestart={onRestart} />);
   return { onRestart };
 }
 
@@ -105,6 +110,9 @@ describe("TerminalPane", () => {
     xterm.written.length = 0;
     xterm.onData = null;
     xterm.opened = 0;
+    observed.length = 0;
+    localStorage.clear();
+    document.body.style.overflow = "";
   });
 
   // The app's style-src 'self' blocks the DOM renderer's <style> elements and style attributes; WebGL draws on a canvas.
@@ -144,6 +152,13 @@ describe("TerminalPane", () => {
     expect(onRestart).toHaveBeenCalledTimes(1);
   });
 
+  it("names the connected agent, not Claude Code, on a Codex session, and leaves out Claude's trust hint", async () => {
+    renderPane(404, { agentLabel: "Codex", hint: null });
+    expect(await screen.findByRole("button", { name: "Restart Codex" })).toBeInTheDocument();
+    expect(screen.getByRole("application", { name: "Codex terminal" })).toBeInTheDocument();
+    expect(screen.queryByText(TERMINAL_TRUST_HINT)).not.toBeInTheDocument();
+  });
+
   // The fit addon sizes the grid from this element; padding or a content-driven height made every fit add a row, forever.
   it("measures the terminal on a fixed-height box with no padding", () => {
     renderPane();
@@ -156,5 +171,76 @@ describe("TerminalPane", () => {
   it("shows the folder-trust hint", async () => {
     await renderOpenPane();
     expect(screen.getByText(/trust/i)).toBeInTheDocument();
+  });
+
+  describe("expand", () => {
+    it("expands to a full-window layer, keeping the same terminal and the same observed host", async () => {
+      renderPane();
+      await waitFor(() => expect(xterm.opened).toBe(1));
+      const host = screen.getByRole("application", { name: "Claude Code terminal" });
+      const toggle = screen.getByRole("button", { name: "Expand terminal" });
+      expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+      await userEvent.click(toggle);
+
+      const collapse = screen.getByRole("button", { name: "Collapse terminal" });
+      expect(collapse).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByTestId("terminal-pane").className).toMatch(/fixed/);
+      expect(screen.getByTestId("terminal-pane").className).toMatch(/inset-0/);
+      expect(host.className).not.toMatch(/(^|\s)h-96/);
+      expect(screen.getByRole("application", { name: "Claude Code terminal" })).toBe(host);
+      expect(xterm.opened).toBe(1);
+      expect(observed).toEqual([host]);
+    });
+
+    it("locks page scroll while expanded and releases it on collapse and unmount", async () => {
+      renderPane();
+      await userEvent.click(screen.getByRole("button", { name: "Expand terminal" }));
+      expect(document.body.style.overflow).toBe("hidden");
+      await userEvent.click(screen.getByRole("button", { name: "Collapse terminal" }));
+      expect(document.body.style.overflow).toBe("");
+      await userEvent.click(screen.getByRole("button", { name: "Expand terminal" }));
+      cleanup();
+      expect(document.body.style.overflow).toBe("");
+    });
+
+    it("leaves Escape to Claude Code", async () => {
+      renderPane();
+      await userEvent.click(screen.getByRole("button", { name: "Expand terminal" }));
+      await userEvent.keyboard("{Escape}");
+      expect(screen.getByRole("button", { name: "Collapse terminal" })).toBeInTheDocument();
+    });
+
+    it("remembers the choice across mounts", async () => {
+      renderPane();
+      await userEvent.click(screen.getByRole("button", { name: "Expand terminal" }));
+      expect(localStorage.getItem(EXPANDED_KEY)).toBe("true");
+      cleanup();
+
+      renderPane();
+      expect(screen.getByRole("button", { name: "Collapse terminal" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("still works when storage throws", async () => {
+      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new Error("blocked");
+      });
+      renderPane();
+      await userEvent.click(screen.getByRole("button", { name: "Expand terminal" }));
+      expect(screen.getByRole("button", { name: "Collapse terminal" })).toBeInTheDocument();
+      vi.restoreAllMocks();
+    });
+
+    it("keeps Restart reachable while expanded after the session exits", async () => {
+      localStorage.setItem(EXPANDED_KEY, "true");
+      const { onRestart } = renderPane(404);
+      expect(await screen.findByText("Exited")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Restart Claude Code" }));
+      expect(onRestart).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Collapse terminal" })).toBeInTheDocument();
+    });
   });
 });

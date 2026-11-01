@@ -5,8 +5,8 @@ import { buildFeedItems, summarizeSession } from "../src/agent/feed-items.ts";
 import { SAMPLE_EVENTS, sampleEvent } from "./event-fixtures.ts";
 
 describe("buildFeedItems", () => {
-  it("gives every event type except resync a feed entry", () => {
-    const silentTypes = new Set(["resync"]);
+  it("gives every event type except resync and usage reports a feed entry", () => {
+    const silentTypes = new Set(["resync", "usage.reported"]);
     for (const type of STUDIO_EVENT_TYPES) {
       const items = buildFeedItems([SAMPLE_EVENTS[type]]);
       expect(items.length, type).toBe(silentTypes.has(type) ? 0 : 1);
@@ -35,6 +35,12 @@ describe("buildFeedItems", () => {
         elapsedS: 12,
       }),
     ]);
+  });
+
+  it("names an ingest's step in words", () => {
+    const queued = { ...SAMPLE_EVENTS["job.queued"], kind: "ingest" };
+    const items = buildFeedItems([queued, { ...SAMPLE_EVENTS["job.progress"], stage: "joining", pct: 40, etaS: undefined }]);
+    expect(items).toEqual([expect.objectContaining({ kind: "job", jobKind: "ingest", progress: "Joining clips 40%" })]);
   });
 
   it("folds a job's lifecycle into one entry with its latest progress", () => {

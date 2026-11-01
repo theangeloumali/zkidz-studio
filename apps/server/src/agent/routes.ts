@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Agent panel routes: prompt, decisions, stop and kill. Each resolves the project first so an unknown id is a 404.
 import type { StudioDatabase } from "@zks/db";
-import { API_ROUTES } from "@zks/shared";
+import { API_ROUTES, isTerminalAuthMode } from "@zks/shared";
 import type { Context, Hono } from "hono";
 import { readConnection } from "../auth/connection-store.ts";
 import type { ProjectRow } from "../dto.ts";
@@ -25,7 +25,8 @@ export interface AgentRouteDeps {
 
 export function registerAgentRoutes(app: Hono, deps: AgentRouteDeps): void {
   const projectOf = (c: Context) => findProjectOrThrow(deps.database, c.req.param("projectId") ?? "");
-  const terminalInUse = async () => (deps.terminal !== undefined && (await readConnection(deps.database))?.mode === "terminal" ? deps.terminal : undefined);
+  const terminalInUse = async () =>
+    deps.terminal !== undefined && isTerminalAuthMode((await readConnection(deps.database))?.mode) ? deps.terminal : undefined;
 
   app.post(API_ROUTES.submitPrompt.path, async (c) => {
     const project = await projectOf(c);

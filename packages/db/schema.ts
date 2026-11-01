@@ -20,6 +20,7 @@ import {
 import {
   ASSET_KINDS,
   DELIVERABLE_KINDS,
+  EDIT_STATUSES,
   JOB_LANES,
   JOB_STATUSES,
   PROJECT_STATUSES,
@@ -27,6 +28,8 @@ import {
   SESSION_STATUSES,
   SPEC_AUTHORS,
   SPEC_KINDS,
+  type EditFacts,
+  type ProjectStyle,
 } from "@zks/shared";
 
 /** Never `public`: keeps every table off Supabase's Data API. */
@@ -48,6 +51,7 @@ export const sessionStatus = studio.enum("session_status", SESSION_STATUSES);
 export const jobLane = studio.enum("job_lane", JOB_LANES);
 export const jobStatus = studio.enum("job_status", JOB_STATUSES);
 export const deliverableKind = studio.enum("deliverable_kind", DELIVERABLE_KINDS);
+export const editStatus = studio.enum("edit_status", EDIT_STATUSES);
 
 export const projects = studio.table("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -56,6 +60,7 @@ export const projects = studio.table("projects", {
   status: projectStatus("status").notNull().default("draft"),
   videoId: text("video_id").notNull().default("v1"),
   currentSessionId: uuid("current_session_id").references((): AnyPgColumn => agentSessions.id, { onDelete: "set null" }),
+  style: jsonb("style").$type<ProjectStyle>(), // ProjectStyleSchema over the theme pack; null = the theme as shipped
   createdAt: createdAt(),
   updatedAt: timestampColumn("updated_at").notNull().defaultNow(),
 });
@@ -205,6 +210,29 @@ export const events = studio.table(
     createdAt: createdAt(),
   },
   (table) => [index("events_project_id_idx").on(table.projectId, table.id)],
+);
+
+/** One edit: opened by the first prompt with no open edit, closed by the export (plan 2026-10-29, slice E). */
+export const edits = studio.table(
+  "edits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: projectIdColumn(),
+    videoId: text("video_id").notNull(),
+    agentKind: text("agent_kind").notNull(), // AGENT_KINDS, validated by zod
+    status: editStatus("status").notNull().default("open"),
+    startedAt: timestampColumn("started_at").notNull().defaultNow(),
+    finishedAt: timestampColumn("finished_at"),
+    exportJobId: uuid("export_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    costUsd: numeric("cost_usd", { precision: 12, scale: 6 }), // an estimate: the sum of each session's latest total
+    costSource: text("cost_source"), // USAGE_SOURCES
+    inputTokens: bigint("input_tokens", { mode: "number" }),
+    outputTokens: bigint("output_tokens", { mode: "number" }),
+    cacheTokens: bigint("cache_tokens", { mode: "number" }),
+    turns: integer("turns").notNull().default(0),
+    facts: jsonb("facts").$type<EditFacts>(),
+  },
+  (table) => [index("edits_project_started_idx").on(table.projectId, table.startedAt)],
 );
 
 export const providers = studio.table("providers", {

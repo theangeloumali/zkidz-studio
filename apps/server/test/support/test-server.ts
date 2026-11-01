@@ -7,6 +7,7 @@ import { openDatabase, type StudioDatabaseHandle } from "@zks/db";
 import { projects } from "@zks/db/schema";
 import type { Hono } from "hono";
 import { createApp, type AppDependencies } from "../../src/app.ts";
+import { EditRecorder } from "../../src/edits/edit-recorder.ts";
 import { ensureStudioHome } from "../../src/config.ts";
 import { EventBus } from "../../src/events/event-bus.ts";
 import { JobRunner } from "../../src/jobs/job-runner.ts";
@@ -45,7 +46,10 @@ export async function createTestServer(overrides: Partial<AppDependencies> | ((b
   const eventBus = new EventBus(database.db);
   const jobRunner = new JobRunner({ database: database.db, eventBus, logger });
   const appOverrides = typeof overrides === "function" ? overrides({ database, eventBus, jobRunner, studioHome, scratchDir, logger }) : overrides;
+  const editRecorder = new EditRecorder({ database: database.db, eventBus, logger });
+  await editRecorder.start();
   const app = createApp({
+    editRecorder,
     database: database.db,
     studioHome,
     security: { ...passthroughSecurity, confinePath },
@@ -67,6 +71,7 @@ export async function createTestServer(overrides: Partial<AppDependencies> | ((b
     logLines,
     close: async () => {
       await jobRunner.idle();
+      await editRecorder.stop();
       await database.close().catch(() => undefined); // app.test closes one early on purpose
       await rm(scratchDir, { recursive: true, force: true });
     },

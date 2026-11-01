@@ -30,6 +30,9 @@ edit goes through a tool that validates it and records a version the user can re
 9. **Dress it.** Cue cards, captions, the Reels cut and covers each follow their own skill (`cues`, `captions`, `reels`,
    `covers`), in that order.
 10. **Review.** Call `render_preview`, write the entertainment review, fix what it finds, then follow `qc-gates`.
+11. **Learn.** After `export_deliverable` succeeds, call `suggest_lessons` once with at most 5 short lessons that would
+    help the next edit: what the user corrected, rejected or chose. Each is a reusable rule ("Open on the payoff, not the
+    setup"), never a fact about this one video. The user decides which to save; skip the call when nothing was learned.
 
 ## Editorial method
 

@@ -1,6 +1,7 @@
 # Created by The Angelo Umali.
 # zks-engine caption-phrases / render-preview: the phrase file captions are written against, and stills of the edit.
 import json
+import os
 import subprocess
 import unittest
 from unittest import mock
@@ -160,11 +161,47 @@ class RenderPreviewTests(ScratchWork):
         self.assertEqual(code, cli.EXIT_GATE_FAILED, payload)
         self.assertIn("t3.png", payload["error"]["message"])
 
+    def test_a_project_style_reaches_render_js_as_its_file(self):
+        style = self.work / "style.json"
+        style.write_text(json.dumps({"theme": "minimal", "tokens": {"ink": "#101820"}}), encoding="utf-8")
+        self.draw("1")
+        code, payload = self.preview("--at", "1")
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(self.drawn[0][2:], ["v1:v1", "--stills", "1", "--style", str(style)])
+
     def test_refuses_more_than_four_times_before_editing(self):
         self.assert_refused("render-preview", "--json", "--video", "v1", "--source", "media/s.mkv",
                             *[arg for at in range(5) for arg in ("--at", str(at))], mentions="4")
         self.edit.assert_not_called()
 
+
+class DrawOverlaysTests(ScratchWork):
+    def setUp(self):
+        super().setUp()
+        (self.work / "edl" / "v1.json").write_text(json.dumps(make_edl([(0, 300)])), encoding="utf-8")
+        (self.work / "cues" / "v1.json").write_text("[]", encoding="utf-8")
+        self.drawn = []
+        self.patch(render.subprocess, "run", side_effect=lambda argv, **_options: self.drawn.append(argv[2:]))
+        self.patch(render.sfx, "main")
+
+    def test_no_style_draws_exactly_as_before(self):
+        render.draw_overlays("v1")
+        self.assertEqual(self.drawn, [["v1:v1", "--events"], ["v1:v1"]])
+
+    def test_a_project_style_reaches_both_passes(self):
+        style = self.work / "style.json"
+        style.write_text(json.dumps({"theme": "zkidz", "boil": False}), encoding="utf-8")
+        render.draw_overlays("v1")
+        self.assertEqual(self.drawn, [["v1:v1", "--events", "--style", str(style)], ["v1:v1", "--style", str(style)]])
+
+    def test_a_job_draws_the_style_its_snapshot_took(self):
+        (self.work / "style.json").write_text(json.dumps({"theme": "minimal"}), encoding="utf-8")
+        snapshot = self.work / "snapshots" / "s1"
+        snapshot.mkdir(parents=True)
+        (snapshot / "style.json").write_text(json.dumps({"theme": "zkidz"}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"ZKS_SPECS": str(snapshot)}):
+            render.draw_overlays("v1")
+        self.assertEqual(self.drawn[1][1:], ["--style", str(snapshot / "style.json")])
 
 if __name__ == "__main__":
     unittest.main()

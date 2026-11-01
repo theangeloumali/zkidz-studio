@@ -20,6 +20,8 @@ export interface TerminalFixture {
   readonly studioHome: string;
   readonly runDir: string;
   readonly projectDir: string;
+  /** The Claude projects folder the sessions read transcripts from, when a test set one. */
+  readonly transcriptRoot?: string;
   /** Every projectId cancelProjectJobs was called with, in order. */
   readonly cancelledProjects: string[];
   readonly cleanup: () => Promise<void>;
@@ -54,6 +56,7 @@ export async function createTerminalFixture(overrides: Partial<TerminalSessionsD
     buildEnv: (tokens) => buildAgentEnv({ kind: "terminal", tokens }, { studioHome, appVersion: "0.0.0-test", proxyOptIn: false }),
     cancelProjectJobs: (projectId) => Promise.resolve(void cancelledProjects.push(projectId)),
     logger: silentLogger,
+    askQuestions: () => Promise.resolve(null),
     // Off unless a test turns it on: the stub never fires UserPromptSubmit, so every prompt would be resent.
     promptRetryMs: 60_000,
     ...overrides,
@@ -66,8 +69,9 @@ export async function createTerminalFixture(overrides: Partial<TerminalSessionsD
     runDir,
     projectDir,
     cancelledProjects,
+    ...(overrides.transcriptRoot === undefined ? {} : { transcriptRoot: overrides.transcriptRoot }),
     async cleanup() {
-      sessions.killAll();
+      await sessions.killAll();
       await rm(studioHome, { recursive: true, force: true });
     },
   };

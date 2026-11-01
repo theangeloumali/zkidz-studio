@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, formatMediaMeta } from "../src/lib/format.ts";
+import { formatBytes, formatDuration, formatMediaMeta, formatUsage } from "../src/lib/format.ts";
 import { joinPath, parentPath } from "../src/lib/paths.ts";
 import { makeAsset } from "./fakes.ts";
 
@@ -18,6 +18,14 @@ describe("format", () => {
   it("summarizes probe metadata", () => {
     expect(formatMediaMeta(makeAsset())).toBe("1:47 · 3840×2160 · 29.97 fps · HDR");
     expect(formatMediaMeta(makeAsset({ durationS: null, width: null, height: null, fps: null, isHdr: false }))).toBe("Reading metadata…");
+  });
+
+  it("counts cached input in the token total, since a cached session reads almost all of its input from the cache", () => {
+    expect(formatUsage({ costUsd: 0.09, inputTokens: 12, outputTokens: 310, cacheTokens: 41_800 })).toBe("≈ $0.09 estimate · 42k tokens");
+  });
+
+  it("shows a total under a thousand tokens as it is", () => {
+    expect(formatUsage({ inputTokens: 40, outputTokens: 310 })).toBe("350 tokens");
   });
 });
 

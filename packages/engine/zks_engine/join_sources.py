@@ -8,7 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,7 +16,7 @@ from . import backends, ffio
 from . import progress
 from .backends.graph import restamp
 from .pipeline import AUDIO_RATE, CUDA_DEVICE, CUDA_HWACCEL, CUDA_TV_RANGE, CUDA_UPRIGHT, DROP_ROTATION, FPS_DEN, FPS_NUM, WORK, chain, command_input, probe_video, rotation_of, split_orientation
-from .render_final import GPU_SCALE, LOW_PRIORITY, count_frames, has_filter
+from .render_final import GPU_SCALE, LOW_PRIORITY, count_frames, frames_written, has_filter
 from .slots import slot
 from .specs import gates
 from .specs.paths import inside_project
@@ -44,6 +44,7 @@ class Clip(NamedTuple):
     rotation: int = 0  # display matrix degrees; NVDEC frames skip autorotate, so the piece turns them itself
     fps: tuple = (FPS_NUM, FPS_DEN)
     nvdec: bool = True
+    audio: bool = True  # a phone clip can be silent; audio_command then pads silence for it
 
 
 def probe(argument):
@@ -56,7 +57,7 @@ def probe(argument):
     num, _, den = stream["r_frame_rate"].partition("/")
     return Clip(Path(path), int(stream["nb_read_packets"]), stream.get("color_transfer") in HDR_TRANSFERS, float(zoom or 1),
                 "10" in stream["pix_fmt"], rotation_of(probe_video(path)) % 360, (int(num), int(den or 1)),
-                stream.get("codec_name") in NVDEC_CODECS)
+                stream.get("codec_name") in NVDEC_CODECS, ffio.has_audio(path))
 
 
 def common_rate(clips):
@@ -150,18 +151,26 @@ def piece_command(clip, first, frames, out, backend):
             "-r", f"{clip.fps[0]}/{clip.fps[1]}", "-fps_mode", "cfr", "-frames:v", str(frames), *backend.mezzanine, "-an", str(out)]
 
 
-def run_all(commands, jobs):
+def run_all(commands, jobs, on_frames=None):
     """Exit codes of the commands that failed, `jobs` at a time: 14 at once meant 14 libplacebo Vulkan devices, and 12
-    failed VK_ERROR_INITIALIZATION_FAILED."""
+    failed VK_ERROR_INITIALIZATION_FAILED. on_frames gets the frames all the commands have written, every ffio.POLL_S."""
+    if on_frames:  # each command's last argument is its output; its progress file sits beside it
+        commands = [[*command[:-1], "-progress", str(Path(command[-1]).with_suffix(".progress")), command[-1]] for command in commands]
     for command in commands:
         gates.check_command(command)
+    reports = [Path(command[-1]).with_suffix(".progress") for command in commands]
     with ThreadPoolExecutor(jobs) as pool:
-        return [code for code in pool.map(lambda command: subprocess.run(command, **LOW_PRIORITY).returncode, commands) if code]
+        runs = [pool.submit(lambda command=command: subprocess.run(command, **LOW_PRIORITY).returncode) for command in commands]
+        while on_frames and wait(runs, ffio.POLL_S).not_done:
+            on_frames(sum(frames_written(report) for report in reports))
+        if on_frames:
+            on_frames(sum(frames_written(report) for report in reports))
+        return [code for code in (run.result() for run in runs) if code]
 
 
 def audio_command(clips, out):
     """Each clip's audio padded or trimmed to exactly its video length, so lip sync cannot drift across a join."""
-    inputs = [arg for clip in clips for arg in ffio.user_input_args(clip.path)]
+    inputs = [arg for clip in clips for arg in (ffio.user_input_args(clip.path) if clip.audio else ["-f", "lavfi", "-i", f"anullsrc=r={AUDIO_RATE}:cl=stereo"])]
     chains = "".join(f"[{i}:a]aresample={AUDIO_RATE},apad,atrim=end_sample={round(clip.frames * AUDIO_RATE * clip.fps[1] / clip.fps[0])}[a{i}];"
                      for i, clip in enumerate(clips))
     joined = "".join(f"[a{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[a]"
@@ -183,20 +192,22 @@ def main(target, arguments):
     outputs = [work / f"{index:02d}.mp4" for index in range(len(plan))]
     commands = [piece_command(*piece, out, backend) for piece, out in zip(plan, outputs)] + [audio_command(clips, work / "audio.flac")]
     print(f"joining {len(clips)} clips ({expected} frames) as {len(plan)} {backend.name} pieces, {jobs} at once", flush=True)
-    with slot("gpu", f"join_sources {target.name} ({WORK})"):
-        codes = run_all(commands, jobs)
-    if codes:
-        sys.exit(f"join failed (exit codes {codes}); pieces kept in {work}")
-    for (_, _, frames), out in zip(plan, outputs):
-        if count_frames(out) != frames:
-            sys.exit(f"{out.name}: {count_frames(out)} frames, expected {frames}")
-    listing = work / "pieces.txt"
-    listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
-                    "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", "-colorspace", "bt709",
-                    "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", str(target)], check=True)
-    if count_frames(target) != expected:
-        sys.exit(f"{target.name}: {count_frames(target)} frames after the join, expected {expected}")
+    with progress.job(target.stem, "joining", total=expected) as stage:
+        with slot("gpu", f"join_sources {target.name} ({WORK})", on_wait=stage.wait):
+            stage.begin()
+            codes = run_all(commands, jobs, stage.update)
+        if codes:
+            sys.exit(f"join failed (exit codes {codes}); pieces kept in {work}")
+        for (_, _, frames), out in zip(plan, outputs):
+            if count_frames(out) != frames:
+                sys.exit(f"{out.name}: {count_frames(out)} frames, expected {frames}")
+        listing = work / "pieces.txt"
+        listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
+        subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
+                        "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", "-colorspace", "bt709",
+                        "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv", str(target)], check=True)
+        if count_frames(target) != expected:
+            sys.exit(f"{target.name}: {count_frames(target)} frames after the join, expected {expected}")
     shutil.rmtree(work)
     starts, cursor = [], 0
     for clip in clips:
@@ -208,5 +219,4 @@ def main(target, arguments):
 
 
 if __name__ == "__main__":
-    with progress.job(Path(sys.argv[1]).stem, "join"):
-        main(sys.argv[1], sys.argv[2:])
+    main(sys.argv[1], sys.argv[2:])

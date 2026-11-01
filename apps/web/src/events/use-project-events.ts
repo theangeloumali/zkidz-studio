@@ -2,6 +2,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { StudioEvent } from "@zks/shared";
 import { useEffect } from "react";
+import { styleQueryKey } from "../style/style-client.ts";
 import { queryKeys } from "../api/queries.ts";
 import { renderQueryKeys } from "../render/render-api.ts";
 import { connectEvents } from "./connection.ts";
@@ -30,6 +31,7 @@ export function useProjectEvents(projectId: string): void {
         ])
           refetch(queryKey);
       } else if (event.type === "spec.version") refetch(queryKeys.specs(projectId));
+      else if (event.type === "style.changed") refetch(styleQueryKey(projectId));
     }
 
     return connectEvents({ projectIds: [projectId], onEvent: handleEvent, onResync: refetchProject, onStatus: setStatus });

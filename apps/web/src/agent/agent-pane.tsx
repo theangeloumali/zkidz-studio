@@ -1,10 +1,12 @@
 // Created by The Angelo Umali.
 import { useMutation } from "@tanstack/react-query";
 import type { StudioEvent } from "@zks/shared";
+import { isTerminalAuthMode } from "@zks/shared";
 import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
 import { stopTurn, submitPrompt, type Connection } from "../api/agent-client.ts";
 import { buttonClass } from "../components/button-class.ts";
+import { useProjectEdits } from "../edits/edits-client.ts";
 import { TerminalPanel } from "../terminal/terminal-panel.tsx";
 import { ActivityFeed } from "./activity-feed.tsx";
 import { Composer } from "./composer.tsx";
@@ -20,9 +22,11 @@ interface AgentPaneProps {
 
 /** The server routes the prompt and Stop to the PTY in terminal mode, or to the SDK otherwise. */
 export function AgentPane({ projectId, events, mode }: AgentPaneProps) {
-  const isTerminal = mode === "terminal";
+  const isTerminal = isTerminalAuthMode(mode);
   const summary = useMemo(() => summarizeSession(events), [events]);
   const [tab, setTab] = useState<PaneTab>("activity");
+  const edits = useProjectEdits(projectId, events);
+  const openEdit = edits.data?.find((edit) => edit.status === "open");
   const prompt = useMutation({ mutationFn: (text: string) => submitPrompt(projectId, text) });
   const stop = useMutation({ mutationFn: () => stopTurn(projectId) });
 
@@ -38,9 +42,9 @@ export function AgentPane({ projectId, events, mode }: AgentPaneProps) {
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
-      {isTerminal ? <PaneTabs active={tab} onSelect={setTab} panels={{ activity, terminal: <TerminalPanel projectId={projectId} /> }} /> : activity}
+      {isTerminal ? <PaneTabs active={tab} onSelect={setTab} panels={{ activity, terminal: <TerminalPanel projectId={projectId} mode={mode} /> }} /> : activity}
       <div className="flex flex-col gap-3 border-t border-line pt-4">
-        {isTerminal ? null : <UsageMeter summary={summary} />}
+        <UsageMeter summary={summary} mode={mode} openEdit={openEdit} />
         {summary.isWorking ? (
           <button type="button" className={buttonClass("secondary", "self-start")} disabled={stop.isPending} onClick={() => stop.mutate()}>
             <Square aria-hidden="true" className="size-4" />

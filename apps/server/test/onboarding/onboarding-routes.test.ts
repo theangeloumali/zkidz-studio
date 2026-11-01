@@ -123,7 +123,8 @@ describe("start from a template", () => {
     expect(started).toMatchObject({ templateId, ingestMode });
     const job = await firstIngestJob(fixture.context.projectId);
     expect(job).toMatchObject({ id: started.ingestJobId, kind: "ingest", lane: "gpu" });
-    expect(job?.params).toEqual({ clips: clips.map((clip) => ({ assetId: clip.id })) });
+    // The mode rides in the params so the agent's own ingest call can reuse this job (ingest-start.ts).
+    expect(job?.params).toEqual({ clips: clips.map((clip) => ({ assetId: clip.id })), mode: ingestMode });
 
     expect(await readProjectTemplate(server.database.db, fixture.context.projectId)).toEqual({ templateId, ingestMode });
   });
@@ -141,7 +142,7 @@ describe("start from a template", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ingestMode: "showcase" });
     const job = await firstIngestJob(fixture.context.projectId);
-    expect(job?.params).toEqual({ clips: [{ assetId: camera.id }], inserts: [{ at: 0, end: 12, srcAssetId: screen.id, srcAt: 0 }] });
+    expect(job?.params).toEqual({ clips: [{ assetId: camera.id }], inserts: [{ at: 0, end: 12, srcAssetId: screen.id, srcAt: 0 }], mode: "showcase" });
   });
 
   it("refuses footage that does not fit the template's ingest mode", async () => {

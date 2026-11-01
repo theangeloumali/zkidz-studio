@@ -151,6 +151,21 @@ describe("terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect((await postHook(session.sessionId, { hook_event_name: "Nope" }, session.hookToken)).status).toBe(400);
   });
 
+  it("answers a tool check it cannot accept with an explicit deny, since Claude Code runs the tool on any error status", async () => {
+    await startServer();
+    const session = await openSession();
+    const toolCheck = { session_id: session.sessionId, hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: "cuts.json" } };
+    // A request with no bearer at all never came from Claude Code's hook config, so the request guard's 401 stands.
+    for (const [body, bearer] of [
+      [toolCheck, "forged"],
+      [{ hook_event_name: "PreToolUse", tool_name: 7 }, session.hookToken],
+    ] as const) {
+      const response = await postHook(session.sessionId, body, bearer);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny" } });
+    }
+  });
+
   it("relays SessionStart from the PTY to the bridge, then denies Bash over the same bridge", async () => {
     await startServer();
     const session = await openSession();

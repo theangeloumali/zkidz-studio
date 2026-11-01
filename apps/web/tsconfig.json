@@ -5,7 +5,8 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["vite/client", "@testing-library/jest-dom/vitest"]
+    "types": ["vite/client", "@testing-library/jest-dom/vitest"],
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "tests", "vite.config.ts"],
   "exclude": ["tests/real-server"]

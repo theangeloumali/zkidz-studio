@@ -24,8 +24,16 @@ afterAll(async () => {
 });
 
 function upload(projectId: string, body: NonNullable<RequestInit["body"]>, displayName = "My Clip.mp4", extraHeaders: Record<string, string> = {}) {
-  const headers = { host: TEST_HOST, "content-type": "application/octet-stream", [UPLOAD_FILENAME_HEADER]: encodeURIComponent(displayName), ...extraHeaders };
-  return server.app.request(`/api/projects/${projectId}/media`, { method: "POST", headers, body, duplex: "half" }, connectionFrom("127.0.0.1"));
+  return uploadTo(`/api/projects/${projectId}/media`, body, { [UPLOAD_FILENAME_HEADER]: encodeURIComponent(displayName), ...extraHeaders });
+}
+
+function uploadReference(projectId: string, body: NonNullable<RequestInit["body"]>, displayName: string) {
+  return uploadTo(`/api/projects/${projectId}/media?kind=reference`, body, { [UPLOAD_FILENAME_HEADER]: encodeURIComponent(displayName) });
+}
+
+function uploadTo(path: string, body: NonNullable<RequestInit["body"]>, extraHeaders: Record<string, string>) {
+  const headers = { host: TEST_HOST, "content-type": "application/octet-stream", ...extraHeaders };
+  return server.app.request(path, { method: "POST", headers, body, duplex: "half" }, connectionFrom("127.0.0.1"));
 }
 
 async function rawMediaFiles(slug: string): Promise<string[]> {
@@ -78,6 +86,26 @@ describe.skipIf(!ffmpegAvailable)("POST /api/projects/:projectId/media", () => {
     expect(lastStatus).toBe(413);
     expect(storedBytes).toBeLessThanOrEqual(SMALL_PROJECT_CAP);
   }, 30_000); // every accepted upload runs a real ffprobe, several seconds each on a loaded machine
+
+  it("registers a video uploaded with kind=reference as a reference, never as footage", async () => {
+    const project = await insertProject(server);
+    const response = await uploadReference(project.id, await readFile(fixtures.clipMp4), "Look.mp4");
+    expect(response.status).toBe(201);
+    expect(MediaAssetSchema.parse(await response.json())).toMatchObject({ kind: "reference", name: "Look.mp4" });
+  });
+
+  it("refuses a still sent as a reference with 400 and keeps no file", async () => {
+    const project = await insertProject(server);
+    const response = await uploadReference(project.id, await readFile(fixtures.stillPng), "look.png");
+    expect(response.status).toBe(400);
+    expect(await rawMediaFiles(project.slug)).toEqual([]);
+  });
+
+  it("refuses an unknown kind in the query with 400", async () => {
+    const project = await insertProject(server);
+    const response = await uploadTo(`/api/projects/${project.id}/media?kind=camera`, new Uint8Array(4), { [UPLOAD_FILENAME_HEADER]: "a.mp4" });
+    expect(response.status).toBe(400);
+  });
 
   it("answers 404 for an unknown project and 400 without a filename", async () => {
     expect((await upload(crypto.randomUUID(), new Uint8Array(4))).status).toBe(404);

@@ -1,18 +1,19 @@
 // Created by The Angelo Umali.
 // Builds the brand HyperFrames composition for one edit: loads the JSON cue files in order (cues.js), maps them through
 // the EDL with the canvas page's timemap, and writes <WORK>/hf/<target>/ (index.html, cues.json, assets) in a theme pack's look.
-// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/build.js v4r:v4+v4r+v4-cc [--events] [--guides] [--layer behind] [--theme id]
+// Usage (work dir as cwd, or ZKS_WORK): node <engine>/hf/build.js v4r:v4+v4r+v4-cc [--events] [--guides] [--layer behind] [--theme id | --style file]
 //   --events → also edl/<video>.sfx.json for sfx.py (same schema as render-overlays.js --events), from every cue in both layers
 //   --layer behind → hf/<target>.behind/: only the cues with depth "behind" (never captions), drawn under the person matte;
 //   the normal build skips them
 //   --theme id → themes/<id>/ (default zkidz): palette, type, boil, intro, and the kinds it draws
+//   --style file → a project style (work/style.json): its theme with the colours and faces it sets
 // A hookTitle with `intro: true` also gets the brand pre-roll (when the theme has an intro): hf/<target>.intro/, and an `intro` block in the sfx file
 // that sfx.py and render_final.py read.
 const fs = require("fs");
 const path = require("path");
 const { createTimemap, sfxEvents } = require("./overlay/timemap");
 const { loadCueSheet } = require("./cues");
-const { loadTheme, DEFAULT_THEME } = require("./theme");
+const { loadTheme, themeFrom, DEFAULT_THEME } = require("./theme");
 const { composeDocument } = require("./compose");
 const { REGISTRY } = require("./components");
 const { canvasBrand } = require("./brand/canvas");
@@ -232,7 +233,7 @@ if (require.main === module) {
       guides: args.includes("--guides"),
       events: args.includes("--events"),
       layer: valueOf("--layer", "front"),
-      theme: valueOf("--theme", DEFAULT_THEME),
+      theme: themeFrom(args),
     };
     const { dir, placed } = build(target, options);
     console.log(`${target}: ${placed.length} clips → ${path.join(dir, "index.html")}`);

@@ -2,6 +2,7 @@
 import { CANVAS, PREVIEW_SEEK_MESSAGE, PreviewLoadedMessageSchema, type CutSpec, type PreviewSeekMessage } from "@zks/shared";
 import { Pause, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ICON_BUTTON_CLASS } from "../components/button-class.ts";
 import { formatTimecode } from "../lib/format.ts";
 import { editedDuration, editedToSource, sourceToEdited, type TimeSpan } from "./edl.ts";
@@ -25,6 +26,8 @@ interface PreviewPlayerProps {
   readonly clock: PlaybackClock;
   /** The video's 1080 H.264 proxy; the original may be HEVC, which Chrome cannot decode (plan §8.4). */
   readonly footageUrl: string | undefined;
+  /** The clip is in the project but its proxy is not ready yet. */
+  readonly preparing?: boolean;
 }
 
 const percentOf = (value: number, total: number) => `${(value / total) * 100}%`;
@@ -59,7 +62,7 @@ function useOverlayLoadedSeek(overlayRef: React.RefObject<HTMLIFrameElement | nu
  * happens on the playing proxy's last presented frame of its span (requestVideoFrameCallback), and that proxy leads
  * the clock, so the overlay follows the picture instead of the wall clock.
  */
-export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: PreviewPlayerProps) {
+export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl, preparing = false }: PreviewPlayerProps) {
   const durationS = editedDuration(spans);
   const [isPlaying, setIsPlaying] = useState(false);
   const playerRef = useRef<HTMLDivElement>(null);
@@ -122,7 +125,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: P
       setIsPlaying(clock.isPlaying());
       if (timecodeRef.current !== null) timecodeRef.current.textContent = `${formatTimecode(editedS)} / ${formatTimecode(durationS)}`;
       seekOverlay(overlayRef.current, editedS);
-      if (cuts === null || spans.length === 0) return;
+      if (spans.length === 0) return;
 
       const sourceS = editedToSource(spans, editedS);
       const spanIndex = spanIndexAt(spans, sourceS);
@@ -136,7 +139,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: P
       const active = activeVideo();
       if (active !== null && Math.abs(active.currentTime - sourceS) > SEEK_TOLERANCE_S) active.currentTime = sourceS;
 
-      const isPunchedIn = (cuts.zooms ?? []).some((zoom) => covers(zoom, sourceS));
+      const isPunchedIn = (cuts?.zooms ?? []).some((zoom) => covers(zoom, sourceS));
       if (playerRef.current !== null) playerRef.current.dataset.punch = String(isPunchedIn);
       if (punchFlagRef.current !== null) punchFlagRef.current.hidden = !isPunchedIn;
       blurLayerRef.current?.querySelectorAll<HTMLElement>("[data-at]").forEach((box) => {
@@ -157,15 +160,15 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: P
     };
   }, [clock, cuts, spans, durationS]);
 
-  const mediaUrl = cuts === null ? undefined : footageUrl;
+  const hasMedia = footageUrl !== undefined;
   return (
     <div className="flex flex-col gap-3">
       <div ref={playerRef} className="player" data-punch="false">
-        {mediaUrl !== undefined && (
+        {hasMedia && (
           <>
             {/* eslint-disable-next-line jsx-a11y/media-has-caption -- captions are drawn by the overlay iframe from the captions spec */}
-            <video ref={firstVideoRef} className="player-layer footage" src={mediaUrl} preload="auto" playsInline data-active="true" />
-            <video ref={secondVideoRef} className="player-layer footage" src={mediaUrl} preload="auto" playsInline muted data-active="false" />
+            <video ref={firstVideoRef} className="player-layer footage" src={footageUrl} preload="auto" playsInline data-active="true" />
+            <video ref={secondVideoRef} className="player-layer footage" src={footageUrl} preload="auto" playsInline muted data-active="false" />
           </>
         )}
         <div ref={blurLayerRef} className="player-layer pointer-events-none" aria-hidden="true">
@@ -195,9 +198,10 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: P
             data-edl-version={composition.edlVersion}
           />
         )}
-        {cuts === null && (
+        {!hasMedia && (
           <div className="player-empty">
-            <p>Add a clip to see it here.</p>
+            {preparing ? <Skeleton className="absolute inset-0 rounded-none motion-reduce:animate-none" aria-hidden="true" /> : null}
+            <p className="relative">{preparing ? "Preparing your video…" : "Add a clip to see it here."}</p>
           </div>
         )}
       </div>
@@ -206,7 +210,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl }: P
           type="button"
           className={ICON_BUTTON_CLASS}
           aria-label={isPlaying ? "Pause" : "Play"}
-          disabled={cuts === null}
+          disabled={!hasMedia}
           onClick={() => (clock.isPlaying() ? clock.pause() : clock.play())}
         >
           {isPlaying ? <Pause aria-hidden="true" className="size-5" /> : <Play aria-hidden="true" className="size-5" />}

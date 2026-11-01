@@ -5,6 +5,7 @@ import type { StudioEvent } from "@zks/shared";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
 import { AgentPane } from "../src/agent/agent-pane.tsx";
+import { PROJECT_EDITS_PATH, makeOpenEdit } from "./edits/fixtures.ts";
 import { SAMPLE_EVENTS, sampleEvent } from "./event-fixtures.ts";
 import { PROJECT_ID, jsonResponse } from "./fakes.ts";
 import { renderWithProviders, requestBody, stubFetch } from "./render.tsx";
@@ -25,12 +26,13 @@ const OPEN_TERMINAL = `/api/projects/${PROJECT_ID}/terminal`;
 // The shared contract types sessionId as a UUID, so a free-form id fails the response parse.
 const TERMINAL_SESSION_ID = "6f1d2c3b-4a5e-4f60-8a71-92b3c4d5e6f7";
 
-function renderPane(events: readonly StudioEvent[], mode: "api_key" | "terminal" = "api_key") {
+function renderPane(events: readonly StudioEvent[], mode: "api_key" | "terminal" | "codex_terminal" | "opencode_terminal" = "api_key") {
   return renderWithProviders(<AgentPane projectId={PROJECT_ID} events={events} mode={mode} />);
 }
 
-function stubAgentApi() {
+function stubAgentApi(extra: Parameters<typeof stubFetch>[0] = {}) {
   return stubFetch({
+    ...extra,
     "GET /api/projects": () => jsonResponse({ projects: [] }),
     [`POST ${DECISIONS}`]: () => jsonResponse({ ok: true }),
     [`POST ${CUT_CANDIDATES}`]: () => jsonResponse({ ok: true }),
@@ -101,6 +103,39 @@ describe("AgentPane", () => {
     expect(requestBody(fetchMock, DECISIONS)).toEqual({ kind: "question", requestId: "q-1", answers: { "Which take should open the video?": "Take 2" } });
   });
 
+  it("answers in the user's own words with Other, as the terminal's 'Type something' does", async () => {
+    const fetchMock = stubAgentApi();
+    renderPane([SAMPLE_EVENTS["question.asked"]]);
+    const send = screen.getByRole("button", { name: "Send answer" });
+    await userEvent.click(screen.getByRole("radio", { name: "Other" }));
+    expect(send).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: "Your answer" }), "Open on the crash");
+    await userEvent.click(send);
+    expect(requestBody(fetchMock, DECISIONS)).toEqual({
+      kind: "question",
+      requestId: "q-1",
+      answers: { "Which take should open the video?": "Open on the crash" },
+    });
+  });
+
+  it("answers every question with Claude's recommended option in one click", async () => {
+    const fetchMock = stubAgentApi();
+    const event = {
+      ...SAMPLE_EVENTS["question.asked"],
+      questions: [
+        { question: "Which opening?", options: [{ label: "Fail first" }, { label: "Matchup first (Recommended)" }] },
+        { question: "Keep the swears?", options: [{ label: "Bleep them" }, { label: "Keep them" }] },
+      ],
+    };
+    renderPane([event]);
+    await userEvent.click(screen.getByRole("button", { name: "Use Claude's picks" }));
+    expect(requestBody(fetchMock, DECISIONS)).toEqual({
+      kind: "question",
+      requestId: "q-1",
+      answers: { "Which opening?": "Matchup first (Recommended)", "Keep the swears?": "Bleep them" },
+    });
+  });
+
   it("sends the cut decisions to the cut-candidates route the reviewer waits on", async () => {
     const fetchMock = stubAgentApi();
     renderPane([SAMPLE_EVENTS["cuts.proposed"]]);
@@ -134,11 +169,12 @@ describe("AgentPane", () => {
     expect(within(usage).getByRole("meter")).toHaveAttribute("aria-valuenow", "80");
   });
 
-  it("offers the Terminal tab and hides the cost only in terminal mode", () => {
-    stubAgentApi();
-    renderPane([sampleEvent("turn.completed", { costUsd: 0.42 })], "terminal");
+  // The owner reversed plan §6.13: every mode shows the open edit's estimate.
+  it("offers the Terminal tab and shows the open edit's totals in terminal mode too", async () => {
+    stubAgentApi({ [`GET ${PROJECT_EDITS_PATH}`]: () => jsonResponse({ edits: [makeOpenEdit()] }) });
+    renderPane([sampleEvent("prompt.submitted")], "terminal");
     expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
-    expect(screen.queryByText(/this turn/)).toBeNull();
+    expect(await screen.findByText("This edit · 14 min · ≈ $0.62 estimate · 210k tokens")).toBeInTheDocument();
   });
 
   it("opens the project's terminal before Claude Code has started, and restarts it on request", async () => {
@@ -146,6 +182,12 @@ describe("AgentPane", () => {
     renderPane([], "terminal");
     await userEvent.click(await screen.findByText(`Terminal ${TERMINAL_SESSION_ID}`, {}, { timeout: 2000 }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === OPEN_TERMINAL)).toHaveLength(2));
+  });
+
+  it.each(["codex_terminal", "opencode_terminal"] as const)("offers the Terminal tab when %s runs the agent", (mode) => {
+    stubAgentApi();
+    renderPane([], mode);
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
   });
 
   it("sends a terminal-mode prompt through the server, which writes it to the PTY", async () => {

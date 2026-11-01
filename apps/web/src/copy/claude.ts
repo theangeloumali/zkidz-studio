@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import { AGENT_MIN_VERSIONS } from "@zks/shared";
 /** User-facing Claude copy that legal or Anthropic review may change; one place to edit it (plan §6.5). */
 export const CLAUDE_LINKS = {
   install: "https://code.claude.com/docs/en/setup",
@@ -8,7 +9,7 @@ export const CLAUDE_LINKS = {
   planHelp: "https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan",
 } as const;
 
-export const MIN_CLAUDE_VERSION = "2.1.295";
+export const MIN_CLAUDE_VERSION = AGENT_MIN_VERSIONS.claude;
 
 export const TERMINAL_DISCLOSURE =
   "Terminal mode runs the Claude Code you installed, unmodified, in a terminal inside ZKidz Studio. You sign in there with Claude Code's own /login. ZKidz Studio never sees or stores your credentials. Usage counts against your Claude plan's limits.";

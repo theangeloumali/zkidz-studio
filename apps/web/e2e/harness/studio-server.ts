@@ -49,7 +49,7 @@ async function startStudioServer(): Promise<void> {
   const ffprobePath = join(dirname(ffmpegPath), "ffprobe");
   const frozenMaster = process.env.ZKS_E2E_FROZEN_MASTER === "1";
   const security = createSecurity({ appPort: port, previewPort, container: false });
-  let shutdownAgent: (() => void) | undefined;
+  let shutdownAgent: (() => Promise<void>) | undefined;
   let previewBuilder: CompositionBuilder | undefined;
   const server = await createTestServer((base) => {
     const engine = createEngineProcessRunner({
@@ -113,10 +113,10 @@ async function startStudioServer(): Promise<void> {
     process.stdout.write(`${SERVER_READY_PREFIX}${JSON.stringify({ studioHome: server.studioHome })}\n`);
   });
   process.once("SIGTERM", () => {
-    shutdownAgent?.();
     previewBuilder?.close();
     previewServer.close();
-    httpServer.close(() => void server.close().finally(() => process.exit(0)));
+    // The terminals' exit work writes to the database, so it closes only after shutdown settles.
+    void Promise.allSettled([shutdownAgent?.()]).then(() => httpServer.close(() => void server.close().finally(() => process.exit(0))));
   });
 }
 

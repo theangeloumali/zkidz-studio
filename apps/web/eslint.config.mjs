@@ -19,5 +19,9 @@ export default defineConfig(
   {
     files: ["**/*.{ts,tsx}"],
     extends: [reactHooks.configs.flat["recommended-latest"], jsxA11y.flatConfigs.recommended],
+    // The shadcn controls in src/components/ui render native-backed inputs, so a <label> around one is associated.
+    rules: {
+      "jsx-a11y/label-has-associated-control": ["error", { controlComponents: ["Checkbox", "RadioGroupItem", "Input", "Textarea", "Switch"], depth: 3 }],
+    },
   },
 );

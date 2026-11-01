@@ -1,10 +1,10 @@
 // Created by The Angelo Umali.
 import { useState } from "react";
+import { isVersionAtLeast } from "@zks/shared";
 import { connectTerminal, type Connection } from "../api/agent-client.ts";
 import { buttonClass } from "../components/button-class.ts";
 import { ExternalLink } from "../components/external-link.tsx";
 import { CLAUDE_LINKS, MIN_CLAUDE_VERSION, TERMINAL_DISCLOSURE, TERMINAL_TRUST_HINT } from "../copy/claude.ts";
-import { meetsMinimumVersion } from "./claude-version.ts";
 import { StatusLine, errorText } from "./status-line.tsx";
 import { useConnect } from "./use-connect.ts";
 
@@ -16,7 +16,7 @@ function VersionNote({ version }: { readonly version: string | null }) {
       </p>
     );
   }
-  if (!meetsMinimumVersion(version)) {
+  if (!isVersionAtLeast(version, MIN_CLAUDE_VERSION)) {
     return (
       <p className="text-ui text-danger">
         Claude Code {version} is older than {MIN_CLAUDE_VERSION}, the oldest version the studio supports.{" "}
@@ -30,7 +30,7 @@ function VersionNote({ version }: { readonly version: string | null }) {
 export function TerminalControls({ connection }: { readonly connection: Connection }) {
   const [hasAccepted, setHasAccepted] = useState(false);
   const enable = useConnect(connectTerminal);
-  const isUsable = connection.claudeVersion !== null && meetsMinimumVersion(connection.claudeVersion);
+  const isUsable = connection.claudeVersion !== null && isVersionAtLeast(connection.claudeVersion, MIN_CLAUDE_VERSION);
   const isOn = connection.mode === "terminal";
 
   return (

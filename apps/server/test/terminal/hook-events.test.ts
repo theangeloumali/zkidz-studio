@@ -34,6 +34,19 @@ describe("hookToStudioEvents", () => {
     ]);
   });
 
+  // terminal-sessions draws AskUserQuestion as a question card, so its tool row would only duplicate it.
+  it("maps AskUserQuestion's PostToolUse to nothing", () => {
+    const payload: HookPayload = {
+      ...base,
+      hook_event_name: "PostToolUse",
+      tool_name: "AskUserQuestion",
+      tool_input: {},
+      tool_response: {},
+      tool_use_id: "toolu_q",
+    };
+    expect(eventsFor(payload)).toEqual([]);
+  });
+
   it("maps PostToolUse to tool.finished", () => {
     const payload: HookPayload = { ...base, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: {}, tool_response: {}, tool_use_id: "toolu_1" };
     expect(eventsFor(payload)).toEqual([{ type: "tool.finished", projectId: PROJECT_ID, toolUseId: "toolu_1", ok: true, summary: "Read finished" }]);

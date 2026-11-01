@@ -1,10 +1,11 @@
 // Created by The Angelo Umali.
 import { useQuery } from "@tanstack/react-query";
-import type { Project } from "@zks/shared";
+import type { EditSummary, Project } from "@zks/shared";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 import { projectsQuery } from "../api/queries.ts";
-import { formatDate } from "../lib/format.ts";
+import { editFigures, latestEditsQuery } from "../edits/edits-client.ts";
+import { formatDate, formatUsage } from "../lib/format.ts";
 import { editorPath } from "../lib/routes.ts";
 import { buttonClass } from "./button-class.ts";
 
@@ -18,6 +19,8 @@ const STATUS_LABELS: Record<Project["status"], string> = {
 
 export function RecentProjects() {
   const projects = useQuery(projectsQuery());
+  const latestEdits = useQuery(latestEditsQuery());
+  const finishedEdits = finishedEditsByProject(latestEdits.data ?? []);
 
   return (
     <section aria-labelledby="recent-title" className="flex flex-col gap-4">
@@ -58,6 +61,7 @@ export function RecentProjects() {
                   <span className="block font-mono text-ui-sm text-copy-muted">
                     {project.videoId} · {formatDate(project.updatedAt)}
                   </span>
+                  <LastEditLine edit={finishedEdits.get(project.id)} />
                 </span>
                 <span className="shrink-0 rounded-pill border border-line-strong px-3 py-1 text-ui-sm text-copy-muted">{STATUS_LABELS[project.status]}</span>
                 <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-copy-dim" />
@@ -68,4 +72,14 @@ export function RecentProjects() {
       )}
     </section>
   );
+}
+
+function LastEditLine({ edit }: { readonly edit: EditSummary | undefined }) {
+  if (edit === undefined) return null;
+  return <span className="block font-mono text-ui-sm text-copy-muted">Last edit · {formatUsage(editFigures(edit))}</span>;
+}
+
+/** An edit still open has no totals worth showing on the home list yet. */
+function finishedEditsByProject(edits: readonly EditSummary[]): ReadonlyMap<string, EditSummary> {
+  return new Map(edits.filter((edit) => edit.status === "closed").map((edit) => [edit.projectId, edit]));
 }

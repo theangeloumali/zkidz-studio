@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { configDefaults, defineConfig } from "vitest/config";
@@ -6,6 +7,8 @@ import { APP_PORT, LOOPBACK_HOST } from "@zks/shared";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // shadcn components import through @/ (components.json); the app itself keeps relative imports.
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   build: {
     // The CSP is font-src 'self'; Vite would inline the <4 KB cyrillic-ext woff2 as a data: URL, which it blocks.
     assetsInlineLimit: (filePath) => (/\.woff2?$/.test(filePath) ? false : undefined),

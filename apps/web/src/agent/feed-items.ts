@@ -1,8 +1,9 @@
 // Created by The Angelo Umali.
 import type { StudioEvent } from "@zks/shared";
+import { stageLabelFor } from "../render/job-display.ts";
 import { describeNote, formatEta, type EventOf, type FeedNote } from "./feed-notes.ts";
 
-type CardEvent = EventOf<"question.asked" | "approval.requested" | "cuts.proposed" | "session.error">;
+type CardEvent = EventOf<"question.asked" | "approval.requested" | "cuts.proposed" | "lessons.suggested" | "session.error">;
 type ToolEvent = EventOf<"tool.started" | "tool.called" | "tool.finished" | "tool.heartbeat">;
 type JobEvent = EventOf<"job.queued" | "job.started" | "job.finished" | "job.progress">;
 
@@ -32,6 +33,7 @@ export type FeedItem =
   | { readonly kind: "approval"; readonly key: string; readonly event: EventOf<"approval.requested"> }
   | { readonly kind: "question"; readonly key: string; readonly event: EventOf<"question.asked"> }
   | { readonly kind: "cuts"; readonly key: string; readonly event: EventOf<"cuts.proposed"> }
+  | { readonly kind: "lessons"; readonly key: string; readonly event: EventOf<"lessons.suggested"> }
   | { readonly kind: "error"; readonly key: string; readonly event: EventOf<"session.error"> }
   | ({ readonly kind: "note"; readonly key: string } & FeedNote);
 
@@ -43,6 +45,8 @@ function cardItem(event: CardEvent, key: string): FeedItem {
       return { kind: "approval", key, event };
     case "cuts.proposed":
       return { kind: "cuts", key, event };
+    case "lessons.suggested":
+      return { kind: "lessons", key, event };
     default:
       return { kind: "error", key, event };
   }
@@ -58,7 +62,7 @@ function nextTool(current: ToolItem, event: ToolEvent): ToolItem {
 function nextJob(current: JobItem, event: JobEvent): JobItem {
   if (event.type === "job.progress") {
     const eta = event.etaS === undefined ? "" : ` · ${formatEta(event.etaS)}`;
-    return { ...current, status: "running", progress: `${event.stage} ${Math.round(event.pct)}%${eta}` };
+    return { ...current, status: "running", progress: `${stageLabelFor(current.jobKind, event.stage)} ${Math.round(event.pct)}%${eta}` };
   }
   return { ...current, jobKind: event.kind, status: event.status, progress: event.type === "job.finished" ? null : current.progress };
 }
@@ -71,11 +75,14 @@ class FeedBuilder {
   add(event: StudioEvent, order: number): void {
     const key = `${event.type}-${event.id ?? `p${order}`}`;
     switch (event.type) {
+      // usage.reported drives the edit meter, not the feed.
       case "resync":
+      case "usage.reported":
         return;
       case "question.asked":
       case "approval.requested":
       case "cuts.proposed":
+      case "lessons.suggested":
       case "session.error":
         this.items.push(cardItem(event, key));
         return;

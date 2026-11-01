@@ -36,6 +36,8 @@ const LABELS: Readonly<Record<string, string>> = {
   chrome: "Chrome",
   models: "Transcription models",
   claude: "Claude Code",
+  codex: "Codex",
+  opencode: "OpenCode",
   "node-pty": "Terminal support",
   disk: "Disk space",
   wsl: "WSL filesystem",

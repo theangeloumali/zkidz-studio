@@ -15,7 +15,7 @@ import {
   recordRejectedCandidates,
   holdCutReviewCard,
 } from "../cut-review.ts";
-import { findProjectAsset, loadProject } from "../project-files.ts";
+import { findFootageAsset, loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 import { readCurrentSpec, writeAgentSpec } from "../spec-store.ts";
 import { readLatestWords } from "../transcript-store.ts";
@@ -73,7 +73,7 @@ const validateSpec = implementTool("validate_spec", {
 
 async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<string[]> {
   const errors: string[] = [];
-  await findProjectAsset(context, cuts.sourceAssetId).catch((error: unknown) => errors.push(error instanceof Error ? error.message : String(error)));
+  await findFootageAsset(context, cuts.sourceAssetId).catch((error: unknown) => errors.push(error instanceof Error ? error.message : String(error)));
   cuts.removals.forEach((removal, removalIndex) => {
     if (removal.end > cuts.durationS) errors.push(`removal ${removalIndex} ends after the source (${cuts.durationS} s)`);
     if (removal.fromCandidate === undefined) return;

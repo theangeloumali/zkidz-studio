@@ -49,6 +49,11 @@ export function buildAgentEnv(mode: AgentAuthMode, options: AgentEnvOptions): Re
   };
 }
 
+/** The session's bridge tokens, the only secrets a terminal agent's child gets. */
+export function terminalTokenEnv(tokens: TerminalTokens): Record<string, string> {
+  return { ZKS_HOOK_TOKEN: tokens.hookToken, ZKS_MCP_TOKEN: tokens.mcpToken, ZKS_MCP_URL: tokens.mcpUrl };
+}
+
 function credentialEnv(mode: AgentAuthMode, studioHome: string): Record<string, string> {
   switch (mode.kind) {
     case "apiKey":
@@ -59,13 +64,7 @@ function credentialEnv(mode: AgentAuthMode, studioHome: string): Record<string, 
     }
     case "terminal":
       // Mode T runs on the user's own Claude Code login: no credential and no config dir override (§6.3).
-      return {
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        ZKS_HOOK_TOKEN: mode.tokens.hookToken,
-        ZKS_MCP_TOKEN: mode.tokens.mcpToken,
-        ZKS_MCP_URL: mode.tokens.mcpUrl,
-      };
+      return { TERM: "xterm-256color", COLORTERM: "truecolor", ...terminalTokenEnv(mode.tokens) };
     default:
       return assertNever(mode);
   }

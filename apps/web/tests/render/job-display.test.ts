@@ -16,6 +16,18 @@ describe("stageRowsFor", () => {
     ]);
   });
 
+  // Ingest's "audio" step is not the export's audio mix: an ingest shows its own steps, never an export's.
+  it("shows an ingest's own steps, not the export pipeline", () => {
+    const rows = stageRowsFor(makeJob({ kind: "ingest", stage: "audio", pct: 40 }));
+
+    expect(rows.map((row) => [row.label, row.state, row.pct])).toEqual([
+      ["Joining clips", "done", 100],
+      ["Preparing audio", "running", 40],
+      ["Review copy", "waiting", 0],
+    ]);
+    expect(jobTitle(makeJob({ kind: "ingest" }))).toBe("Preparing footage");
+  });
+
   it("folds the engine's events stage into Sound effects", () => {
     const rows = stageRowsFor(makeJob({ stage: "events", pct: 10 }));
 

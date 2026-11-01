@@ -127,3 +127,42 @@ test("a themed table answers own-key checks like the plain object it stands for"
   assert.equal(Object.hasOwn(scope.CARD_TONES, "missing"), false);
   assert.deepEqual(Object.keys(scope.SIDE_TINTS), ["0", "1"]);
 });
+
+// A project style (work/style.json) over a pack: colours and bundled faces only, never the pack's components or intro.
+const PROJECT_STYLE = { theme: "zkidz", tokens: { gold: "#ff3366" }, type: { display: "Inter" }, boil: false };
+
+test("a project style recolours tokens, swaps a role's face and turns boil off, keeping the pack's components", () => {
+  const pack = loadTheme("zkidz");
+  const styled = loadTheme({ id: "zkidz", style: PROJECT_STYLE });
+  assert.equal(styled.tokens.gold, "#ff3366");
+  assert.equal(styled.tokens.ink, pack.tokens.ink);
+  assert.deepEqual(styled.type.display, { ...pack.type.display, family: "Inter" });
+  assert.equal(styled.boil, false);
+  assert.deepEqual(styled.components, pack.components);
+  assert.equal(styled.intro, pack.intro);
+  assert.equal(loadTheme("zkidz").tokens.gold, pack.tokens.gold, "the pack itself is left as it was");
+});
+
+test("a styled theme reaches the canvas palette and type", () => {
+  const { scope, applyTheme } = canvasBrand();
+  applyTheme(loadTheme({ id: "zkidz", style: PROJECT_STYLE }));
+  try {
+    assert.equal(scope.BRAND.gold, "#ff3366");
+    assert.equal(scope.TYPE.display.family, "Inter");
+  } finally {
+    applyTheme(loadTheme("zkidz"));
+  }
+});
+
+test("a project style is refused when it reaches past colours and bundled faces", () => {
+  const refused = [
+    [{ ...PROJECT_STYLE, tokens: { sparkle: "#00ff00" } }, /sparkle/],
+    [{ ...PROJECT_STYLE, tokens: { gold: "url(https://example.com/x.png)" } }, /colour/],
+    [{ ...PROJECT_STYLE, type: { body: "Comic Sans MS" } }, /Comic Sans MS/],
+    [{ ...PROJECT_STYLE, type: { headline: "Inter" } }, /headline/],
+    [{ ...PROJECT_STYLE, boil: "yes" }, /boil/],
+    [{ ...PROJECT_STYLE, components: {} }, /components/],
+    [{ ...PROJECT_STYLE, theme: "minimal" }, /minimal/],
+  ];
+  for (const [style, message] of refused) assert.throws(() => loadTheme({ id: "zkidz", style }), message, JSON.stringify(style));
+});

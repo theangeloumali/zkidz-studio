@@ -1,5 +1,6 @@
 // Created by The Angelo Umali.
 import type { CutSpec } from "@zks/shared";
+import { screen } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlaybackClock } from "../src/editor/playback-clock.ts";
@@ -85,5 +86,29 @@ describe("PreviewPlayer", () => {
     presentFrame(first, 9.99);
     expect(second.dataset.active).toBe("true");
     expect(first.dataset.active).toBe("false");
+  });
+
+  it("plays the original through the proxy before any cut spec exists", () => {
+    const clock = createPlaybackClock({ durationS: 10, ...manualTime() });
+    const { container } = renderWithProviders(
+      <PreviewPlayer cuts={null} spans={[{ at: 0, end: 10 }]} composition={null} clock={clock} footageUrl={PROXY_URL} />,
+    );
+    expect([...container.querySelectorAll("video")].map((video) => video.getAttribute("src"))).toEqual([PROXY_URL, PROXY_URL]);
+    expect(screen.queryByText("Add a clip to see it here.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /play/i })).toBeEnabled();
+  });
+
+  it("shows a preparing state while the source is still being ingested", () => {
+    const clock = createPlaybackClock({ durationS: 0, ...manualTime() });
+    renderWithProviders(<PreviewPlayer cuts={null} spans={[]} composition={null} clock={clock} footageUrl={undefined} preparing />);
+    expect(screen.getByText("Preparing your video…")).toBeInTheDocument();
+    expect(screen.queryByText("Add a clip to see it here.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the add-a-clip message when there is no media at all", () => {
+    const clock = createPlaybackClock({ durationS: 0, ...manualTime() });
+    renderWithProviders(<PreviewPlayer cuts={null} spans={[]} composition={null} clock={clock} footageUrl={undefined} />);
+    expect(screen.getByText("Add a clip to see it here.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /play/i })).toBeDisabled();
   });
 });

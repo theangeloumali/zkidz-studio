@@ -5,12 +5,12 @@ import { access, chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { APP_PORT, ENV, PREVIEW_PORT } from "@zks/shared";
-import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
+import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS, type ToolName } from "@zks/shared/node";
 
 export const PROJECT_DIRS = ["media", "work", "progress", "deliverables"] as const;
 const OWNER_ONLY_MODE = 0o700;
 const MAX_PORT = 65535;
-const SETUP_HINT = "Run: pnpm zks setup";
+export const SETUP_HINT = "Run: pnpm zks setup";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -35,7 +35,7 @@ export function loadServerConfig(env: Environment): ServerConfig {
     previewPort,
     databaseUrl: env[ENV.databaseUrl] || undefined,
     isContainer: env[ENV.container] === "1",
-    ffprobePath: ffprobeBeside(pinnedFfmpegPath(env, studioHome)),
+    ffprobePath: ffprobeBeside(pinnedToolPath(env, studioHome, "ffmpeg")),
   };
 }
 
@@ -79,12 +79,16 @@ function parsePort(envName: string, rawPort: string | undefined, defaultPort: nu
 }
 
 /** ZKS_FFMPEG wins; otherwise the same lookup `zks setup` installs into (ZKS_HOME/tools, or Homebrew on macOS). */
-function pinnedFfmpegPath(env: Environment, studioHome: string): string {
-  const overridePath = env[ENV.ffmpeg];
+export const PINNED_TOOL_ENV = { ffmpeg: ENV.ffmpeg, "chrome-headless-shell": ENV.chrome } as const satisfies Partial<Record<ToolName, string>>;
+export type PinnedToolName = keyof typeof PINNED_TOOL_ENV;
+
+/** An explicit env path (ZKS_FFMPEG, ZKS_CHROME) wins; else where `zks setup` pins the tool, which may not be on disk yet. */
+export function pinnedToolPath(env: Environment, studioHome: string, toolName: PinnedToolName): string {
+  const overridePath = env[PINNED_TOOL_ENV[toolName]];
   if (overridePath) return overridePath;
-  const ffmpegPath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, "ffmpeg");
-  if (!ffmpegPath) throw new Error(`ffmpeg is not installed. ${SETUP_HINT}`);
-  return ffmpegPath;
+  const toolPath = pinnedExecutablePath({ toolsDir: join(studioHome, "tools"), platform: platformKey(), lock: loadToolsLock() }, toolName);
+  if (!toolPath) throw new Error(`${toolName} is not installed. ${SETUP_HINT}`);
+  return toolPath;
 }
 
 function ffprobeBeside(ffmpegPath: string): string {

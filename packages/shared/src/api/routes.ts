@@ -6,12 +6,14 @@ import {
   ConnectionSchema,
   DeliverableSchema,
   DoctorCheckSchema,
+  EditSummarySchema,
   JobSchema,
   MediaAssetSchema,
   PROJECT_TITLE_MAX_CHARS,
   ProjectSchema,
   ProjectSettingsSchema,
   ProjectSettingsUpdateSchema,
+  ProjectStyleSchema,
   RULE_TEXT_MAX_CHARS,
   RuleSchema,
   SettingsSchema,
@@ -75,7 +77,14 @@ export const API_ROUTES = {
   killSession: { method: "POST", path: "/api/projects/:projectId/kill", body: null, response: OkSchema },
 
   listMedia: { method: "GET", path: "/api/projects/:projectId/media", response: z.strictObject({ assets: z.array(MediaAssetSchema) }) },
-  uploadMedia: { method: "POST", path: "/api/projects/:projectId/media", body: "binary", response: MediaAssetSchema },
+  /** `?kind=reference` registers a video as a look to match (sample_reference), never as footage. */
+  uploadMedia: {
+    method: "POST",
+    path: "/api/projects/:projectId/media",
+    query: z.strictObject({ kind: z.literal("reference").optional() }),
+    body: "binary",
+    response: MediaAssetSchema,
+  },
   /** uploadMedia plus PROJECT_TITLE_HEADER: the project exists only if the clip is accepted. */
   createProjectWithMedia: { method: "POST", path: "/api/projects/media", body: "binary", response: ProjectWithAssetSchema },
   /** A file used where it lies, never copied: the project exists only if the file is accepted. */
@@ -147,6 +156,18 @@ export const API_ROUTES = {
     body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
     response: ConnectionSchema,
   },
+  connectCodexTerminal: {
+    method: "POST",
+    path: "/api/connect/codex-terminal",
+    body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
+    response: ConnectionSchema,
+  },
+  connectOpenCodeTerminal: {
+    method: "POST",
+    path: "/api/connect/opencode-terminal",
+    body: z.strictObject({ hasAcceptedDisclosure: z.literal(true) }),
+    response: ConnectionSchema,
+  },
 
   /** The server caches the checks; `?refresh=1` runs them again. */
   getDoctor: {
@@ -163,6 +184,19 @@ export const API_ROUTES = {
   terminalSocket: { method: "GET", path: "/api/terminal/:sessionId/ws", query: TerminalSocketQuerySchema, response: "websocket" },
   /** Called by the PTY's Claude Code with `Authorization: Bearer $ZKS_HOOK_TOKEN`, not by the browser. */
   terminalHooks: { method: "POST", path: "/api/terminal/:sessionId/hooks", body: HookPayloadSchema, response: HookResponseSchema },
+
+  /** The project's look over its theme; null until a style is set (slice D). */
+  getProjectStyle: { method: "GET", path: "/api/projects/:projectId/style", response: z.strictObject({ style: ProjectStyleSchema.nullable() }) },
+  setProjectStyle: {
+    method: "PUT",
+    path: "/api/projects/:projectId/style",
+    body: z.strictObject({ style: ProjectStyleSchema.nullable() }),
+    response: z.strictObject({ style: ProjectStyleSchema.nullable() }),
+  },
+  /** Newest first (slice E). */
+  listEdits: { method: "GET", path: "/api/projects/:projectId/edits", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
+  /** Each project's newest edit, for the home list. */
+  latestEdits: { method: "GET", path: "/api/edits/latest", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
 
   getProjectSettings: { method: "GET", path: "/api/projects/:projectId/settings", response: ProjectSettingsSchema },
   updateProjectSettings: { method: "PUT", path: "/api/projects/:projectId/settings", body: ProjectSettingsUpdateSchema, response: ProjectSettingsSchema },

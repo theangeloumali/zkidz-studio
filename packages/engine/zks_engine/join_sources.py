@@ -23,13 +23,17 @@ from .specs.paths import inside_project
 
 SIZE = (2160, 3840)
 HDR_TRANSFERS = {"arib-std-b67", "smpte2084"}
-SCALE = (f"libplacebo=w={SIZE[0]}:h={SIZE[1]}:upscaler=ewa_lanczos:downscaler=ewa_lanczos:colorspace=bt709:color_primaries=bt709:"
-         "color_trc=bt709:range=tv:format=yuv420p")
+SCALE_TO = ("libplacebo=w={}:h={}:upscaler=ewa_lanczos:downscaler=ewa_lanczos:colorspace=bt709:color_primaries=bt709:"
+            "color_trc=bt709:range=tv:format=yuv420p")
+SCALE = SCALE_TO.format(*SIZE)
 # Picked on "Where to find clients" clip 3 (HLG + Dolby Vision 8.4) beside its SDR sibling: bt.2390 pushed skin red.
 TONEMAP = "tonemapping=bt.2446a:gamut_mode=perceptual:saturation=0.9:contrast=1.05"
 # The CPU stand-ins: zscale linearises, hable compresses the highlights, then BT.709 TV range.
 CPU_TONEMAP = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
-CPU_SCALE = f"scale={SIZE[0]}:{SIZE[1]}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p"
+CPU_SCALE_TO = "scale={}:{}:flags=lanczos:out_color_matrix=bt709:out_range=tv,format=yuv420p"
+CPU_SCALE = CPU_SCALE_TO.format(*SIZE)
+# #32: a frame wider than the canvas by more than this is letterboxed; a phone's 9:16 clip still fills it.
+WIDER_TOLERANCE = 1.01
 # What NVDEC decodes; anything else (ProRes, FFV1) decodes to system frames, as -hwaccel cuda would silently do.
 NVDEC_CODECS = {"h264", "hevc", "av1", "vp8", "vp9", "mpeg1video", "mpeg2video", "mpeg4", "vc1", "mjpeg"}
 MIN_PIECE_FRAMES = 1800  # a piece shorter than 60 s spends much of its time starting up
@@ -45,6 +49,7 @@ class Clip(NamedTuple):
     fps: tuple = (FPS_NUM, FPS_DEN)
     nvdec: bool = True
     audio: bool = True  # a phone clip can be silent; audio_command then pads silence for it
+    frame: tuple = SIZE  # the upright picture's display size (rotation and SAR applied), which decides the letterbox
 
 
 def probe(argument):
@@ -55,9 +60,37 @@ def probe(argument):
                                         *ffio.user_input_args(path)],
                                        capture_output=True, text=True, check=True).stdout)["streams"][0]
     num, _, den = stream["r_frame_rate"].partition("/")
+    video = probe_video(path)
+    rotation = rotation_of(video) % 360
     return Clip(Path(path), int(stream["nb_read_packets"]), stream.get("color_transfer") in HDR_TRANSFERS, float(zoom or 1),
-                "10" in stream["pix_fmt"], rotation_of(probe_video(path)) % 360, (int(num), int(den or 1)),
-                stream.get("codec_name") in NVDEC_CODECS, ffio.has_audio(path))
+                "10" in stream["pix_fmt"], rotation, (int(num), int(den or 1)),
+                stream.get("codec_name") in NVDEC_CODECS, ffio.has_audio(path), display_frame(video, rotation))
+
+
+def display_frame(video, rotation):
+    """Width x height as shown upright: non-square pixels widen the frame, and a quarter turn swaps the sides."""
+    width, height = video.get("width"), video.get("height")
+    if not width or not height:
+        return SIZE
+    sar_num, _, sar_den = str(video.get("sample_aspect_ratio", "1:1")).partition(":")
+    if sar_num.isdigit() and sar_den.isdigit() and int(sar_num) and int(sar_den):
+        width = width * int(sar_num) / int(sar_den)
+    return (height, width) if rotation in (90, 270) else (width, height)
+
+
+def fitted(clip):
+    """The picture's size on the canvas: all of it for 9:16 or taller, and 2160 wide with bars above and below for a
+    wider frame (#32), which used to be stretched into non-square pixels the upright check refused."""
+    width, height = clip.frame
+    if width * SIZE[1] <= height * SIZE[0] * WIDER_TOLERANCE:
+        return SIZE
+    return SIZE[0], round(SIZE[0] * height / width / 2) * 2
+
+
+def letterbox(clip):
+    """Centres a fitted picture on the black canvas; nothing for a picture that already fills it."""
+    height = fitted(clip)[1]
+    return "" if height == SIZE[1] else f"pad={SIZE[0]}:{SIZE[1]}:0:{(SIZE[1] - height) // 2}:color=black,setsar=1"
 
 
 def common_rate(clips):
@@ -80,21 +113,24 @@ def pieces(clips, jobs):
 
 def picture(clip):
     crop = f":crop_w=iw/{clip.zoom}:crop_h=ih/{clip.zoom}:crop_x=(iw-iw/{clip.zoom})/2:crop_y=0" if clip.zoom != 1 else ""
-    return SCALE + crop + (f":{TONEMAP}" if clip.hdr else "")
+    return chain(SCALE_TO.format(*fitted(clip)) + crop + (f":{TONEMAP}" if clip.hdr else ""), letterbox(clip))
 
 
 def cpu_picture(clip):
     crop = f"crop=iw/{clip.zoom}:ih/{clip.zoom}:(iw-iw/{clip.zoom})/2:0" if clip.zoom != 1 else ""
-    return chain(crop, CPU_TONEMAP if clip.hdr else "", CPU_SCALE)
+    return chain(crop, CPU_TONEMAP if clip.hdr else "", CPU_SCALE_TO.format(*fitted(clip)), letterbox(clip))
 
 
 def cuda_picture(clip):
     """picture() on CUDA. scale_cuda ignores a crop on CUDA frames, so a zoom scales up on CUDA and crops its top-centre
     window after download: a CPU crop moves no pixels, and overlay_cuda would pad the width to 2176."""
+    width, height = fitted(clip)
+    # No pad_cuda in the pinned ffmpeg: a letterboxed picture pads after download, as a zoom crops there.
+    download = "hwdownload,format=yuv420p" if clip.zoom != 1 or height != SIZE[1] else ""
     if clip.zoom == 1:
-        return GPU_SCALE.format(*SIZE)
-    big_w, big_h = (round(side * clip.zoom / 2) * 2 for side in SIZE)
-    return chain(GPU_SCALE.format(big_w, big_h), "hwdownload,format=yuv420p", f"crop={SIZE[0]}:{SIZE[1]}:{(big_w - SIZE[0]) // 2}:0")
+        return chain(GPU_SCALE.format(width, height), download, letterbox(clip))
+    big_w, big_h = (round(side * clip.zoom / 2) * 2 for side in (width, height))
+    return chain(GPU_SCALE.format(big_w, big_h), download, f"crop={width}:{height}:{(big_w - width) // 2}:0", letterbox(clip))
 
 
 def cuda_route(backend):

@@ -42,7 +42,7 @@ describe("buildTerminalArgs", () => {
     expect(valueAfter(args, "--add-dir")).toBe(baseRun.pluginDir);
     expect(valueAfter(args, "--tools")).toBe("Read,Skill,AskUserQuestion");
     expect(valueAfter(args, "--disallowedTools")).toBe("Bash,Edit,Write,WebFetch,WebSearch,Agent");
-    expect(valueAfter(args, "--permission-mode")).toBe("default");
+    expect(valueAfter(args, "--permission-mode")).toBe("auto");
     expect(valueAfter(args, "--model")).toBe("haiku");
   });
 

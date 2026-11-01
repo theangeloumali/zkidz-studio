@@ -70,13 +70,25 @@ meaning.
 > /login
 ```
 
-There is no cost meter in mode T. Type `/usage` in the pane to see your plan usage. Stop interrupts the current turn and keeps the
-session. If the terminal closes, Restart opens it again. Reopening a project resumes its session.
+Claude Code starts in auto mode, so it works without asking before each routine step. If your account or model can't use auto
+mode, Claude Code starts in Manual instead, without an error. In both modes the studio's own rules still block any tool it doesn't
+allow.
+
+When Claude asks you something, such as which opening to use, the question shows as a card in the Activity tab. Pick an answer,
+type your own under Other, or press "Use Claude's picks" to go with what Claude recommends. While the card waits, the terminal
+shows that a hook is running. If nobody answers within the hour, the question moves to the terminal. Claude's notes appear in
+Activity as it writes them.
+
+The agent pane shows the edit's time, an estimated cost and the tokens used, from Claude Code's own status line and this session's
+transcript. On a Claude subscription the cost is what the same work would cost on the API, not what you pay; type `/usage` in the
+pane to see your plan usage. Stop interrupts the current turn and keeps the session. If the terminal closes, Restart opens it again.
+Reopening a project resumes its session.
 
 What the app never does in mode T:
 
 - offer or build its own Claude login;
-- read or store your credentials, the OS keychain entry, or anything in `~/.claude`;
+- read or store your credentials, the OS keychain entry, or anything in `~/.claude` except this session's own transcript, of which
+  it keeps only the token counts;
 - pass on or proxy any token;
 - change the Claude Code program;
 - run Claude for anyone except the person at this computer;

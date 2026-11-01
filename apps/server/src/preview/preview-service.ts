@@ -45,11 +45,17 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
   const latestPreviews = new Map<string, PlayerEdl["preview"]>();
   let buildCount = 0;
 
+  const openVideoIdsOf = (projectId: string) => {
+    const prefix = videoKeyOf(projectId, "");
+    return [...openVideoKeys].filter((videoKey) => videoKey.startsWith(prefix)).map((videoKey) => videoKey.slice(prefix.length));
+  };
+
   const watchProject = (projectId: string) => {
     if (watchedProjectIds.has(projectId)) return;
     watchedProjectIds.add(projectId);
     deps.eventBus.subscribe([projectId], (event) => {
       if (event.type === "spec.version" && openVideoKeys.has(videoKeyOf(projectId, event.videoId))) requestBuild(projectId, event.videoId);
+      if (event.type === "style.changed") for (const videoId of openVideoIdsOf(projectId)) requestBuild(projectId, videoId);
     });
   };
 

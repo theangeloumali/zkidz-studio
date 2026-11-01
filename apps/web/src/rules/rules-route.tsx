@@ -35,7 +35,7 @@ function NewRuleForm({ onAdded }: { readonly onAdded: () => void }) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const create = useMutation({
-    mutationFn: addRule,
+    mutationFn: (text: string) => addRule(text),
     onSuccess: () => {
       setText("");
       onAdded();

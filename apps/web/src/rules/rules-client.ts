@@ -14,8 +14,10 @@ async function fetchRules() {
 
 export const rulesQuery = () => queryOptions({ queryKey: rulesQueryKey, queryFn: fetchRules });
 
-export function addRule(text: string) {
-  return requestJson(createRule.response, createRule.path, { method: createRule.method, body: { text } });
+/** `sourceQuote` records where a rule came from, e.g. the lesson card an edit suggested it on. */
+export function addRule(text: string, sourceQuote?: string) {
+  const body = sourceQuote === undefined ? { text } : { text, sourceQuote };
+  return requestJson(createRule.response, createRule.path, { method: createRule.method, body });
 }
 
 export function removeRule(ruleId: string) {

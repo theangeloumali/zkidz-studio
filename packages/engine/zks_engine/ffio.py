@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 PROTOCOLS = "file,pipe"
@@ -17,6 +18,7 @@ SNIFF_BYTES = 4096
 SEQUENCE = re.compile(r"%\d*d")
 URL_LIKE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+:")  # a scheme or protocol; a drive letter (C:) is one letter
 HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
+POLL_S = 1.0  # between reads of a running ffmpeg's -progress file; Job.update throttles its own writes
 
 
 class MediaRejected(ValueError):
@@ -136,3 +138,46 @@ def probe(path):
         "audio": {"rate": int(audio["sample_rate"]), "channels": int(audio["channels"])} if audio else None,
         "vfr": rational(video.get("avg_frame_rate")) not in ((num, den), (0, 0)),
     }
+
+
+def has_audio(path):
+    probe = subprocess.run([ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
+                            *user_input_args(path)],
+                           capture_output=True, text=True, check=True)
+    return bool(probe.stdout.strip())
+
+
+def last_progress_value(report, key):
+    """The last numeric `key=` in an ffmpeg -progress file, or 0 before its first block (or while ffmpeg prints N/A)."""
+    try:
+        values = re.findall(rf"^{key}=(\d+)", report.read_text(encoding="utf-8"), re.M)
+    except OSError:
+        return 0
+    return int(values[-1]) if values else 0
+
+
+def seconds_written(report):
+    """The media seconds in an ffmpeg -progress file's last block."""
+    return last_progress_value(report, "out_time_us") / 1_000_000
+
+
+def run_reporting(command, on_seconds):
+    """subprocess.run(check=True) for an ffmpeg command whose last argument is its output, calling on_seconds with the media
+    seconds written every POLL_S while it runs. An error in the callback kills the command instead of leaving it encoding."""
+    with tempfile.TemporaryDirectory() as folder:
+        report = Path(folder) / "ffmpeg.progress"
+        process = subprocess.Popen([*command[:-1], "-progress", str(report), command[-1]])
+        try:
+            while True:
+                try:
+                    process.wait(POLL_S)
+                    break
+                except subprocess.TimeoutExpired:
+                    on_seconds(seconds_written(report))
+            on_seconds(seconds_written(report))
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command)

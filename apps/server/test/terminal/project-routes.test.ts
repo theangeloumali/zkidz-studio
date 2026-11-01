@@ -78,6 +78,31 @@ describe("project terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () =>
     expect(API_ROUTES.openTerminal.response.parse(opened.body)).toEqual({ sessionId: liveSession(opened.body.sessionId).sessionId });
   });
 
+  it("opens the connected agent: Codex gets no Claude model and no resume, and the session records its own mode", async () => {
+    await writeConnection(database.db, { mode: "codex_terminal" });
+    const opened: Parameters<TerminalFixture["sessions"]["open"]>[0][] = [];
+    const recordingOpener = createProjectTerminalOpener({
+      database: database.db,
+      studioHome: fixture.studioHome,
+      model: "haiku",
+      sessions: {
+        findByProject: () => undefined,
+        open: (request) => {
+          opened.push(request);
+          return fixture.sessions.open({ ...request, agentKind: "claude" });
+        },
+      },
+    });
+    const [project] = await database.db.select().from(projects);
+    if (project === undefined) throw new Error("no project");
+
+    const session = await recordingOpener(project);
+
+    expect(opened).toEqual([expect.objectContaining({ projectId, agentKind: "codex", model: undefined })]);
+    expect(opened[0]).not.toHaveProperty("resumeSessionId");
+    expect(await database.db.select().from(agentSessions)).toEqual([expect.objectContaining({ sdkSessionId: session.sessionId, authMode: "codex_terminal" })]);
+  });
+
   it("refuses to open a terminal until mode T is connected, and 404s an unknown project", async () => {
     expect((await openTerminal()).status).toBe(409);
     await writeConnection(database.db, { mode: "api_key", keyLast4: "abcd" });

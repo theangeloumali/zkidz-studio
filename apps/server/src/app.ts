@@ -7,9 +7,12 @@ import type { StudioDatabase } from "@zks/db";
 import { Hono } from "hono";
 import type { AgentServices } from "./agent-services.ts";
 import { registerDoctorRoutes, type DoctorRouteDeps } from "./doctor/routes.ts";
+import type { EditRecorder } from "./edits/edit-recorder.ts";
+import { registerEdits } from "./edits/routes.ts";
 import type { EventBus } from "./events/event-bus.ts";
 import { errorBody, notFound, toHttpError } from "./http/http-error.ts";
 import { registerJsonBodyLimit } from "./http/json-body-limit.ts";
+import type { AutoIngest } from "./jobs/auto-ingest.ts";
 import { registerDeliverableRoutes, type FolderOpener } from "./jobs/deliverable-routes.ts";
 import { registerJobControlRoutes } from "./jobs/job-control-routes.ts";
 import type { JobRunner } from "./jobs/job-runner.ts";
@@ -25,6 +28,7 @@ import { registerMediaStreamRoute } from "./routes/media-stream.ts";
 import { registerMediaRoutes } from "./routes/media.ts";
 import { registerProjectRoutes } from "./routes/projects.ts";
 import { registerRuleRoutes } from "./rules/routes.ts";
+import { registerStyleRoutes } from "./routes/style.ts";
 import type { Security } from "./security/index.ts";
 import { registerSpecRoutes } from "./specs/spec-routes.ts";
 
@@ -38,6 +42,9 @@ export interface AppDependencies {
   readonly webDistDir: string;
   readonly logger: Logger;
   readonly jobRunner: Pick<JobRunner, "resume">;
+  readonly editRecorder: EditRecorder;
+  /** Starts the ingest of a project's first uploads; main.ts passes it. */
+  readonly autoIngest?: AutoIngest;
   /** The Phase 2 connect, agent, terminal and studio-tool routes; main.ts always passes it. */
   readonly agent?: Pick<AgentServices, "registerRoutes"> & Partial<Pick<AgentServices, "pendingCards">>;
   /** GET /api/doctor; main.ts always passes it. */
@@ -62,6 +69,8 @@ export function createApp(deps: AppDependencies): Hono {
   registerJobRoutes(app, deps.database);
   registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
+  registerEdits(app, deps);
+  registerStyleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });
   deps.onboarding?.registerRoutes(app);

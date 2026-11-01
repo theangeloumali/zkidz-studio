@@ -1,0 +1,307 @@
+// Created by The Angelo Umali.
+// Turns the event stream into edit rows: open on the first agent activity, close on a delivered export (plan 2026-10-29, slice E).
+import type { StudioDatabase } from "@zks/db";
+import { agentSessions, edits, projects } from "@zks/db/schema";
+import { AgentKindSchema, UsageSourceSchema, type AgentKind, type StudioEvent, type StudioEventType, type UsageSource, agentKindOfAuthMode } from "@zks/shared";
+import { eq } from "drizzle-orm";
+import { readConnection } from "../auth/connection-store.ts";
+import type { EventBus } from "../events/event-bus.ts";
+import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
+import type { Logger } from "../logging/logger.ts";
+import { readEditFacts } from "./edit-facts.ts";
+import { listOpenEdits, numberOrNull, type EditRow } from "./edit-store.ts";
+import { UsageLedger, type UsageReading } from "./usage-ledger.ts";
+
+const HANDLED_EVENTS: ReadonlySet<StudioEventType> = new Set([
+  "session.started",
+  "prompt.submitted",
+  "tool.called",
+  "turn.completed",
+  "usage.reported",
+  "job.finished",
+]);
+const DEFAULT_PERSIST_INTERVAL_MS = 2000;
+
+export interface EditRecorderDeps {
+  readonly database: StudioDatabase;
+  readonly eventBus: EventBus;
+  readonly logger: Logger;
+  readonly persistIntervalMs?: number;
+}
+
+interface OpenEdit {
+  readonly id: string;
+  readonly videoId: string;
+  readonly startedAt: Date;
+  agentKind: AgentKind;
+  turns: number;
+  answers: Record<string, string>;
+}
+
+interface ProjectState {
+  readonly ledger: UsageLedger;
+  currentSessionId: string | undefined;
+  openEdit: OpenEdit | undefined;
+  /** Set when an export closes an edit, so that turn's tail does not open the next one. */
+  isClosedMidTurn: boolean;
+  /** The edit an export just closed: the rest of that turn's usage still lands on it, until the next edit opens. */
+  closingEditId: string | undefined;
+}
+
+export class EditRecorder {
+  readonly #database: StudioDatabase;
+  readonly #eventBus: EventBus;
+  readonly #logger: Logger;
+  readonly #persistIntervalMs: number;
+  readonly #projects = new Map<string, ProjectState>();
+  readonly #dirtyProjectIds = new Set<string>();
+  #queue: Promise<void> = Promise.resolve();
+  #persistTimer: NodeJS.Timeout | undefined;
+  #isStopped = false;
+  #unsubscribe: (() => void) | undefined;
+
+  constructor(deps: EditRecorderDeps) {
+    this.#database = deps.database;
+    this.#eventBus = deps.eventBus;
+    this.#logger = deps.logger;
+    this.#persistIntervalMs = deps.persistIntervalMs ?? DEFAULT_PERSIST_INTERVAL_MS;
+  }
+
+  /** Recovery is queued first, so events that arrive meanwhile wait for it. */
+  start(): Promise<void> {
+    const recovered = this.#enqueue(() => this.#recoverOpenEdits());
+    this.#unsubscribe = this.#eventBus.subscribeAll((event) => {
+      // Streamed text arrives per token; only the events #handle reads join the queue.
+      if (HANDLED_EVENTS.has(event.type)) void this.#enqueue(() => this.#handle(event));
+    });
+    return recovered;
+  }
+
+  /** Saves what is pending, then runs nothing more: a query on a closed PGlite never returns and blocks the event loop. */
+  async stop(): Promise<void> {
+    this.#unsubscribe?.();
+    clearTimeout(this.#persistTimer);
+    this.#persistTimer = undefined;
+    await this.#enqueue(() => this.#persistDirty());
+    this.#isStopped = true;
+  }
+
+  /** Resolves once every event delivered so far has been handled. */
+  idle(): Promise<void> {
+    return this.#queue;
+  }
+
+  flush(): Promise<void> {
+    return this.#enqueue(() => this.#persistDirty());
+  }
+
+  /** The answers to an open edit's question cards; written at once since they are the user's words. */
+  recordAnswers(projectId: string, answers: Readonly<Record<string, string>>): Promise<void> {
+    return this.#enqueue(async () => {
+      const openEdit = this.#projects.get(projectId)?.openEdit;
+      if (openEdit === undefined) return;
+      openEdit.answers = { ...openEdit.answers, ...answers };
+      await this.#updateEdit(projectId, { facts: { cutReasons: [], answers: openEdit.answers } });
+    });
+  }
+
+  #enqueue(task: () => Promise<void>): Promise<void> {
+    if (this.#isStopped) return this.#queue;
+    this.#queue = this.#queue.then(task).catch((error: unknown) => this.#logger.error("edit recorder failed", { error }));
+    return this.#queue;
+  }
+
+  async #handle(event: StudioEvent): Promise<void> {
+    const state = this.#stateOf(event.projectId);
+    switch (event.type) {
+      case "session.started":
+        await this.#finishClosingEdit(state);
+        state.currentSessionId = event.sessionId;
+        state.isClosedMidTurn = false;
+        return this.#seedResumedSpend(state, event.sessionId);
+      case "prompt.submitted":
+        state.isClosedMidTurn = false;
+        return this.#countTurn(event.projectId, state);
+      case "tool.called":
+        return state.isClosedMidTurn ? undefined : this.#ensureOpen(event.projectId, state);
+      case "turn.completed":
+        return this.#completeTurn(event.projectId, state, event.costUsd);
+      case "usage.reported":
+        return this.#observe(event.projectId, state, event);
+      case "job.finished":
+        return event.kind === EXPORT_JOB_KIND && event.status === "succeeded" ? this.#deliver(event.projectId, state, event.jobId) : undefined;
+      default:
+        return undefined;
+    }
+  }
+
+  #stateOf(projectId: string): ProjectState {
+    const existing = this.#projects.get(projectId);
+    if (existing !== undefined) return existing;
+    const created: ProjectState = {
+      ledger: new UsageLedger(),
+      currentSessionId: undefined,
+      openEdit: undefined,
+      isClosedMidTurn: false,
+      closingEditId: undefined,
+    };
+    this.#projects.set(projectId, created);
+    return created;
+  }
+
+  /** A resumed SDK session reports its lifetime cost, so the part spent before this edit becomes its baseline. */
+  async #seedResumedSpend(state: ProjectState, sessionId: string): Promise<void> {
+    if (state.ledger.hasReading(sessionId, "sdk")) return;
+    const [session] = await this.#database
+      .select({ totalCostUsd: agentSessions.totalCostUsd })
+      .from(agentSessions)
+      .where(eq(agentSessions.sdkSessionId, sessionId));
+    const priorCostUsd = numberOrNull(session?.totalCostUsd ?? null);
+    if (priorCostUsd !== null) state.ledger.seed(sessionId, "sdk", { costUsd: priorCostUsd });
+  }
+
+  async #countTurn(projectId: string, state: ProjectState): Promise<void> {
+    if (state.openEdit === undefined) return this.#ensureOpen(projectId, state, 1);
+    state.openEdit.turns += 1;
+    this.#markDirty(projectId);
+  }
+
+  /** ASSUMPTION: no surface publishes both prompt.submitted and turn.completed for one turn, so each counts one. */
+  async #completeTurn(projectId: string, state: ProjectState, costUsd: number | undefined): Promise<void> {
+    if (state.isClosedMidTurn) state.isClosedMidTurn = false;
+    else await this.#countTurn(projectId, state);
+    if (costUsd === undefined || state.currentSessionId === undefined) return;
+    state.ledger.observe(state.currentSessionId, "sdk", { costUsd });
+    // A turn that opened the edit marked nothing dirty, so its cost is saved from here.
+    if (state.openEdit !== undefined || state.closingEditId !== undefined) this.#markDirty(projectId);
+  }
+
+  #observe(projectId: string, state: ProjectState, report: { readonly sessionId: string; readonly source: UsageSource } & UsageReading): void {
+    state.ledger.observe(report.sessionId, report.source, report);
+    if (state.openEdit === undefined) {
+      if (state.closingEditId !== undefined) this.#markDirty(projectId);
+      return;
+    }
+    const reportingAgent = AgentKindSchema.safeParse(report.source);
+    if (reportingAgent.success) state.openEdit.agentKind = reportingAgent.data;
+    this.#markDirty(projectId);
+  }
+
+  async #ensureOpen(projectId: string, state: ProjectState, turns = 0): Promise<void> {
+    if (state.openEdit !== undefined) return;
+    // Opening a tally ends the closed edit's: from here on its growth belongs to this edit.
+    await this.#finishClosingEdit(state);
+    const [project] = await this.#database.select({ videoId: projects.videoId }).from(projects).where(eq(projects.id, projectId));
+    if (project === undefined) return;
+    // The connected mode names the agent, so an edit that never reports usage still says who ran it.
+    const agentKind = agentKindOfAuthMode((await readConnection(this.#database))?.mode);
+    const [row] = await this.#database.insert(edits).values({ projectId, videoId: project.videoId, agentKind, turns }).returning();
+    if (row === undefined) throw new Error("edits insert returned no row");
+    // ASSUMPTION: an open edit marks the project "editing"; the export moves it to "delivered".
+    await this.#database.update(projects).set({ status: "editing" }).where(eq(projects.id, projectId));
+    state.openEdit = { id: row.id, videoId: row.videoId, startedAt: row.startedAt, agentKind, turns, answers: {} };
+    state.ledger.openEdit();
+  }
+
+  async #deliver(projectId: string, state: ProjectState, exportJobId: string): Promise<void> {
+    await this.#database.update(projects).set({ status: "delivered" }).where(eq(projects.id, projectId));
+    const openEdit = state.openEdit;
+    if (openEdit === undefined) return;
+    const finishedAt = new Date();
+    const totals = state.ledger.totals();
+    const facts = await readEditFacts(this.#database, { projectId, videoId: openEdit.videoId, answers: openEdit.answers });
+    await this.#updateEdit(projectId, { ...this.#runningValues(state, openEdit), status: "closed", finishedAt, exportJobId, facts });
+    state.openEdit = undefined;
+    state.closingEditId = openEdit.id;
+    state.isClosedMidTurn = true;
+    this.#dirtyProjectIds.delete(projectId);
+    const figures = Object.fromEntries(Object.entries(totals).filter((entry): entry is [string, number] => entry[1] !== null));
+    await this.#eventBus.publish({
+      type: "edit.closed",
+      projectId,
+      editId: openEdit.id,
+      ...figures,
+      durationMs: finishedAt.getTime() - openEdit.startedAt.getTime(),
+    });
+  }
+
+  #markDirty(projectId: string): void {
+    this.#dirtyProjectIds.add(projectId);
+    if (this.#persistTimer !== undefined || this.#isStopped) return;
+    this.#persistTimer = setTimeout(() => {
+      this.#persistTimer = undefined;
+      void this.flush();
+    }, this.#persistIntervalMs);
+    this.#persistTimer.unref();
+  }
+
+  async #persistDirty(): Promise<void> {
+    const projectIds = [...this.#dirtyProjectIds];
+    this.#dirtyProjectIds.clear();
+    for (const projectId of projectIds) {
+      const state = this.#projects.get(projectId);
+      if (state?.openEdit !== undefined) await this.#updateEdit(projectId, this.#runningValues(state, state.openEdit));
+      else if (state?.closingEditId !== undefined) await this.#database.update(edits).set(this.#usageValues(state)).where(eq(edits.id, state.closingEditId));
+    }
+  }
+
+  #runningValues(state: ProjectState, openEdit: OpenEdit) {
+    return { agentKind: openEdit.agentKind, turns: openEdit.turns, ...this.#usageValues(state) };
+  }
+
+  #usageValues(state: ProjectState) {
+    const totals = state.ledger.totals();
+    return {
+      costUsd: totals.costUsd === null ? null : totals.costUsd.toFixed(6),
+      costSource: state.ledger.costSource,
+      inputTokens: totals.inputTokens,
+      outputTokens: totals.outputTokens,
+      cacheTokens: totals.cacheTokens,
+    };
+  }
+
+  /** Saves the closed edit's last usage, then stops counting for it: the next edit or session takes it from here. */
+  async #finishClosingEdit(state: ProjectState): Promise<void> {
+    const editId = state.closingEditId;
+    if (editId === undefined) return;
+    state.closingEditId = undefined;
+    await this.#database.update(edits).set(this.#usageValues(state)).where(eq(edits.id, editId));
+    state.ledger.closeEdit();
+  }
+
+  /** A deleted project took its edit with it (cascade), so the recorder forgets the edit too. */
+  async #updateEdit(projectId: string, values: Partial<typeof edits.$inferInsert>): Promise<void> {
+    const state = this.#projects.get(projectId);
+    const editId = state?.openEdit?.id;
+    if (state === undefined || editId === undefined) return;
+    const [updated] = await this.#database.update(edits).set(values).where(eq(edits.id, editId)).returning({ id: edits.id });
+    if (updated === undefined) {
+      state.openEdit = undefined;
+      state.ledger.closeEdit();
+    }
+  }
+
+  async #recoverOpenEdits(): Promise<void> {
+    for (const row of await listOpenEdits(this.#database)) {
+      const state = this.#stateOf(row.projectId);
+      if (state.openEdit === undefined) this.#recover(state, row);
+    }
+  }
+
+  #recover(state: ProjectState, row: EditRow): void {
+    const agentKind = AgentKindSchema.safeParse(row.agentKind);
+    const costSource = UsageSourceSchema.safeParse(row.costSource);
+    state.openEdit = {
+      id: row.id,
+      videoId: row.videoId,
+      startedAt: row.startedAt,
+      agentKind: agentKind.success ? agentKind.data : "claude",
+      turns: row.turns,
+      answers: row.facts?.answers ?? {},
+    };
+    state.ledger.recoverEdit({
+      carried: { costUsd: numberOrNull(row.costUsd), inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheTokens: row.cacheTokens },
+      costSource: costSource.success ? costSource.data : null,
+    });
+  }
+}

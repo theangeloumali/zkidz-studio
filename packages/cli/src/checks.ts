@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { APP_PORT, ENV, LOOPBACK_HOST } from "@zks/shared";
+import { AGENT_MIN_VERSIONS, APP_PORT, ENV, isVersionAtLeast, LOOPBACK_HOST } from "@zks/shared";
 import { findOnPath } from "@zks/shared/node";
 import type { ZksContext } from "./context.ts";
 import { sha256File } from "./download.ts";
@@ -30,10 +30,6 @@ const MIN_FREE_GB = 20;
 const BYTES_PER_GB = 1024 ** 3;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const RENDER_TIMEOUT_MS = 60_000;
-// 2.1.295 added onFailure on HTTP hooks, which terminal mode relies on (plan §6.3).
-const MIN_CLAUDE_VERSION = [2, 1, 295] as const;
-const CLAUDE_INSTALL_URL = "https://code.claude.com/docs/en/setup";
-const CLAUDE_UPDATE_FIX = `terminal mode needs Claude Code ${MIN_CLAUDE_VERSION.join(".")}+: run claude update`;
 const HEVC_FAMILY = ["hevc_nvenc", "h264_nvenc", "hevc_videotoolbox", "hevc_qsv", "hevc_amf", "hevc_vaapi", "libx265", "libx264"];
 
 function firstLine(text: string): string {
@@ -158,33 +154,72 @@ export function checkModels(context: ZksContext): CheckResult {
   return { id: "models", status: "ok", required: true, detail: installed.join(", ") };
 }
 
+interface TerminalAgentCheck {
+  readonly id: string;
+  readonly command: string;
+  readonly label: string;
+  /** The oldest build the studio's lockdown flags were proven against. */
+  readonly minimum: string;
+  readonly installUrl: string;
+  readonly updateCommand: string;
+}
+
+const CLAUDE_CHECK: TerminalAgentCheck = {
+  id: "claude",
+  command: "claude",
+  label: "Claude Code",
+  minimum: AGENT_MIN_VERSIONS.claude,
+  installUrl: "https://code.claude.com/docs/en/setup",
+  updateCommand: "claude update",
+};
+const CODEX_CHECK: TerminalAgentCheck = {
+  id: "codex",
+  command: "codex",
+  label: "Codex",
+  minimum: AGENT_MIN_VERSIONS.codex,
+  installUrl: "https://developers.openai.com/codex/cli",
+  updateCommand: "codex update",
+};
+const OPENCODE_CHECK: TerminalAgentCheck = {
+  id: "opencode",
+  command: "opencode",
+  label: "OpenCode",
+  minimum: AGENT_MIN_VERSIONS.opencode,
+  installUrl: "https://opencode.ai/docs",
+  updateCommand: "opencode upgrade",
+};
+
 /** Version only: auth state belongs to the user's Claude Code login, never to doctor output. */
 export function checkClaude(runner: CommandRunner = runCommand): CheckResult {
-  const version = runner("claude", ["--version"]);
+  return checkTerminalAgent(CLAUDE_CHECK, runner);
+}
+
+export function checkCodex(runner: CommandRunner = runCommand): CheckResult {
+  return checkTerminalAgent(CODEX_CHECK, runner);
+}
+
+export function checkOpenCode(runner: CommandRunner = runCommand): CheckResult {
+  return checkTerminalAgent(OPENCODE_CHECK, runner);
+}
+
+function checkTerminalAgent(agent: TerminalAgentCheck, runner: CommandRunner): CheckResult {
+  const { id } = agent;
+  const { minimum } = agent;
+  const updateFix = `terminal mode needs ${agent.label} ${minimum}+: run ${agent.updateCommand}`;
+  const version = runner(agent.command, ["--version"]);
   if (version.code !== 0)
     return {
-      id: "claude",
+      id,
       status: "warn",
       required: false,
-      detail: "claude not found",
-      fix: `needed only for terminal mode; install Claude Code: ${CLAUDE_INSTALL_URL}`,
+      detail: `${agent.command} not found`,
+      fix: `needed only for terminal mode; install ${agent.label}: ${agent.installUrl}`,
     };
   const detail = firstLine(version.stdout);
-  const installed = parseVersion(detail);
-  if (!installed) return { id: "claude", status: "warn", required: false, detail: `unrecognised version: ${detail}`, fix: CLAUDE_UPDATE_FIX };
-  if (compareVersions(installed, MIN_CLAUDE_VERSION) < 0)
-    return { id: "claude", status: "warn", required: false, detail: `${installed.join(".")} is below ${MIN_CLAUDE_VERSION.join(".")}`, fix: CLAUDE_UPDATE_FIX };
-  return { id: "claude", status: "ok", required: false, detail };
-}
-
-function parseVersion(text: string): number[] | undefined {
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(text);
-  return match ? match.slice(1).map(Number) : undefined;
-}
-
-function compareVersions(left: readonly number[], right: readonly number[]): number {
-  for (const [index, part] of left.entries()) if (part !== right[index]) return part - (right[index] ?? 0);
-  return 0;
+  const installed = /\d+\.\d+\.\d+/.exec(detail)?.[0];
+  if (installed === undefined) return { id, status: "warn", required: false, detail: `unrecognised version: ${detail}`, fix: updateFix };
+  if (!isVersionAtLeast(installed, minimum)) return { id, status: "warn", required: false, detail: `${installed} is below ${minimum}`, fix: updateFix };
+  return { id, status: "ok", required: false, detail };
 }
 
 export interface NodePtyCheckOptions {

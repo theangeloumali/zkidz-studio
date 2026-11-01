@@ -25,7 +25,7 @@ function readCueFile(work, name) {
   try {
     entries = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    throw new Error(`${label} is not valid JSON: ${error.message}`);
+    throw new Error(`${label} is not valid JSON: ${error.message}`, { cause: error });
   }
   if (!Array.isArray(entries)) throw new Error(`${label} must hold an array of cues or of patches`);
   const patches = entries.filter(isPatch).length;

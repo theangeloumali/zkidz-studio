@@ -89,6 +89,16 @@ describe("the composition rebuild", () => {
     expect(builds.filter((build) => build.projectRoot === fixture.projectRoot).map((build) => build.videoId)).toEqual(["v1", "v1"]);
   });
 
+  // The look lives in work/style.json, not a spec, so a style change is its own rebuild trigger.
+  it("rebuilds after the project's style changes", async () => {
+    const fixture = await fixtureWithCuts();
+    await getRequest(server, edlPath(fixture));
+
+    await server.eventBus.publish({ type: "style.changed", projectId: fixture.context.projectId });
+
+    await vi.waitFor(() => expect(fixture.events.filter((event) => event.type === "preview.ready")).toHaveLength(2));
+  });
+
   it("hands a page opened after the build the composition it missed", async () => {
     const fixture = await fixtureWithCuts();
     await getRequest(server, edlPath(fixture));

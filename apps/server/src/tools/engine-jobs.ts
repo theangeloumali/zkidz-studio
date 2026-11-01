@@ -6,7 +6,7 @@ import type { ProbeResult } from "../media-io/probe.ts";
 import { join } from "node:path";
 import type { StudioDatabase } from "@zks/db";
 import { mediaAssets, projects, transcripts } from "@zks/db/schema";
-import { IdSchema, InsertSpecSchema, SourceSecondsSchema, type IngestMode } from "@zks/shared";
+import { IdSchema, INGEST_MODES, InsertSpecSchema, SourceSecondsSchema, type IngestMode } from "@zks/shared";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
@@ -67,6 +67,8 @@ const TranscribeReportSchema = z.object({ wordsPath: WorkPathSchema, words: z.in
 export const IngestParamsSchema = z.object({
   clips: z.array(z.object({ assetId: IdSchema, zoom: z.number().positive().optional() })).min(1),
   inserts: InsertSpecSchema.optional(),
+  /** Fixed when the job is queued, so "the same ingest" means the same mode too. */
+  mode: z.enum(INGEST_MODES).optional(),
 });
 const IngestReportSchema = z.object({
   sourcePath: WorkPathSchema,
@@ -117,11 +119,14 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
   );
   const insertArgs =
     params.inserts === undefined ? [] : ["--inserts", await writeResolvedInserts({ workDir, videoId: job.videoId, inserts: params.inserts }, resolvePath)];
-  const mode = ingestModeFor(params, (await readProjectTemplate(deps.db, job.projectId))?.ingestMode);
+  const mode = params.mode ?? ingestModeFor(params, (await readProjectTemplate(deps.db, job.projectId))?.ingestMode);
   await reportProgress({ stage: "joining", pct: 0 });
   // --mode before the clips: the engine's argv ends with the clip list.
   const args = ["--video", job.videoId, "--mode", mode, ...insertArgs, ...clipArgs.flat()];
-  const report = IngestReportSchema.parse(await deps.engine.run({ command: "ingest", args, workDir, inPlacePaths, signal }));
+  const engineReport = await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId: job.videoId }, reportProgress, () =>
+    deps.engine.run({ command: "ingest", args, workDir, inPlacePaths, signal }),
+  );
+  const report = IngestReportSchema.parse(engineReport);
 
   const relPath = workRelativePath(workDir, report.sourcePath);
   const sourcePath = join(projectRoot, relPath);
@@ -149,7 +154,7 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
 }
 
 /** The template's mode when this footage fits it (the engine rejects a misfit); otherwise the mode the footage implies. */
-function ingestModeFor(params: z.infer<typeof IngestParamsSchema>, stored: IngestMode | undefined): IngestMode {
+export function ingestModeFor(params: Pick<z.infer<typeof IngestParamsSchema>, "clips" | "inserts">, stored: IngestMode | undefined): IngestMode {
   const hasInserts = params.inserts !== undefined;
   const oneClip = params.clips.length === 1;
   const fits = { single: oneClip && !hasInserts, join: !hasInserts, showcase: oneClip && hasInserts };

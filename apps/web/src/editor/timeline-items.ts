@@ -32,7 +32,8 @@ function blocksFrom<Span extends TimeSpan>(spans: readonly Span[], variant: Bloc
   return spans.map((span, position) => ({ id: `${variant}-${position}`, variant, at: span.at, end: span.end, label: labelOf(span) }));
 }
 
-export function buildTimelineTracks(cuts: CutSpec | null, cueSheet: readonly Cue[]): TimelineTracks {
+/** `originalDurationS` draws the untouched clip as one block until a cut spec exists. */
+export function buildTimelineTracks(cuts: CutSpec | null, cueSheet: readonly Cue[], originalDurationS = 0): TimelineTracks {
   const captionCues = cueSheet.filter((cue) => cue.kind === "caption");
   const otherCues = cueSheet.filter((cue) => cue.kind !== "caption");
   const captions = blocksFrom(captionCues, "cap", (cue) => cueHeadline(cue) ?? "");
@@ -40,7 +41,10 @@ export function buildTimelineTracks(cuts: CutSpec | null, cueSheet: readonly Cue
     const headline = cueHeadline(cue);
     return headline === undefined ? cue.kind : `${cue.kind} · ${headline}`;
   });
-  if (cuts === null) return { video: [], captions, cues, audio: [] };
+  if (cuts === null) {
+    const video = originalDurationS > 0 ? blocksFrom([{ at: 0, end: originalDurationS }], "seg", () => "Original") : [];
+    return { video, captions, cues, audio: [] };
+  }
 
   const video = [
     ...blocksFrom(keptSpansOf(cuts), "seg", () => ""),

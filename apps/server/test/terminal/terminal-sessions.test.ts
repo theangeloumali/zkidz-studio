@@ -1,6 +1,9 @@
 // Created by The Angelo Umali.
-import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readdir, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { encodePrompt, eraseInput, PASTE_END, PASTE_START } from "../../src/terminal/prompt-input.ts";
 import type { PtyHost, TerminalPty } from "../../src/terminal/pty-host.ts";
@@ -22,8 +25,15 @@ async function openSession(overrides: { resumeSessionId?: string } = {}): Promis
 
 /** Exits the moment it is killed, so a reopen lands while the old session's files are still being removed. */
 function instantExitPtyHost(): PtyHost {
+  return exitControlledPtyHost({ exitOnKill: true });
+}
+
+/** A PTY host whose killed PTYs exit only on `exitKilled()`, like a real agent taking its time to quit. */
+function exitControlledPtyHost({ exitOnKill }: { readonly exitOnKill: boolean }): PtyHost & { exitKilled(): void } {
   const ptys = new Map<string, TerminalPty>();
+  const killed: (() => void)[] = [];
   return {
+    exitKilled: () => killed.splice(0).forEach((exit) => exit()),
     claudePath: process.execPath,
     launch(sessionId) {
       const exitListeners: ((exitCode: number) => void)[] = [];
@@ -32,7 +42,11 @@ function instantExitPtyHost(): PtyHost {
         write: () => undefined,
         resize: () => undefined,
         interrupt: () => undefined,
-        kill: () => exitListeners.forEach((listener) => listener(0)),
+        kill: () => {
+          const exit = () => exitListeners.forEach((listener) => listener(0));
+          if (exitOnKill) exit();
+          else killed.push(exit);
+        },
         snapshot: () => "",
         onData: () => () => undefined,
         onExit: (listener) => {
@@ -44,6 +58,7 @@ function instantExitPtyHost(): PtyHost {
       return Promise.resolve(pty);
     },
     get: (sessionId) => ptys.get(sessionId),
+    allowBinary: () => undefined,
   };
 }
 
@@ -87,6 +102,33 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     const reopened = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
     await waitFor(() => reopened.pty.snapshot().includes("READY"));
     expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--resume", RESUMED_SESSION_ID]);
+  });
+
+  it("killAll also waits for a session killed just before it, whose exit work is still running", async () => {
+    const cancelled: string[] = [];
+    const slowCancel = (projectId: string) => new Promise<void>((resolve) => setTimeout(() => resolve(void cancelled.push(projectId)), 300));
+    fixture = await createTerminalFixture({ cancelProjectJobs: slowCancel });
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+    fixture.sessions.kill(PROJECT_ID);
+    await waitFor(() => fixture.sessions.findByProject(PROJECT_ID) === undefined);
+
+    await fixture.sessions.killAll();
+
+    expect(cancelled).toEqual([PROJECT_ID]);
+  });
+
+  it("killAll resolves only once each killed session has cancelled its jobs and published its exit", async () => {
+    const cancelled: string[] = [];
+    const slowCancel = (projectId: string) => new Promise<void>((resolve) => setTimeout(() => resolve(void cancelled.push(projectId)), 300));
+    fixture = await createTerminalFixture({ cancelProjectJobs: slowCancel });
+    const session = await openSession();
+    await waitFor(() => session.pty.snapshot().includes("READY"));
+
+    await fixture.sessions.killAll();
+
+    expect(cancelled).toEqual([PROJECT_ID]);
+    expect(fixture.events).toContainEqual(expect.objectContaining({ type: "terminal.state", state: "exited" }));
   });
 
   it("reports claude_missing when the resolved binary is gone", async () => {
@@ -186,12 +228,42 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.sessions.isMcpCallAllowed(session.sessionId, "forged")).toBe(false);
   });
 
-  it("kills the terminal when SessionStart reports a permission mode other than default", async () => {
+  it("runs in auto mode, or in Manual when the account cannot use auto", async () => {
+    fixture = await createTerminalFixture();
+    for (const permissionMode of ["auto", "default"]) {
+      const session = await openSession();
+      await fixture.sessions.handleHook(session.sessionId, hook(session.sessionId, { hook_event_name: "SessionStart", permission_mode: permissionMode }));
+      // Only an accepted SessionStart admits MCP calls; the kill path returns before it.
+      expect(fixture.sessions.isMcpCallAllowed(session.sessionId, session.mcpToken), permissionMode).toBe(true);
+      fixture.sessions.kill(PROJECT_ID);
+      while (fixture.sessions.findByProject(PROJECT_ID) !== undefined) await new Promise(setImmediate);
+    }
+  });
+
+  it("kills the terminal when SessionStart reports a permission mode other than auto or default", async () => {
     fixture = await createTerminalFixture();
     const session = await openSession();
     await fixture.sessions.handleHook(session.sessionId, hook(session.sessionId, { hook_event_name: "SessionStart", permission_mode: "bypassPermissions" }));
     await waitFor(() => fixture.events.some((event) => event.type === "terminal.state" && event.state === "exited"));
     expect(fixture.sessions.find(session.sessionId)).toBeUndefined();
+  });
+
+  it("denies a tool and kills the terminal when the mode changes mid-session to one that skips the studio's checks", async () => {
+    fixture = await createTerminalFixture();
+    const session = await openSession();
+    await startSession(session);
+    const answer = await fixture.sessions.handleHook(
+      session.sessionId,
+      hook(session.sessionId, {
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: { file_path: "cuts.json" },
+        permission_mode: "bypassPermissions",
+      }),
+    );
+
+    expect(answer).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    await waitFor(() => fixture.sessions.find(session.sessionId) === undefined);
   });
 
   it("hands the pane to the user, without killing it, when SessionStart never arrives", async () => {
@@ -314,6 +386,28 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     expect(fixture.cancelledProjects).toEqual([PROJECT_ID]);
   });
 
+  it("never hands back a killed session that is still exiting, and starts the next one once it has exited", async () => {
+    const ptyHost = exitControlledPtyHost({ exitOnKill: false });
+    fixture = await createTerminalFixture({ ptyHost });
+    const first = await openSession();
+
+    expect(fixture.sessions.kill(PROJECT_ID)).toBe(true);
+    expect(fixture.sessions.findByProject(PROJECT_ID)).toBeUndefined();
+    let isReopened = false;
+    const reopening = openSession().then((session) => {
+      isReopened = true;
+      return session;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(isReopened).toBe(false);
+    ptyHost.exitKilled();
+    const reopened = await reopening;
+
+    expect(reopened.sessionId).not.toBe(first.sessionId);
+    const states = fixture.events.flatMap((event) => (event.type === "terminal.state" && event.state !== "waiting" ? [event.state] : []));
+    expect(states).toEqual(["starting", "exited", "starting"]);
+  });
+
   it("keeps a resumed session's files when the killed session's cleanup finishes after the reopen", async () => {
     fixture = await createTerminalFixture({ ptyHost: instantExitPtyHost() });
     const first = await openSession({ resumeSessionId: RESUMED_SESSION_ID });
@@ -327,5 +421,214 @@ describe("terminal sessions", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     const sessionFolders = (await readdir(fixture.runDir)).filter((name) => name.startsWith(`${reopened.sessionId}.`));
     expect(sessionFolders).toHaveLength(1);
     await Promise.all(sessionFolders.map((folder) => expect(stat(join(fixture.runDir, folder, "settings.json"))).resolves.toBeDefined()));
+  });
+});
+
+const QUESTIONS = [{ question: "Which opening?", header: "Opening", options: [{ label: "Matchup first (Recommended)" }, { label: "Fail first" }] }];
+
+/** A broker stand-in: the card waits until the test answers it or its signal aborts. */
+function questionBroker() {
+  const asked: { questions: unknown; signal: AbortSignal | undefined; eventsBefore: number }[] = [];
+  let answer: (answers: Record<string, string> | null) => void = () => undefined;
+  return {
+    asked,
+    answer: (answers: Record<string, string> | null) => answer(answers),
+    askQuestions: (_projectId: string, questions: unknown, signal?: AbortSignal) => {
+      asked.push({ questions, signal, eventsBefore: fixture.events.length });
+      return new Promise<Record<string, string> | null>((resolve) => {
+        answer = resolve;
+        signal?.addEventListener("abort", () => resolve(null), { once: true });
+      });
+    },
+  };
+}
+
+function askUserQuestion(sessionId: string) {
+  return hook(sessionId, { hook_event_name: "PreToolUse", tool_name: "AskUserQuestion", tool_input: { questions: QUESTIONS }, tool_use_id: "toolu_q" });
+}
+
+describe("terminal sessions: questions and Claude's text in Activity", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
+  it("raises a question card and answers the hook with the user's choice, so the terminal dialog is skipped", async () => {
+    const broker = questionBroker();
+    fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 0 });
+    const { sessionId } = await openSession();
+
+    const pending = fixture.sessions.handleHook(sessionId, askUserQuestion(sessionId));
+    await waitFor(() => broker.asked.length === 1);
+    expect(broker.asked[0]?.questions).toEqual(QUESTIONS);
+    broker.answer({ "Which opening?": "Fail first" });
+
+    expect(await pending).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput: { questions: QUESTIONS, answers: { "Which opening?": "Fail first" } },
+      },
+    });
+    // The card is the feed's entry for the question; a tool row beside it would read "Running" until the answer.
+    expect(fixture.events.some((event) => event.type === "tool.called" && event.name === "AskUserQuestion")).toBe(false);
+  });
+
+  it("dismisses the card and denies the question when the turn is stopped", async () => {
+    const broker = questionBroker();
+    fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 0 });
+    const { sessionId } = await openSession();
+
+    const pending = fixture.sessions.handleHook(sessionId, askUserQuestion(sessionId));
+    await waitFor(() => broker.asked.length === 1);
+    fixture.sessions.stop(PROJECT_ID);
+
+    expect(await pending).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(broker.asked[0]?.signal?.aborted).toBe(true);
+  });
+
+  it("dismisses the card when Claude Code drops the hook request", async () => {
+    const broker = questionBroker();
+    fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 0 });
+    const { sessionId } = await openSession();
+    const request = new AbortController();
+
+    const pending = fixture.sessions.handleHook(sessionId, askUserQuestion(sessionId), request.signal);
+    await waitFor(() => broker.asked.length === 1);
+    request.abort();
+
+    await pending;
+    expect(broker.asked[0]?.signal?.aborted).toBe(true);
+  });
+
+  it("hands the question back to the terminal dialog when nobody answers in time", async () => {
+    const broker = questionBroker();
+    fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 0, questionTimeoutMs: 50 });
+    const { sessionId } = await openSession();
+
+    expect(await fixture.sessions.handleHook(sessionId, askUserQuestion(sessionId))).toEqual({
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+    });
+    expect(broker.asked[0]?.signal?.aborted).toBe(true);
+  });
+
+  it("publishes Claude's streamed text once per message, and Stop adds no copy of it", async () => {
+    fixture = await createTerminalFixture();
+    const { sessionId } = await openSession();
+    const display = (fields: Record<string, unknown>) =>
+      fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "MessageDisplay", message_id: "m1", turn_id: "t1", ...fields }));
+
+    await display({ delta: "Three openings:\n", index: 0 });
+    expect(fixture.events.some((event) => event.type === "narration")).toBe(false);
+    await display({ delta: "1. Matchup first", index: 1, final: true });
+    await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", last_assistant_message: "Three openings:\n1. Matchup first" }));
+
+    expect(fixture.events.filter((event) => event.type === "narration")).toEqual([
+      { type: "narration", projectId: PROJECT_ID, text: "Three openings:\n1. Matchup first" },
+    ]);
+    expect(fixture.events).toContainEqual({ type: "terminal.state", projectId: PROJECT_ID, state: "ready" });
+  });
+
+  it("publishes a runaway message in pieces instead of holding it all", async () => {
+    fixture = await createTerminalFixture();
+    const { sessionId } = await openSession();
+    const line = `${"a".repeat(1000)}\n`;
+    for (let index = 0; index < 300; index++) {
+      await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "MessageDisplay", message_id: "big", delta: line, index }));
+    }
+    const narrations = fixture.events.filter((event) => event.type === "narration");
+    expect(narrations.length).toBeGreaterThan(0);
+    expect(narrations.every((event) => event.type === "narration" && event.text.length <= 100_000)).toBe(true);
+  });
+
+  it("lands Claude's text before the card when its last batch races the question", async () => {
+    const broker = questionBroker();
+    fixture = await createTerminalFixture({ askQuestions: broker.askQuestions, questionTextWaitMs: 2000 });
+    const { sessionId } = await openSession();
+
+    const pending = fixture.sessions.handleHook(sessionId, askUserQuestion(sessionId));
+    await fixture.sessions.handleHook(
+      sessionId,
+      hook(sessionId, { hook_event_name: "MessageDisplay", message_id: "m2", delta: "I recommend 1.", final: true }),
+    );
+    await waitFor(() => broker.asked.length === 1);
+
+    const narrationAt = fixture.events.findIndex((event) => event.type === "narration");
+    expect(narrationAt).toBeGreaterThanOrEqual(0);
+    expect(narrationAt).toBeLessThan(broker.asked[0]?.eventsBefore ?? 0);
+    broker.answer({ "Which opening?": "Matchup first (Recommended)" });
+    await pending;
+  });
+
+  it("reports the status line's cost and time as usage, only when they change", async () => {
+    fixture = await createTerminalFixture();
+    const { sessionId } = await openSession();
+    const status = (costUsd: number) =>
+      fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "StatusLine", cost: { total_cost_usd: costUsd, total_duration_ms: 60_000 } }));
+
+    expect(await status(0.42)).toEqual({});
+    await status(0.42);
+    await status(0.5);
+
+    expect(fixture.events.filter((event) => event.type === "usage.reported")).toEqual([
+      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "claude_statusline", costUsd: 0.42, durationMs: 60_000 },
+      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "claude_statusline", costUsd: 0.5, durationMs: 60_000 },
+    ]);
+  });
+
+  it("refreshes the transcript's token totals with each status line, so a long turn shows tokens before it ends", async () => {
+    fixture = await createTerminalFixture({ transcriptRoot: await mkdtemp(join(tmpdir(), "zks-claude-projects-")) });
+    const { sessionId } = await openSession();
+    const transcriptPath = join(fixture.transcriptRoot ?? "", "-studio-projects-demo", `${sessionId}.jsonl`);
+    await mkdir(dirname(transcriptPath), { recursive: true });
+    const usage = { input_tokens: 10, output_tokens: 300, cache_creation_input_tokens: 0, cache_read_input_tokens: 40_000 };
+    await writeFile(transcriptPath, JSON.stringify({ type: "assistant", message: { id: "msg_1", role: "assistant", usage } }));
+
+    await fixture.sessions.handleHook(
+      sessionId,
+      hook(sessionId, { hook_event_name: "StatusLine", transcript_path: transcriptPath, cost: { total_cost_usd: 0.09, total_duration_ms: 60_000 } }),
+    );
+    await waitFor(() => fixture.events.some((event) => event.type === "usage.reported" && event.source === "claude_transcript"));
+
+    expect(fixture.events.filter((event) => event.type === "usage.reported" && event.source === "claude_transcript")).toEqual([
+      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "claude_transcript", inputTokens: 10, outputTokens: 300, cacheTokens: 40_000 },
+    ]);
+  });
+
+  it("totals the session transcript's tokens at Stop, reading only this session's transcript", async () => {
+    fixture = await createTerminalFixture({ transcriptRoot: await mkdtemp(join(tmpdir(), "zks-claude-projects-")) });
+    const { sessionId } = await openSession();
+    const usage = { input_tokens: 100, output_tokens: 20, cache_creation_input_tokens: 5, cache_read_input_tokens: 1000 };
+    // One message can span several transcript lines (one per content block), each repeating its usage.
+    const lines = [
+      { type: "user", message: { role: "user", content: "cut it" } },
+      { type: "assistant", message: { id: "msg_1", role: "assistant", usage } },
+      { type: "assistant", message: { id: "msg_1", role: "assistant", usage } },
+      { type: "assistant", message: { id: "msg_2", role: "assistant", usage: { ...usage, output_tokens: 30 } } },
+    ];
+    const root = fixture.transcriptRoot ?? "";
+    const transcriptPath = join(root, "-studio-projects-demo", `${sessionId}.jsonl`);
+    await mkdir(dirname(transcriptPath), { recursive: true });
+    await writeFile(transcriptPath, lines.map((line) => JSON.stringify(line)).join("\n"));
+    const otherPath = join(root, "someone-else.jsonl");
+    await writeFile(otherPath, lines.map((line) => JSON.stringify(line)).join("\n"));
+    // Named right but outside Claude's projects folder, directly or through a symlink: never read.
+    const outsidePath = join(fixture.studioHome, `${sessionId}.jsonl`);
+    await writeFile(outsidePath, lines.map((line) => JSON.stringify(line)).join("\n"));
+    const linkedPath = join(root, "linked", `${sessionId}.jsonl`);
+    await mkdir(dirname(linkedPath), { recursive: true });
+    await symlink(outsidePath, linkedPath);
+
+    // A FIFO named right under the root would block the read forever; only a regular file is opened.
+    const fifoPath = join(root, "fifo", `${sessionId}.jsonl`);
+    await mkdir(dirname(fifoPath), { recursive: true });
+    await promisify(execFile)("mkfifo", [fifoPath]);
+
+    for (const path of [otherPath, outsidePath, linkedPath, fifoPath]) {
+      await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: path }));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(fixture.events.some((event) => event.type === "usage.reported")).toBe(false);
+    await fixture.sessions.handleHook(sessionId, hook(sessionId, { hook_event_name: "Stop", transcript_path: transcriptPath }));
+    await waitFor(() => fixture.events.some((event) => event.type === "usage.reported"));
+
+    expect(fixture.events.filter((event) => event.type === "usage.reported")).toEqual([
+      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "claude_transcript", inputTokens: 200, outputTokens: 50, cacheTokens: 2010 },
+    ]);
   });
 });

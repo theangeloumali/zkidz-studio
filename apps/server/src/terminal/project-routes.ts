@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Opens or reattaches a project's mode T terminal (plan §6.3). The folder and resume id come from the server, never the request.
 import type { StudioDatabase } from "@zks/db";
-import { API_ROUTES } from "@zks/shared";
+import { agentKindOfAuthMode, API_ROUTES, isTerminalAuthMode } from "@zks/shared";
 import type { Hono } from "hono";
 import { findResumeSessionId, recordCurrentSession } from "../agent/session-records.ts";
 import { readConnection } from "../auth/connection-store.ts";
@@ -12,7 +12,8 @@ import { findProjectOrThrow } from "../projects/project-store.ts";
 import { loadRulesPromptBlock } from "../rules/session-setup.ts";
 import type { TerminalSession, TerminalSessions } from "./terminal-sessions.ts";
 
-const TERMINAL_AUTH_MODES = ["terminal"] as const;
+/** Only Claude takes a studio-chosen session id, so only Claude sessions resume (agent-launch.ts). */
+const RESUMABLE_AUTH_MODES = ["terminal"] as const;
 
 export interface ProjectTerminalOpenerDeps {
   readonly database: StudioDatabase;
@@ -45,22 +46,32 @@ export function registerProjectTerminalRoutes(app: Hono, deps: ProjectTerminalRo
   app.post(API_ROUTES.openTerminal.path, async (c) => {
     const project = await findProjectOrThrow(deps.database, c.req.param("projectId") ?? "");
     const connection = await readConnection(deps.database);
-    if (connection?.mode !== "terminal") throw new HttpError(409, "Turn on terminal mode before opening the terminal");
+    if (!isTerminalAuthMode(connection?.mode)) throw new HttpError(409, "Turn on terminal mode before opening the terminal");
     const session = await deps.openTerminal(project);
     return c.json({ sessionId: session.sessionId });
   });
 }
 
 async function openSession(deps: ProjectTerminalOpenerDeps, project: ProjectRow): Promise<TerminalSession> {
-  const { database, model } = deps;
-  const [resumeSessionId, rulesText] = await Promise.all([findResumeSessionId(database, project.id, TERMINAL_AUTH_MODES), loadRulesPromptBlock(database)]);
+  const { database } = deps;
+  const mode = (await readConnection(database))?.mode;
+  const agentKind = agentKindOfAuthMode(mode);
+  const isClaude = agentKind === "claude";
+  // The studio's model names are Claude's; another agent keeps the model its own config chose.
+  const model = isClaude ? deps.model : undefined;
+  const [resumeSessionId, rulesText] = await Promise.all([
+    isClaude ? findResumeSessionId(database, project.id, RESUMABLE_AUTH_MODES) : Promise.resolve(undefined),
+    loadRulesPromptBlock(database),
+  ]);
   const session = await deps.sessions.open({
     projectId: project.id,
     projectDir: projectDir(deps.studioHome, project.slug),
     model,
     rulesText,
+    agentKind,
     ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
   });
-  await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode: "terminal" });
+  const authMode = isTerminalAuthMode(mode) ? mode : "terminal";
+  await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode });
   return session;
 }

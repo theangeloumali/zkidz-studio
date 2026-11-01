@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from . import backends, ffio
+from . import backends, ffio, progress
 from .backends.graph import BT709_TV, restamp
 from .join_sources import NVDEC_CODECS, audio_command, cuda_route, gpu_frames, piece_command, probe, run_all
 from .pipeline import (CUDA_DEVICE, CUDA_HWACCEL, CUDA_LANCZOS, CUDA_TV_RANGE, CUDA_UPRIGHT, WORK, assert_upright, chain, decode_args, probe_video, project_input, rotation_of, split_orientation,
@@ -166,18 +166,20 @@ def main(video, raw, inserts=None):
                 for (first, count, insert), out in zip(pieces, outputs)]
     commands.append(audio_command([clip], work / "audio.flac"))
     print(f"{len(pieces)} pieces ({len(inserts)} inserts), {jobs} {backend.name} encodes at once", flush=True)
-    with slot("gpu", f"showcase {video} ({WORK})"):
-        if codes := run_all(commands, jobs):
-            sys.exit(f"showcase failed (exit codes {codes}); pieces kept in {work}")
-    for (_, count, _), out in zip(pieces, outputs):
-        if count_frames(out) != count:
-            sys.exit(f"{out.name}: {count_frames(out)} frames, expected {count}")
-    listing = work / "pieces.txt"
-    listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
-                    "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", *BT709_TAGS, str(target)], check=True)
-    if count_frames(target) != clip.frames:
-        sys.exit(f"{target.name}: {count_frames(target)} frames, expected {clip.frames}")
+    with progress.job(video, "joining", total=clip.frames) as stage:
+        with slot("gpu", f"showcase {video} ({WORK})", on_wait=stage.wait):
+            stage.begin()
+            if codes := run_all(commands, jobs, stage.update):
+                sys.exit(f"showcase failed (exit codes {codes}); pieces kept in {work}")
+        for (_, count, _), out in zip(pieces, outputs):
+            if count_frames(out) != count:
+                sys.exit(f"{out.name}: {count_frames(out)} frames, expected {count}")
+        listing = work / "pieces.txt"
+        listing.write_text(ffio.concat_listing(outputs), encoding="utf-8")
+        subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.concat_input_args(listing),
+                        "-i", str(work / "audio.flac"), "-map", "0:v", "-map", "1:a", "-c", "copy", *BT709_TAGS, str(target)], check=True)
+        if count_frames(target) != clip.frames:
+            sys.exit(f"{target.name}: {count_frames(target)} frames, expected {clip.frames}")
     assert_upright(target, SIZE)
     shutil.rmtree(work)
     print(f"wrote {target} ({clip.frames} frames)")

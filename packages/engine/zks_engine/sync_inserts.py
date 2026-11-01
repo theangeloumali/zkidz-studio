@@ -12,6 +12,7 @@ from typing import NamedTuple
 import numpy as np
 
 from . import ffio
+from .ffio import has_audio
 from .pipeline import FPS_DEN, FPS_NUM, WORK, command_input, has_cuda, probe_video, rotation_of, upright_size
 from .showcase import panel_for
 from .specs.paths import video_id
@@ -121,13 +122,6 @@ def draft_insert(span, src, size, mode):
     at = max(span["start"], -span["offset"], 0.0)
     return {"at": round(at, 3), "end": round(span["end"], 3), "src": src, "src_at": round(at + span["offset"], 3), "panel": panel_for(size),
             "note": f"{mode} match {span['score']:.2f}, offset {span['offset']:+.3f}; set the edges on frame strips"}
-
-
-def has_audio(path):
-    probe = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
-                            *ffio.user_input_args(path)],
-                           capture_output=True, text=True, check=True)
-    return bool(probe.stdout.strip())
 
 
 def band_passed_audio(path):

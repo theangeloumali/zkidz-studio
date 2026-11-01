@@ -9,7 +9,7 @@ interface DropZoneProps {
   readonly isBusy?: boolean;
 }
 
-const VIDEO_ACCEPT = "video/*,.mkv,.mov,.mp4";
+export const VIDEO_ACCEPT = "video/*,.mkv,.mov,.mp4";
 
 export function DropZone({ onFiles, onPickInPlace, isBusy = false }: DropZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);

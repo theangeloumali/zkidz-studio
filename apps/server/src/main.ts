@@ -12,11 +12,13 @@ import { createAgentServices } from "./agent-services.ts";
 import { hasBundledClaudeBinary } from "./agent/sdk-binary.ts";
 import { lazySdkQuery } from "./agent/sdk-loader.ts";
 import { createApp } from "./app.ts";
+import { EditRecorder } from "./edits/edit-recorder.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
 import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { closeServer } from "./http/close-server.ts";
+import { createAutoIngest } from "./jobs/auto-ingest.ts";
 import { createEngineProcessRunner, pinnedEngineTools } from "./jobs/engine-process.ts";
 import { JobRunner } from "./jobs/job-runner.ts";
 import { createLogger } from "./logging/logger.ts";
@@ -27,8 +29,10 @@ import { createCompositionBuilder } from "./preview/composition-builder.ts";
 import { createPreviewOrigin } from "./preview/preview-origin.ts";
 import { createPreviewService } from "./preview/preview-service.ts";
 import { createSecurity } from "./security/index.ts";
+import { resolveTerminalAgents } from "./terminal/agent-launch.ts";
 import { readClaudeVersion, resolveClaudePath } from "./terminal/claude-binary.ts";
 import { clearSessionFiles } from "./terminal/session-files.ts";
+import { shutDownInOrder } from "./shutdown.ts";
 
 const WEB_DIST_DIR = fileURLToPath(new URL("../../web/dist", import.meta.url));
 const PLUGIN_DIR = fileURLToPath(new URL("../../../plugin", import.meta.url));
@@ -62,7 +66,7 @@ async function main(): Promise<void> {
   // ASSUMPTION: ZKS_RUN is <ZKS_HOME>/run. Files left there belong to sessions that died with the last server.
   const runDir = join(config.studioHome, "run");
   await clearSessionFiles(runDir);
-  const claudePath = await resolveClaudePath(process.env);
+  const [claudePath, terminalAgents] = await Promise.all([resolveClaudePath(process.env), resolveTerminalAgents(process.env)]);
   // Both probes cost ~1 s, so they wait for the listen callback (plan §9.5) and their routes await them.
   const { promise: listening, resolve: markListening } = Promise.withResolvers<void>();
   const claudeVersion = listening.then(() => readClaudeVersion(claudePath));
@@ -84,6 +88,7 @@ async function main(): Promise<void> {
     pluginDir: PLUGIN_DIR,
     runDir,
     claudePath,
+    terminalAgents,
     claudeVersion,
     secretStore: createSecretStore({ studioHome: config.studioHome, platform: process.platform, keyring: createOsKeyringEntry() }),
     query: lazySdkQuery,
@@ -105,7 +110,10 @@ async function main(): Promise<void> {
   });
 
   const previewBuilder = createCompositionBuilder({ workerScriptPath: PREVIEW_WORKER_SCRIPT, studioHome: config.studioHome });
+  const editRecorder = new EditRecorder({ database: database.db, eventBus, logger });
+  editRecorder.start().catch((error: unknown) => logger.error("edit recorder did not start", { error }));
   const app = createApp({
+    editRecorder,
     database: database.db,
     studioHome: config.studioHome,
     security,
@@ -115,6 +123,7 @@ async function main(): Promise<void> {
     webDistDir: WEB_DIST_DIR,
     logger,
     jobRunner,
+    autoIngest: createAutoIngest({ db: database.db, studioHome: config.studioHome, jobs: jobRunner, logger }),
     agent,
     doctor: {
       runDoctor: createCliDoctorRunner({ cliEntry: CLI_ENTRY, studioHome: config.studioHome }),
@@ -146,13 +155,14 @@ async function main(): Promise<void> {
 
   const shutdown = (signal: string) => {
     logger.info("shutting down", { signal });
-    agent.shutdown();
     previewBuilder.close();
-    // Settled, not all: a server that fails to close must not skip draining the jobs and closing the database.
-    void Promise.allSettled([closeServer(server, websocket.server), closeServer(previewServer)])
-      .then(() => jobRunner.idle())
-      .then(() => database.close())
-      .finally(() => process.exit(0));
+    void shutDownInOrder({
+      stopAgents: () => agent.shutdown(),
+      closeServers: () => [closeServer(server, websocket.server), closeServer(previewServer)],
+      drainJobs: () => jobRunner.idle(),
+      stopEditRecorder: () => editRecorder.stop(),
+      closeDatabase: () => database.close(),
+    }).finally(() => process.exit(0));
   };
   process.once("SIGINT", () => shutdown("SIGINT"));
   process.once("SIGTERM", () => shutdown("SIGTERM"));

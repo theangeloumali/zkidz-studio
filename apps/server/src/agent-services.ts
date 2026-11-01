@@ -3,7 +3,7 @@
 import { join } from "node:path";
 import { probeMedia } from "./media-io/probe.ts";
 import type { StudioDatabase } from "@zks/db";
-import type { StudioEvent } from "@zks/shared";
+import type { StudioEvent, TerminalAgentKind } from "@zks/shared";
 import type { Hono } from "hono";
 import { DecisionBroker, sortById } from "./agent/decisions.ts";
 import { AgentManager } from "./agent/manager.ts";
@@ -30,6 +30,7 @@ import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts
 import { createProjectTerminalOpener, registerProjectTerminalRoutes } from "./terminal/project-routes.ts";
 import { createPtyHost } from "./terminal/pty-host.ts";
 import { registerTerminalRoutes } from "./terminal/routes.ts";
+import { resolveTerminalAgents, type TerminalAgents } from "./terminal/agent-launch.ts";
 import { createTerminalSessions, type TerminalSessions } from "./terminal/terminal-sessions.ts";
 import { studioTwinCatalog } from "./tools/catalog.ts";
 import type { ToolContext } from "./tools/context.ts";
@@ -55,6 +56,10 @@ export interface AgentServicesDeps {
   /** §11 ZKS_RUN; main.ts empties it at startup. */
   readonly runDir: string;
   readonly claudePath: string | null;
+  /** The installed Codex and OpenCode, resolved at startup like claude (ADR 0007). */
+  readonly terminalAgents?: TerminalAgents;
+  /** Tests pin it; the server searches PATH. */
+  readonly resolveTerminalAgents?: (env: Readonly<Record<string, string | undefined>>) => Promise<TerminalAgents>;
   /** main.ts probes both after the server listens; the routes that need them await them. */
   readonly claudeVersion: string | null | Promise<string | null>;
   readonly secretStore: SecretStore;
@@ -73,7 +78,8 @@ export interface AgentServices {
   /** Approval, question and cut-review cards still waiting, sent to every new event stream. */
   readonly pendingCards: (projectIds: readonly string[]) => StudioEvent[];
   /** Kills every PTY and SDK child so none outlives the server. */
-  readonly shutdown: () => void;
+  /** Resolves once the terminals' exit work is done; close the database after it. */
+  readonly shutdown: () => Promise<void>;
 }
 
 export function createAgentServices(deps: AgentServicesDeps): AgentServices {
@@ -110,8 +116,24 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     describeGate: (project, tool, input) => describeStudioGate(toolContextFor(project.id), tool, input),
     cancelProjectJobs,
   });
+  const terminalAgents = new Map(deps.terminalAgents ?? []);
+  const ptyHost = createPtyHost({
+    claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME),
+    agentPaths: [...terminalAgents.values()].map((agent) => agent.binaryPath),
+  });
+  // Connect accepts an agent installed after startup, so the terminal looks for it again before calling it missing.
+  const findAgent = async (kind: TerminalAgentKind) => {
+    const found = (await (deps.resolveTerminalAgents ?? resolveTerminalAgents)(process.env)).get(kind);
+    if (found !== undefined) {
+      ptyHost.allowBinary(found.binaryPath);
+      terminalAgents.set(kind, found);
+    }
+    return found;
+  };
   const terminalSessions = createTerminalSessions({
-    ptyHost: createPtyHost({ claudePath: deps.claudePath ?? join(deps.runDir, MISSING_CLAUDE_NAME) }),
+    ptyHost,
+    agents: terminalAgents,
+    findAgent,
     eventBus: deps.eventBus,
     runDir: deps.runDir,
     appPort: deps.appPort,
@@ -123,6 +145,7 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     buildEnv: (tokens) => buildAgentEnv({ kind: "terminal", tokens }, { studioHome: deps.studioHome, appVersion: deps.appVersion, proxyOptIn: false }),
     cancelProjectJobs,
     logger: deps.logger,
+    askQuestions: (projectId, questions, signal) => broker.askQuestions(projectId, questions, signal),
   });
   const engineJobDeps = {
     db: deps.database,
@@ -143,7 +166,11 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       fetch: deps.fetch ?? globalThis.fetch,
       logger: deps.logger,
       claudeVersion: deps.claudeVersion,
-      onConnectionChanged: () => manager.closeAll(),
+      // A terminal runs the agent it was opened with, so a new connection closes it and the next open starts the new one.
+      onConnectionChanged: () => {
+        manager.closeAll();
+        void terminalSessions.killAll();
+      },
     });
     const openTerminal = createProjectTerminalOpener({
       database: deps.database,
@@ -158,8 +185,9 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
         find: (sessionId) => terminalSessions.find(sessionId),
         isHookAuthorized: (sessionId, token) =>
           terminalSessions.isHookAuthorized(sessionId, token) || printSessions?.isHookAuthorized(sessionId, token) === true,
-        handleHook: (sessionId, payload) =>
-          printSessions?.find(sessionId) === undefined ? terminalSessions.handleHook(sessionId, payload) : printSessions.handleHook(sessionId, payload),
+        // The signal aborts when Claude Code drops the hook, which dismisses a waiting question card.
+        handleHook: (sessionId, payload, signal) =>
+          printSessions?.find(sessionId) === undefined ? terminalSessions.handleHook(sessionId, payload, signal) : printSessions.handleHook(sessionId, payload),
       },
       tickets: createTicketStore(),
       checkWebSocketUpgrade,
@@ -190,8 +218,8 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
     registerRoutes,
     pendingCards: (projectIds) => sortById([...broker.pendingCards(projectIds), ...pendingCutReviewCards(projectIds)]),
     shutdown: () => {
-      terminalSessions.killAll();
       manager.closeAll();
+      return terminalSessions.killAll();
     },
   };
 }

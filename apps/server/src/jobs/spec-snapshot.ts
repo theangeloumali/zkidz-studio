@@ -81,10 +81,12 @@ export async function readSnapshotSpec(snapshotDir: string, address: SpecAddress
 
 /** make_covers' post caption is no spec row, but the job must ship the text it was asked for, not a later one. */
 export const postCaptionRelPath = (videoId: string) => `work/post/${videoId}.txt`;
+/** The project look the renderer draws with (--style); a later restyle must not reach a running job either. */
+export const PROJECT_STYLE_REL_PATH = "work/style.json";
 
 async function takeSnapshot(deps: SpecSnapshotDeps, job: JobRow, projectRoot: string): Promise<JobRow> {
-  const postCaption = await readPostCaption(projectRoot, job.videoId);
-  const specFiles = [...(await readCurrentSpecFiles(deps.database, job.projectId)), ...postCaption].sort((left, right) =>
+  const workFiles = await Promise.all([postCaptionRelPath(job.videoId), PROJECT_STYLE_REL_PATH].map((relPath) => readWorkFile(projectRoot, relPath)));
+  const specFiles = [...(await readCurrentSpecFiles(deps.database, job.projectId)), ...workFiles.flat()].sort((left, right) =>
     left.relPath.localeCompare(right.relPath),
   );
   const sha256 = hashSpecSet(specFiles);
@@ -103,8 +105,7 @@ async function readCurrentSpecFiles(database: StudioDatabase, projectId: string)
 }
 
 // Read confined, so a link planted at that path cannot pull a file from outside the project into the snapshot.
-async function readPostCaption(projectRoot: string, videoId: string): Promise<SpecFile[]> {
-  const relPath = postCaptionRelPath(videoId);
+async function readWorkFile(projectRoot: string, relPath: string): Promise<SpecFile[]> {
   const opened = await openConfined(projectRoot, relPath).catch((error: unknown) => {
     if (error instanceof PathEscapeError && error.reason === "unresolvable") return undefined;
     throw error;

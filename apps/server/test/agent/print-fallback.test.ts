@@ -119,7 +119,7 @@ async function startHarness(hasSdkBinary: boolean): Promise<Harness> {
     sdkOptions,
     submitPrompt,
     close: async () => {
-      finalServices.shutdown();
+      await finalServices.shutdown();
       await server.close();
       await rm(fakeDir, { recursive: true, force: true });
     },

@@ -74,8 +74,8 @@ describe("StudioEventSchema (plan §6.11)", () => {
     expect(JobSchema.safeParse({ ...jobRow, pct: 140 }).success).toBe(false);
   });
 
-  it("marks deltas and heartbeats as bus-only", () => {
-    expect([...EPHEMERAL_EVENT_TYPES].sort()).toEqual(["text.delta", "tool.heartbeat"]);
+  it("marks deltas, heartbeats and status-line usage as bus-only", () => {
+    expect([...EPHEMERAL_EVENT_TYPES].sort()).toEqual(["text.delta", "tool.heartbeat", "usage.reported"]);
   });
 
   it("narrows on type", () => {

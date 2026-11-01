@@ -36,6 +36,18 @@ describe("EventBus", () => {
     expect(row).toMatchObject({ type: "narration", payload: { text: "hello" } });
   });
 
+  it("delivers every project's events to an all-projects subscriber until it unsubscribes", async () => {
+    const [first, second] = [await insertProject(server), await insertProject(server)];
+    const received: StudioEvent[] = [];
+    const unsubscribe = server.eventBus.subscribeAll((event) => received.push(event));
+    await server.eventBus.publish(narration(first.id, "one"));
+    await server.eventBus.publish({ type: "text.delta", projectId: second.id, text: "two" });
+    unsubscribe();
+    await server.eventBus.publish(narration(first.id, "after unsubscribe"));
+
+    expect(received.map((event) => event.projectId)).toEqual([first.id, second.id]);
+  });
+
   it("delivers ephemeral events without persisting them", async () => {
     const project = await insertProject(server);
     const received: StudioEvent[] = [];

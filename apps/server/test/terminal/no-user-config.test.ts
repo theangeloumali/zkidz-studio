@@ -1,8 +1,9 @@
 // Created by The Angelo Umali.
-// Mode T AC (plan §6.3): the server never opens, stats or lists anything under ~/.claude or ~/.claude.json.
+// Mode T AC (plan §6.3): the server never opens, stats or lists anything under ~/.claude or ~/.claude.json, except one
+// file: this session's own transcript, read at Stop for its token counts (plan 2026-10-29, slice A).
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { openDatabase, type StudioDatabaseHandle } from "@zks/db";
 import { projects } from "@zks/db/schema";
 import { CSRF_HEADER } from "@zks/shared";
@@ -57,6 +58,8 @@ beforeAll(async () => {
       fetch: () => Promise.resolve(new Response("{}", { status: 200 })),
       logger: createLogger(() => undefined),
       claudeVersion: "2.1.300",
+      // A fixed answer: probing PATH would make the test depend on which agents this machine has, and spawn them.
+      agentVersions: () => Promise.resolve({ codex: { version: null, minVersion: "0.164.0" }, opencode: { version: null, minVersion: "2.2.0" } }),
     });
     const sdkManager = { submit: () => Promise.resolve(), stop: () => Promise.resolve(), kill: () => Promise.resolve(), decide: () => false };
     const openProjectTerminal = createProjectTerminalOpener({
@@ -99,13 +102,17 @@ describe("mode T and the user's Claude config", { timeout: REAL_PTY_TEST_TIMEOUT
     await waitFor(() => session.pty.snapshot().includes("RELAY"));
 
     const credentialsPath = join(fakeHome, ".claude", ".credentials.json");
+    const transcriptPath = join(fakeHome, ".claude", "projects", "demo", `${sessionId}.jsonl`);
+    await mkdir(dirname(transcriptPath), { recursive: true });
+    await writeFile(transcriptPath, JSON.stringify({ type: "assistant", message: { id: "msg_1", usage: { input_tokens: 3, output_tokens: 2 } } }));
     const hookPayloads = [
       { hook_event_name: "UserPromptSubmit", prompt: "Make a cut" },
       { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: credentialsPath }, tool_use_id: "toolu_1" },
       { hook_event_name: "PreToolUse", tool_name: "Read", tool_input: { file_path: join(server.fixture.projectDir, "cuts.json") }, tool_use_id: "toolu_2" },
       { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: {}, tool_response: "{}", tool_use_id: "toolu_2" },
       { hook_event_name: "Notification", message: "waiting" },
-      { hook_event_name: "Stop", last_assistant_message: "done" },
+      { hook_event_name: "Stop", last_assistant_message: "done", transcript_path: credentialsPath },
+      { hook_event_name: "Stop", last_assistant_message: "done", transcript_path: transcriptPath },
     ];
     for (const payload of hookPayloads) {
       // As the relay sends it: bearer only, no Origin or CSRF header.
@@ -117,6 +124,10 @@ describe("mode T and the user's Claude config", { timeout: REAL_PTY_TEST_TIMEOUT
 
     const userConfigDir = join(fakeHome, ".claude");
     expect(touchedPaths.length).toBeGreaterThan(0);
-    expect(touchedPaths.filter((path) => path === userConfigDir || path.startsWith(`${userConfigDir}/`) || path === `${userConfigDir}.json`)).toEqual([]);
+    // A transcript path that names another file (here the credentials) is never opened.
+    await waitFor(() => server.fixture.events.some((event) => event.type === "usage.reported"));
+    const underUserConfig = touchedPaths.filter((path) => path === userConfigDir || path.startsWith(`${userConfigDir}/`) || path === `${userConfigDir}.json`);
+    // The projects folder is resolved to confine the read; nothing else under ~/.claude is touched.
+    expect([...new Set(underUserConfig)].sort()).toEqual([join(userConfigDir, "projects"), transcriptPath].sort());
   });
 });

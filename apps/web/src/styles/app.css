@@ -25,6 +25,25 @@
   --color-success: var(--color-success);
   --color-focus: var(--color-focus);
 
+  /* shadcn's semantic names (src/components/ui), aliased onto the ZKidz tokens so the brand stays the one source.
+     shadcn's "accent" (a hover wash) is not aliased: here accent is the steel brand colour, so ui/ uses surface. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-copy);
+  --color-card: var(--color-bg-elevated);
+  --color-card-foreground: var(--color-copy);
+  --color-popover: var(--color-bg-elevated);
+  --color-popover-foreground: var(--color-copy);
+  --color-primary: var(--color-cta);
+  --color-primary-foreground: var(--color-on-cta);
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-copy);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-copy-muted);
+  --color-destructive: var(--color-danger);
+  --color-border: var(--color-line);
+  --color-input: var(--color-line-strong);
+  --color-ring: var(--color-focus);
+
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
   --font-mono: var(--font-mono);
@@ -52,10 +71,19 @@
   --radius-field: var(--radius-field);
   --radius-inset: var(--radius-inset);
   --radius-pill: var(--radius-pill);
+  --radius-sm: var(--radius-inset);
+  --radius-md: var(--radius-inset);
+  --radius-lg: var(--radius-field);
+  --radius-xl: var(--radius-card);
+  --radius-4xl: var(--radius-pill);
 
   --shadow-*: initial;
   --shadow-overlay: var(--shadow-overlay);
+  --shadow-md: var(--shadow-overlay);
 }
+
+/* shadcn's dark: styles follow the studio's own theme switch (app-shell sets data-theme), not the OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @utility font-condensed {
   font-stretch: var(--font-stretch-condensed);

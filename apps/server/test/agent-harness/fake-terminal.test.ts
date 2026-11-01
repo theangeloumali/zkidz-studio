@@ -78,7 +78,15 @@ describe("FakeTerminal plays a scripted Claude Code session in a real PTY", () =
     const { exitCode } = await runTurn(url);
 
     expect(exitCode).toBe(0);
-    expect(received.map(({ body }) => body.hook_event_name)).toEqual(["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "Notification"]);
+    expect(received.map(({ body }) => body.hook_event_name)).toEqual([
+      "SessionStart",
+      "UserPromptSubmit",
+      "PreToolUse",
+      "PostToolUse",
+      "MessageDisplay",
+      "Stop",
+      "Notification",
+    ]);
     expect([...new Set(received.map(({ body }) => body.hook_event_name))].sort()).toEqual([...HOOK_EVENT_NAMES].sort());
     expect(received.every(({ headers }) => headers.authorization === `Bearer ${HOOK_TOKEN}`)).toBe(true);
   });

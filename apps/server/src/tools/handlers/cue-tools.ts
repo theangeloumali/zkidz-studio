@@ -6,7 +6,8 @@ import { z } from "zod";
 import { validateCueWithEngine, listThemeCueKinds, type ThemeKind } from "../cue-engine.ts";
 import { findCue, readCueSheet, withCueSheetLock, writeCueSheet } from "../cue-sheets.ts";
 import { implementTool } from "../define-tool.ts";
-import { loadProject, PROJECT_THEME_ID } from "../project-files.ts";
+import { projectThemeId } from "../../projects/project-style.ts";
+import { loadProject } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 
 // Speech or the cut spec times these, so they never count as a card overlapping another.
@@ -20,7 +21,11 @@ const listCueKinds = implementTool("list_cue_kinds", {
   description:
     "The theme's cue kinds with each kind's JSON Schema and per-slot character caps. Filter by tier (core, accent, special) and by words the purpose must mention before opening schemas.",
   handler: async (input, context) => {
-    const themeKinds = await listThemeCueKinds(context, { theme: input.theme ?? PROJECT_THEME_ID, tier: input.tier, purpose: input.purpose });
+    const themeKinds = await listThemeCueKinds(context, {
+      theme: input.theme ?? projectThemeId(await loadProject(context)),
+      tier: input.tier,
+      purpose: input.purpose,
+    });
     return { output: { kinds: themeKinds.flatMap(toListedKind) } };
   },
 });
@@ -30,10 +35,11 @@ const addCue = implementTool("add_cue", {
     "Add a cue to the main, reel or cover sheet. Times are source seconds; anchor {phrase, wordIndex} names the transcript word it lands on, and `at` must sit within -0.2 to +1.8 s of it.",
   handler: (input, context) =>
     withCueSheetLock(context.projectId, async () => {
-      const { videoId } = await loadProject(context);
+      const project = await loadProject(context);
+      const { videoId } = project;
       const cueId = input.cue.id ?? `cue-${randomUUID().slice(0, CUE_ID_HEX_CHARS)}`;
       if ((await findCue(context, videoId, cueId)) !== undefined) throw new ToolError(`Cue ${cueId} already exists; use update_cue`);
-      const cue = await validateCueWithEngine(context, { theme: PROJECT_THEME_ID, cue: { ...input.cue, id: cueId } });
+      const cue = await validateCueWithEngine(context, { theme: projectThemeId(project), cue: { ...input.cue, id: cueId } });
       const sheetCues = await readCueSheet(context, videoId, input.sheet);
       const version = await writeCueSheet(context, videoId, input.sheet, [...sheetCues, cue]);
       return { output: { id: cueId, version, warnings: overlapWarnings(sheetCues, cue) } };
@@ -45,10 +51,11 @@ const updateCue = implementTool("update_cue", {
   handler: (input, context) =>
     withCueSheetLock(context.projectId, async () => {
       if (Object.hasOwn(input.patch, "id") && input.patch.id !== input.id) throw new ToolError("A patch cannot change a cue's id");
-      const { videoId } = await loadProject(context);
+      const project = await loadProject(context);
+      const { videoId } = project;
       const located = await findCue(context, videoId, input.id);
       if (located === undefined) throw new ToolError(`There is no cue ${input.id}`);
-      const cue = await validateCueWithEngine(context, { theme: PROJECT_THEME_ID, cue: input.patch, storedCue: located.cue });
+      const cue = await validateCueWithEngine(context, { theme: projectThemeId(project), cue: input.patch, storedCue: located.cue });
       const sheetCues = located.sheetCues.map((sheetCue) => (sheetCue === located.cue ? cue : sheetCue));
       const version = await writeCueSheet(context, videoId, located.sheet, sheetCues);
       return { output: { id: input.id, version, warnings: overlapWarnings(located.sheetCues, cue) } };

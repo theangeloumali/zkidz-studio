@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { editSpecs, editSpecVersions } from "@zks/db/schema";
 import { eq } from "drizzle-orm";
@@ -58,6 +58,27 @@ describe("spec snapshot at job start", () => {
     expect((await readJob(server, job.id)).status).toBe("succeeded");
     expect(renderedCuts).toBe(CUTS_V1);
     expect((await readJob(server, job.id)).specSnapshotSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("renders the project style as it stood at start, like the specs", async () => {
+    const { project, projectRoot } = await projectWithCutSpec();
+    const stylePath = join(projectRoot, "work", "style.json");
+    await writeFile(stylePath, `{"theme":"zkidz"}`);
+    const runner = newRunner(server);
+    let renderedStyle = "";
+    const deps = { database: server.database.db, studioHome: server.studioHome };
+    runner.registerHandler(
+      "render_master",
+      snapshotSpecsAtStart(async (job) => {
+        await writeFile(stylePath, `{"theme":"minimal"}`);
+        renderedStyle = await readFile(join(specSnapshotDir(projectRoot, job.specSnapshotSha256 ?? ""), "style.json"), "utf8");
+      }, deps),
+    );
+    const job = await runner.enqueue({ projectId: project.id, kind: "render_master", videoId: "v1", lane: "gpu" });
+    await runner.idle();
+
+    expect((await readJob(server, job.id)).status).toBe("succeeded");
+    expect(renderedStyle).toBe(`{"theme":"zkidz"}`);
   });
 
   it("names the snapshot by content, so the same spec set gets the same hash", async () => {

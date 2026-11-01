@@ -39,21 +39,28 @@ describe("writeSessionFiles", () => {
     expect(basename(files.dir).startsWith(`${SESSION_ID}.`)).toBe(true);
   });
 
-  it("routes every hook to the session's bridge, with SessionStart through the command relay", async () => {
+  it("routes every hook to the session's bridge, with SessionStart and the status line through the command relay", async () => {
     const files = await writeSessionFiles(request);
     const hookUrl = `http://127.0.0.1:4317/api/terminal/${SESSION_ID}/hooks`;
     const httpHook = { type: "http", url: hookUrl, headers: { Authorization: "Bearer $ZKS_HOOK_TOKEN" }, allowedEnvVars: ["ZKS_HOOK_TOKEN"], timeout: 30 };
+    const relay = `"/opt/node/bin/node" "/opt/zks/bin/zks-hook.mjs"`;
 
     expect(files.hookUrl).toBe(hookUrl);
     expect(await readJson(files.settingsPath)).toEqual({
       hooks: {
-        SessionStart: [{ hooks: [{ type: "command", command: `"/opt/node/bin/node" "/opt/zks/bin/zks-hook.mjs" "${hookUrl}"`, timeout: 10 }] }],
+        SessionStart: [{ hooks: [{ type: "command", command: `${relay} "${hookUrl}"`, timeout: 10 }] }],
         UserPromptSubmit: [{ hooks: [{ ...httpHook, onFailure: "block" }] }],
-        PreToolUse: [{ matcher: "*", hooks: [{ ...httpHook, onFailure: "block" }] }],
+        // The question hook holds until the user answers in Activity; every other tool keeps the 30 s answer.
+        PreToolUse: [
+          { matcher: "AskUserQuestion", hooks: [{ ...httpHook, timeout: 3600, onFailure: "block" }] },
+          { matcher: "^(?!AskUserQuestion$)", hooks: [{ ...httpHook, onFailure: "block" }] },
+        ],
         PostToolUse: [{ matcher: "*", hooks: [httpHook] }],
         Stop: [{ hooks: [httpHook] }],
         Notification: [{ hooks: [httpHook] }],
+        MessageDisplay: [{ hooks: [{ ...httpHook, timeout: 5 }] }],
       },
+      statusLine: { type: "command", command: `${relay} --status "${hookUrl}"` },
     });
   });
 

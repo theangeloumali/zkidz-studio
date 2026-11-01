@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
 // The UI never sees raw SDK messages; the server maps them (and mode T hooks) to these events (plan §6.11).
 import { z } from "zod";
-import { JobStatusSchema, SpecAuthorSchema, SpecKindSchema } from "./enums.ts";
+import { RULE_TEXT_MAX_CHARS } from "./api/dto.ts";
+import { JobStatusSchema, SpecAuthorSchema, SpecKindSchema, UsageSourceSchema } from "./enums.ts";
 import { IdSchema, IsoTimestampSchema, JobPercentSchema, VideoIdSchema, sourceSpan } from "./primitives.ts";
 
 /** `id` is the persisted events row id and doubles as the SSE cursor; bus-only events carry none. */
@@ -17,6 +18,7 @@ export const CutCandidateSchema = sourceSpan({ id: z.string().min(1), kind: z.en
 /** Plan §6.14 failure states. */
 export const SESSION_ERROR_KINDS = [
   "claude_missing",
+  "agent_missing",
   "sdk_binary_missing",
   "auth_failed",
   "billing_error",
@@ -49,6 +51,45 @@ export const AskedQuestionSchema = z.strictObject({
   options: z.array(z.strictObject({ label: z.string().min(1), description: z.string().optional() })),
   multiSelect: z.boolean().optional(),
 });
+
+/** Session totals as the agent reports them; the edit recorder keeps the latest per session, never a running sum. */
+export const UsageFiguresSchema = z.strictObject({
+  costUsd: z.number().nonnegative().optional(),
+  inputTokens: z.int().nonnegative().optional(),
+  outputTokens: z.int().nonnegative().optional(),
+  cacheTokens: z.int().nonnegative().optional(),
+  durationMs: z.int().nonnegative().optional(),
+});
+
+/** At most this many lessons per card, each short enough to become a rule as written. */
+export const MAX_SUGGESTED_LESSONS = 5;
+export const LessonTextSchema = z.string().trim().min(1).max(RULE_TEXT_MAX_CHARS);
+
+/**
+ * AskUserQuestion's input as Claude Code sends it: loose, because it adds fields over time (an option's `preview`),
+ * and a strict parse would refuse the whole question. toAskedQuestions keeps what a card shows.
+ */
+export const AskUserQuestionInputSchema = z.looseObject({
+  questions: z
+    .array(
+      z.looseObject({
+        question: z.string().min(1),
+        header: z.string().optional(),
+        options: z.array(z.looseObject({ label: z.string().min(1), description: z.string().optional() })),
+        multiSelect: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+});
+
+export function toAskedQuestions(input: z.infer<typeof AskUserQuestionInputSchema>): z.infer<typeof AskedQuestionSchema>[] {
+  return input.questions.map(({ question, header, options, multiSelect }) => ({
+    question,
+    ...(header === undefined ? {} : { header }),
+    options: options.map(({ label, description }) => ({ label, ...(description === undefined ? {} : { description }) })),
+    ...(multiSelect === undefined ? {} : { multiSelect }),
+  }));
+}
 
 function jobLifecycleEvent<Type extends string>(type: Type) {
   return studioEvent(type, { jobId: IdSchema, kind: z.string().min(1), status: JobStatusSchema });
@@ -95,16 +136,23 @@ const studioEventSchemas = [
   studioEvent("narration", { text: z.string() }),
   studioEvent("terminal.state", { state: z.enum(["starting", "ready", "working", "waiting", "exited"]), exitCode: z.int().optional() }),
   studioEvent("session.error", { kind: z.enum(SESSION_ERROR_KINDS), message: z.string().min(1), action: z.string().optional() }),
+  studioEvent("usage.reported", { sessionId: z.string().min(1), source: UsageSourceSchema, ...UsageFiguresSchema.shape }),
+  studioEvent("lessons.suggested", { requestId: z.string().min(1), lessons: z.array(LessonTextSchema).min(1).max(MAX_SUGGESTED_LESSONS) }),
+  studioEvent("edit.closed", { editId: IdSchema, ...UsageFiguresSchema.shape }),
+  /** The project's look changed (Style panel or set_project_style); the preview rebuilds and the panel refetches. */
+  studioEvent("style.changed", {}),
   studioEvent("resync", {}),
 ] as const;
 
 export const StudioEventSchema = z.discriminatedUnion("type", studioEventSchemas);
 export const STUDIO_EVENT_TYPES = studioEventSchemas.map((eventSchema) => eventSchema.shape.type.value);
 /** Never persisted, so never replayed after a reconnect. */
-export const EPHEMERAL_EVENT_TYPES = ["text.delta", "tool.heartbeat"] as const satisfies readonly StudioEventType[];
+/** usage.reported repeats on every status-line refresh; the edits row keeps what matters. */
+export const EPHEMERAL_EVENT_TYPES = ["text.delta", "tool.heartbeat", "usage.reported"] as const satisfies readonly StudioEventType[];
 
 export type StudioEvent = z.infer<typeof StudioEventSchema>;
 export type StudioEventType = StudioEvent["type"];
 export type CutCandidate = z.infer<typeof CutCandidateSchema>;
 export type ApprovalFacts = z.infer<typeof ApprovalFactsSchema>;
 export type ApprovalCard = z.infer<typeof ApprovalCardSchema>;
+export type UsageFigures = z.infer<typeof UsageFiguresSchema>;

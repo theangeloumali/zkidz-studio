@@ -1,0 +1,12 @@
+{
+  "session_id": "00000000-0000-4000-8000-000000000002",
+  "transcript_path": "/studio/.claude/projects/-studio-projects-demo/00000000-0000-4000-8000-000000000002.jsonl",
+  "cwd": "/studio/projects/demo",
+  "permission_mode": "default",
+  "hook_event_name": "MessageDisplay",
+  "turn_id": "00000000-0000-4000-8000-000000000d01",
+  "message_id": "00000000-0000-4000-8000-000000000d02",
+  "index": 0,
+  "delta": "The render is queued.",
+  "final": true
+}

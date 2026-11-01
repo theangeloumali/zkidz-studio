@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node build.js",
+    "lint": "eslint .",
     "render": "node render.js",
     "test": "node --test"
   },

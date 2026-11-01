@@ -2,21 +2,28 @@
 # Builds the per-video working files from the raw footage: 16 kHz mono audio (transcription, energy,
 # cut snapping) and a 1080x1920 proxy (review stills, frame strips). The raw file is only ever read.
 # Usage (from the work dir): python -m zks_engine.prepare v1 ../raw-footage.MP4
-import subprocess
 import sys
 from pathlib import Path
 
-from . import backends, ffio
+from . import backends, ffio, progress
 from .audio import GAP_FILL
 from .pipeline import CUDA_LANCZOS, CUDA_TV_RANGE, DROP_ROTATION, OUTPUT, WORK, assert_upright, chain, decode_args, orientation_filter, split_orientation
 from .render_final import has_filter
 
 
+def encode_reporting(command, source, video, stage_name):
+    """Runs the ffmpeg command as a progress stage measured in source seconds, so the bar moves while it encodes."""
+    total = ffio.probe(source).get("durationS") or None
+    with progress.job(video, stage_name, total=total, unit="seconds") as stage:
+        stage.begin()
+        ffio.run_reporting(command, lambda seconds: stage.update(min(seconds, total) if total else seconds))
+
+
 def build_audio(source, video):
     (WORK / "audio").mkdir(exist_ok=True)
     target = WORK / "audio" / f"{video}.wav"
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.user_input_args(source), "-vn", "-ac", "1", "-ar", "16000", "-af", GAP_FILL,
-                    "-c:a", "pcm_s16le", str(target)], check=True)
+    encode_reporting([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *ffio.user_input_args(source), "-vn", "-ac", "1", "-ar", "16000", "-af", GAP_FILL,
+                      "-c:a", "pcm_s16le", str(target)], source, video, "audio")
     return target
 
 
@@ -39,8 +46,8 @@ def build_proxy(source, video, backend):
     else:  # system frames come back autorotated
         hardware, video_filter = [*backend.device, *backend.decode], proxy_filter("", "", False) + backend.upload
     # 1-second GOP so review stills can seek to any time quickly.
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *hardware, *ffio.user_input_args(source), "-vf", video_filter,
-                    *backend.proxy, "-g", "30", "-c:a", "copy", str(partial)], check=True)
+    encode_reporting([ffio.ffmpeg_bin(), "-y", "-hide_banner", "-loglevel", "error", *hardware, *ffio.user_input_args(source), "-vf", video_filter,
+                      *backend.proxy, "-g", "30", "-c:a", "copy", str(partial)], source, video, "proxy")
     assert_upright(partial)
     partial.replace(target)
     return target

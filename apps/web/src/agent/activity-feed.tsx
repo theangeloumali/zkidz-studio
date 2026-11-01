@@ -6,6 +6,7 @@ import { CutsCard } from "./cuts-card.tsx";
 import { ErrorCard } from "./error-card.tsx";
 import { buildFeedItems, type FeedItem } from "./feed-items.ts";
 import { JobRow, NoteRow, ToolRow } from "./feed-rows.tsx";
+import { LessonsCard } from "./lessons-card.tsx";
 import { QuestionCard } from "./question-card.tsx";
 
 function FeedEntry({ item, projectId }: { readonly item: FeedItem; readonly projectId: string }) {
@@ -26,6 +27,8 @@ function FeedEntry({ item, projectId }: { readonly item: FeedItem; readonly proj
       return <QuestionCard projectId={projectId} event={item.event} />;
     case "cuts":
       return <CutsCard projectId={projectId} event={item.event} />;
+    case "lessons":
+      return <LessonsCard event={item.event} />;
     case "error":
       return <ErrorCard event={item.event} />;
   }

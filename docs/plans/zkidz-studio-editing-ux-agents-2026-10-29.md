@@ -208,7 +208,7 @@ session stays untouched.
 - [x] Phase 5: slice E: per-edit cost, time and tokens, edit log, one-click lessons
 - [x] Phase 6: slice F: Codex and OpenCode adapters, lockdown spikes, setup cards
 - [x] Phase 7: integration: merge the slices, adapter seam, wiring, ci:local
-- [ ] Phase 8: review, one PR to develop, release to main, demo MP4, close
+- [x] Phase 8: review, one PR to develop, release to main, demo MP4, close
 
 ### Phase 0: contracts (primary, before any dispatch)
 

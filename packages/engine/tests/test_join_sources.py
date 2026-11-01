@@ -11,7 +11,7 @@ from unittest import mock
 from support import media_file, media_project, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from zks_engine import backends, ffio, join_sources
-from zks_engine.pipeline import has_cuda
+from zks_engine.pipeline import assert_upright, has_cuda
 
 NVIDIA, CPU = backends.get("nvidia"), backends.get("cpu")
 NVIDIA_VULKAN = dataclasses.replace(NVIDIA, libplacebo=True)  # the probe found a Vulkan GPU for libplacebo
@@ -93,6 +93,31 @@ class BackendPieceTests(unittest.TestCase):
         self.assertEqual(len(join_sources.pieces([long], 4)), 4)
 
 
+class LetterboxTests(unittest.TestCase):
+    """#32: a frame wider than 9:16 fits the canvas width and pads above and below; a 9:16 or taller frame still fills it."""
+    PAD = "pad=2160:3840:0:1312:color=black,setsar=1"
+
+    def test_a_wide_frame_fits_the_width_on_every_backend(self):
+        wide = clip(frame=(1920, 1080))
+        self.assertEqual(join_sources.fitted(wide), (2160, 1216))
+        self.assertIn(f"libplacebo=w=2160:h=1216:", piece_filter(wide))
+        self.assertTrue(piece_filter(wide).endswith(f",{self.PAD},{TAIL}"))
+        cpu = piece_filter(wide, CPU)
+        self.assertIn(f"{join_sources.CPU_SCALE_TO.format(2160, 1216)},{self.PAD},", cpu)
+        self.assertIn(f"scale_cuda=2160:1216:interp_algo=lanczos:format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709,"
+                      f"hwdownload,format=yuv420p,{self.PAD},{TAIL}", piece_filter(wide, NVIDIA))
+
+    def test_a_portrait_or_taller_frame_still_fills_the_canvas(self):
+        for frame in ((1080, 1920), (1080, 2400), (2160, 3840)):
+            self.assertEqual(join_sources.fitted(clip(frame=frame)), join_sources.SIZE, frame)
+            self.assertNotIn("pad=", piece_filter(clip(frame=frame), CPU), frame)
+
+    def test_the_upright_display_frame_decides(self):
+        self.assertEqual(join_sources.display_frame({"width": 1920, "height": 1080}, 90), (1080, 1920))
+        self.assertEqual(join_sources.display_frame({"width": 1440, "height": 1080, "sample_aspect_ratio": "4:3"}, 0), (1920.0, 1080))
+        self.assertEqual(join_sources.display_frame({}, 0), join_sources.SIZE)
+
+
 CUDA_DECODE = ["-init_hw_device", "cuda=cu:0", "-filter_hw_device", "cu", "-hwaccel", "cuda", "-hwaccel_device", "cu"]
 TO_4K = "scale_cuda=2160:3840:interp_algo=lanczos:format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709"
 TAIL = "settb=1001/30000,setpts=N,sidedata=mode=delete:type=DISPLAYMATRIX"
@@ -152,11 +177,11 @@ class CudaPieceRenderTests(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
 
-    def source(self, name, hdr):
+    def source(self, name, hdr, size="540x960"):
         tags = "format=yuv420p10le,setparams=color_trc=arib-std-b67:color_primaries=bt2020:colorspace=bt2020nc:range=tv" if hdr else (
             "format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709")
         path = self.root / name
-        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=540x960:rate=30000/1001:duration=1", "-vf", tags,
+        subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=30000/1001:duration=1", "-vf", tags,
                         "-c:v", "hevc_nvenc", *(["-profile:v", "main10"] if hdr else []), str(path)], check=True)
         return path
 
@@ -173,6 +198,25 @@ class CudaPieceRenderTests(unittest.TestCase):
             size = subprocess.run([ffio.ffprobe_bin(), "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", str(out)],
                                   capture_output=True, text=True, check=True).stdout.strip()
             self.assertEqual(size, "2160,3840", name)
+
+
+    def test_a_landscape_clip_is_letterboxed_with_square_pixels(self):
+        # #32: a 16:9 clip used to be stretched onto the portrait canvas, and the upright check refused its 256:81 pixels.
+        source = self.source("wide.mp4", False, "960x540")
+        media = media_file("wide.mp4")
+        media.write_bytes(source.read_bytes())
+        with media_project():
+            piece = join_sources.probe(str(media))
+        out = self.root / "out-wide.mp4"
+        result = subprocess.run(join_sources.piece_command(piece, 0, 10, out, NVIDIA), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        assert_upright(out, join_sources.SIZE)
+        # 2160 wide keeps 16:9 at 1216 tall: black bars of 1312 above and below, the picture between them.
+        luma = lambda y: float(subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-i", str(out), "-frames:v", "1", "-vf", f"crop=2160:64:0:{y},signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-",
+                                               "-f", "null", "-"], capture_output=True, text=True, check=True).stdout.split("YAVG=")[-1])
+        self.assertLess(luma(200), 20)
+        self.assertLess(luma(3600), 20)
+        self.assertGreater(luma(1888), 40)
 
 
 class RateTests(unittest.TestCase):

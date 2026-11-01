@@ -98,6 +98,8 @@ export interface SessionRecord extends TerminalSession {
   readonly questionCards: Set<AbortController>;
   /** The last status-line usage published, so an unchanged refresh publishes nothing. */
   lastStatusUsage?: string;
+  /** The latest transcript read; each waits for the one before, so totals never publish out of order. */
+  transcriptRead?: Promise<void>;
 }
 
 /** The per-session state every agent's record starts with. */

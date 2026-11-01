@@ -538,6 +538,25 @@ describe("terminal sessions: questions and Claude's text in Activity", { timeout
     ]);
   });
 
+  it("refreshes the transcript's token totals with each status line, so a long turn shows tokens before it ends", async () => {
+    fixture = await createTerminalFixture({ transcriptRoot: await mkdtemp(join(tmpdir(), "zks-claude-projects-")) });
+    const { sessionId } = await openSession();
+    const transcriptPath = join(fixture.transcriptRoot ?? "", "-studio-projects-demo", `${sessionId}.jsonl`);
+    await mkdir(dirname(transcriptPath), { recursive: true });
+    const usage = { input_tokens: 10, output_tokens: 300, cache_creation_input_tokens: 0, cache_read_input_tokens: 40_000 };
+    await writeFile(transcriptPath, JSON.stringify({ type: "assistant", message: { id: "msg_1", role: "assistant", usage } }));
+
+    await fixture.sessions.handleHook(
+      sessionId,
+      hook(sessionId, { hook_event_name: "StatusLine", transcript_path: transcriptPath, cost: { total_cost_usd: 0.09, total_duration_ms: 60_000 } }),
+    );
+    await waitFor(() => fixture.events.some((event) => event.type === "usage.reported" && event.source === "claude_transcript"));
+
+    expect(fixture.events.filter((event) => event.type === "usage.reported" && event.source === "claude_transcript")).toEqual([
+      { type: "usage.reported", projectId: PROJECT_ID, sessionId, source: "claude_transcript", inputTokens: 10, outputTokens: 300, cacheTokens: 40_000 },
+    ]);
+  });
+
   it("totals the session transcript's tokens at Stop, reading only this session's transcript", async () => {
     fixture = await createTerminalFixture({ transcriptRoot: await mkdtemp(join(tmpdir(), "zks-claude-projects-")) });
     const { sessionId } = await openSession();

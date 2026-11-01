@@ -204,12 +204,14 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
     if (fingerprint === "{}" || fingerprint === record.lastStatusUsage) return;
     record.lastStatusUsage = fingerprint;
     await publishUsage(record, "claude_statusline", figures);
+    // The status line refreshes after each assistant message, so tokens keep up with a long turn too.
+    reportTranscriptUsage(record, payload.transcript_path);
   };
 
-  const reportTranscriptUsage = (record: SessionRecord, payload: StopPayload) => {
-    const transcriptPath = payload.transcript_path;
+  const reportTranscriptUsage = (record: SessionRecord, transcriptPath: unknown) => {
     if (!isSessionTranscript(transcriptPath, record.sessionId)) return;
-    resolveTranscriptFile(transcriptPath, deps.transcriptRoot ?? defaultTranscriptRoot())
+    record.transcriptRead = (record.transcriptRead ?? Promise.resolve())
+      .then(() => resolveTranscriptFile(transcriptPath, deps.transcriptRoot ?? defaultTranscriptRoot()))
       .then((filePath) => (filePath === null ? null : (deps.readTranscriptUsage ?? readTranscriptUsage)(filePath)))
       .then((figures) => (figures === null ? undefined : publishUsage(record, "claude_transcript", figures)))
       .catch((error: unknown) => deps.logger.warn("terminal transcript usage not read", { error }));
@@ -218,7 +220,7 @@ export function createTerminalSessions(deps: TerminalSessionsDeps): TerminalSess
   const handleStop = async (record: SessionRecord, payload: StopPayload) => {
     record.isWorking = false;
     await flushDisplays(record);
-    reportTranscriptUsage(record, payload);
+    reportTranscriptUsage(record, payload.transcript_path);
     const hasNarrated = record.hasNarratedTurn;
     record.hasNarratedTurn = false;
     await publishAll(hookToStudioEvents(hasNarrated ? { ...payload, last_assistant_message: undefined } : payload, eventContext(record)));

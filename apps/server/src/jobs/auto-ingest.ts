@@ -1,9 +1,10 @@
 // Created by The Angelo Umali.
-// Starts a project's ingest by itself once its uploads go quiet, so the editor has footage before the agent runs.
+// Starts a project's ingest and transcription by itself once its uploads go quiet, so the editor has footage and words
+// before the agent runs.
 import { mediaAssets, projects } from "@zks/db/schema";
 import { asc, eq } from "drizzle-orm";
 import type { Logger } from "../logging/logger.ts";
-import { type IngestStartDeps, openIngestJobIds, startIngest } from "../tools/ingest-start.ts";
+import { type IngestStartDeps, openIngestJobIds, startIngest, startTranscribe, TRANSCRIBE_DEFAULTS } from "../tools/ingest-start.ts";
 
 const DEFAULT_QUIET_MS = 3000;
 /** Footage a template places as a showcase insert; its own ingest runs once the template starts. */
@@ -16,7 +17,7 @@ export interface AutoIngest {
   committed(projectId: string): void;
 }
 
-export interface AutoIngestOptions extends IngestStartDeps {
+interface AutoIngestOptions extends IngestStartDeps {
   readonly logger: Logger;
   readonly quietMs?: number;
 }
@@ -60,6 +61,8 @@ export function createAutoIngest(options: AutoIngestOptions): AutoIngest {
     if ((await openIngestJobIds(options.db, projectId)).some((jobId) => jobId !== ownJobId)) return;
     const started = await startIngest(options, { projectId, videoId: project.videoId, input: { clips } });
     ownJobs.set(projectId, started.jobId);
+    // Queued now, it waits for this ingest's wav and runs while the join still encodes.
+    await startTranscribe(options, { projectId, videoId: project.videoId, params: TRANSCRIBE_DEFAULTS });
   }
 
   return {

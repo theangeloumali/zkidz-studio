@@ -31,11 +31,11 @@ const toolSchema = z.object({
   license: z.string(),
   platforms: z.partialRecord(z.enum(PLATFORM_KEYS), platformEntrySchema),
 });
-const modelSchema = downloadSchema.extend({ file: z.string().regex(/^[\w.-]+\.bin$/), license: z.string(), fetchOnSetup: z.boolean() });
+const modelSchema = downloadSchema.extend({ file: z.string().regex(/^[\w.-]+\.(bin|onnx)$/), license: z.string(), fetchOnSetup: z.boolean() });
 
 const toolsLockSchema = z.object({
   schemaVersion: z.literal(1),
-  tools: z.object({ ffmpeg: toolSchema, "whisper-cpp": toolSchema, "chrome-headless-shell": toolSchema }),
+  tools: z.object({ ffmpeg: toolSchema, "whisper-cpp": toolSchema, "whisper-cuda": toolSchema, "chrome-headless-shell": toolSchema }),
   models: z.record(z.string(), modelSchema),
 });
 

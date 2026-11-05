@@ -13,6 +13,7 @@ SNAP_RADIUS = 0.15  # seconds searched either side of a cut for the quietest win
 FACECAM_ZOOM = 1.08
 FACECAM_SLACK_FRAMES = 1
 MIN_SEGMENT = 0.2
+WORD_PAD = 0.06  # whisper's word starts run up to ~0.1 s late: an edge moved off a word stops this far clear of it
 # The one definition of the punch-in: both renderers apply it verbatim, at 4K or at 1080p.
 # Crop biased 110/3840 of the height upward so the face stays centred.
 PUNCH_TOP = 110 / 3840  # the punch-in window sits this fraction of the frame height from the top
@@ -41,24 +42,53 @@ def quiet_runs(energy_db, threshold_db):
     return runs
 
 
-def find_pauses(energy_db, spec, removals):
-    """Long pauses inside kept talk get their middle removed, leaving `keep` seconds of air."""
+def word_free(start, end, words):
+    """The stretches of [start, end] no word overlaps: a soft 'oo' or 'ah' can sit below the pause threshold."""
+    stretches, cursor = [], start
+    for at, word_end in sorted(words):
+        if word_end > cursor and at < end:
+            if at > cursor:
+                stretches.append((cursor, at))
+            cursor = max(cursor, word_end)
+    return stretches + ([(cursor, end)] if cursor < end else [])
+
+
+def find_pauses(energy_db, spec, removals, words=()):
+    """Long pauses inside kept talk get their middle removed, leaving `keep` seconds of air, around any word in them."""
     rule = spec["trim_pauses"]
     pauses = []
     for first, last in quiet_runs(energy_db, rule["threshold_db"]):
-        start, end = first * ENERGY_WINDOW, last * ENERGY_WINDOW
-        if end - start < rule["min"] or overlaps(start, end, rule["exclude"] + removals):
-            continue
-        half = rule["keep"] / 2
-        pauses.append([start + half, end - half, f"pause {end - start:.2f}s"])
+        for start, end in word_free(first * ENERGY_WINDOW, last * ENERGY_WINDOW, words):
+            if end - start < rule["min"] or overlaps(start, end, rule["exclude"] + removals):
+                continue
+            half = rule["keep"] / 2
+            pauses.append([start + half, end - half, f"pause {end - start:.2f}s"])
     return pauses
 
 
-def snap_removal(energy_db, start, end, reason, *flags):
-    """A "pin" flag keeps both edges where they were written: a quieter dip inside a word can win the snap."""
-    if "pin" in flags:
-        return start, end, reason
-    return quietest(energy_db, start), quietest(energy_db, end), reason
+def padded(words):
+    """Each word widened by WORD_PAD, or half the gap to its neighbour when that is less: never joined, so an edge moved
+    off a word goes at most to the middle of a gap, never to the end of a sentence."""
+    ordered = sorted(words)
+    spans = []
+    for index, (at, end) in enumerate(ordered):
+        before = at - ordered[index - 1][1] if index else WORD_PAD * 2
+        after = ordered[index + 1][0] - end if index + 1 < len(ordered) else WORD_PAD * 2
+        spans.append((at - min(WORD_PAD, max(0.0, before) / 2), end + min(WORD_PAD, max(0.0, after) / 2)))
+    return spans
+
+
+def off_words(seconds, spans):
+    """`seconds`, or the nearer edge of the padded word it falls inside: a cut keeps a word whole or removes it whole."""
+    inside = next(((at, end) for at, end in spans if at < seconds < end), None)
+    return seconds if inside is None else min(inside, key=lambda edge: abs(edge - seconds))
+
+
+def snap_removal(energy_db, start, end, reason, *flags, words=()):
+    """Each edge snaps to the quietest window, or stays where it was written under a "pin" flag; either way, off any word."""
+    if "pin" not in flags:
+        start, end = quietest(energy_db, start), quietest(energy_db, end)
+    return off_words(start, words), off_words(end, words), reason
 
 
 def on_facecam(segment, facecam):
@@ -68,11 +98,12 @@ def on_facecam(segment, facecam):
     return any(round(start * FPS) - slack <= segment["in"] and segment["out"] <= round(end * FPS) + slack for start, end in facecam)
 
 
-def build(spec, energy_db):
-    snapped = [snap_removal(energy_db, *removal) for removal in spec["remove"]]
+def build(spec, energy_db, words=()):
+    """words: [(at, end)] of the transcript, in source seconds; no cut lands inside one (QC's cutWords)."""
+    snapped = [snap_removal(energy_db, *removal, words=padded(words)) for removal in spec["remove"]]
     # A removal shorter than 2*SNAP_RADIUS can snap inverted; clamp so it never replays frames.
     removals = [[start, max(start, end), reason] for start, end, reason in snapped]
-    removals += find_pauses(energy_db, spec, [[start, end] for start, end, _ in removals])
+    removals += find_pauses(energy_db, spec, [[start, end] for start, end, _ in removals], words)
     removals.sort()
 
     total_frames = int(round(spec["duration"] * FPS))
@@ -111,7 +142,7 @@ def pin_cutaways(cutaways, segments):
 
 
 # Animated footage zooms render_final knows (zoom_factor); a cut-spec entry is [at, end, preset, cx?, cy?] in source seconds.
-ZOOM_PRESETS = ("snap", "push", "reveal", "through-out", "through-in", "portal")
+ZOOM_PRESETS = ("snap", "push", "lean", "reveal", "through-out", "through-in", "portal")
 ZOOM_CENTRE = (0.5, PUNCH_TOP + 0.5 / FACECAM_ZOOM)  # the punch-in's framing, so a zoom on face-cam keeps the face placed
 
 
@@ -138,6 +169,16 @@ def map_windows(windows, segments):
     return [window for at, end in windows if (window := edited_window(at, end, segments))]
 
 
+def map_focus(windows, segments):
+    """Rack-focus windows [at, end, blur] (source seconds, blur in px on the 1080 grid) as edited frames."""
+    return [{**window, "blur": blur} for at, end, blur in windows if (window := edited_window(at, end, segments))]
+
+
+def map_reframes(reframes, segments):
+    """Reframes [at, end, cx, cy, scale] as edited frames; render_final turns each into a crop of the source's picture band."""
+    return [{**window, "cx": cx, "cy": cy, "scale": scale} for at, end, cx, cy, scale in reframes if (window := edited_window(at, end, segments))]
+
+
 def map_portals(portals, segments):
     """A portal [at, end, x1, y1, ... x4, y4] (screen corners on the 1080 grid) becomes a zoom on the screen's centre that
     reaches the scale where the screen fills the frame; the insert that starts at `end` takes over on the cut."""
@@ -159,7 +200,9 @@ def write_outputs(video, spec, segments, frames):
     payload = {"fps_num": FPS_NUM, "fps_den": FPS_DEN, "frames": frames, "punch_crop": PUNCH_CROP, "base": spec.get("base", video),
                "reel": bool(spec.get("reel")), "cutaways": pin_cutaways(spec.get("cutaways", []), segments), "bleeps": bleeps,
                "zooms": map_zooms(spec.get("zooms", []), segments) + map_portals(spec.get("portals", []), segments),
-               "matte": map_windows(spec.get("matte", []), segments), "segments": segments}
+               "matte": map_windows(spec.get("matte", []), segments), "focus": map_focus(spec.get("focus", []), segments),
+               "grade": spec.get("grade", "house"), "reframes": map_reframes(spec.get("reframes", []), segments), "segments": segments,
+               "faces": f"mask/{video}.faces.mkv" if spec.get("blur_faces") == "others" else None}
     (out_dir / f"{video}.json").write_text(json.dumps(payload, indent=1), encoding="utf-8")
     (out_dir / f"{video}.js").write_text(f"window.EDL = {json.dumps(payload)};\n", encoding="utf-8")
     with open(out_dir / f"{video}.csv", "w", newline="", encoding="utf-8") as handle:

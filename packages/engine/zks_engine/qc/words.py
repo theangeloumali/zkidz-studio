@@ -105,10 +105,25 @@ def master_ranges(window, edl, intro):
     return [(start + first, end + first)]
 
 
-def removed_alone(word, words, edl, hear_source):
-    """A word missing from the master that, heard alone, lies mostly in removed footage: the cut spec removes it."""
+def not_lost_at_cut(word, words, edl, hear_source):
+    """A word missing from the master that the cut did not lose: heard alone it lies mostly in removed footage (the cut
+    spec removes it), or the source hearing cannot place it at all, so whisper misses it without the cut too."""
+    if hear_source is None:
+        return False
     alone = heard_alone(word, words, hear_source)
-    return bool(alone) and kept_seconds(*alone, edl) < (alone[1] - alone[0]) / 2
+    return alone is None or kept_seconds(*alone, edl) < (alone[1] - alone[0]) / 2
+
+
+def master_holds(word, edl, intro, transcribe_master):
+    """The word heard in the master around its own edited span, the window its source hearing uses: whisper drops a
+    short filler at random in a window centred on the cut."""
+    spans = map_interval(word["at"], word["end"], edl)
+    if len(spans) != 1:
+        return False
+    window = (max(0.0, spans[0][0] - ALONE_MARGIN_S), spans[0][1] + ALONE_MARGIN_S)
+    wanted = token(word["text"])
+    heard = [token(other["text"]) for start, end in master_ranges(window, edl, intro) for other in transcribe_master(start, end)]
+    return any(SequenceMatcher(a=wanted, b=other).ratio() >= SIMILAR for other in heard if other)
 
 
 def remembered(hear_source):
@@ -123,9 +138,9 @@ def remembered(hear_source):
     return hear_source and hear
 
 
-def cut_word_problems(words, edl, intro, transcribe_master, hear_source=None):
+def cut_word_problems(words, edl, intro, transcribe_master, hear_source=None, on_cut=lambda: None):
     """transcribe_master(start_s, end_s) -> words heard in that stretch of the master. hear_source(start_s, end_s) -> words
-    heard alone in the source, the second opinion on each flagged word."""
+    heard alone in the source, the second opinion on each flagged word. on_cut() runs as each cut is judged."""
     hear_source = remembered(hear_source)
     problems = clipped_words(words, edl, hear_source)
     for cut in timeline.cut_frames(edl):
@@ -134,6 +149,8 @@ def cut_word_problems(words, edl, intro, transcribe_master, hear_source=None):
         heard = [token(word["text"]) for start, end in master_ranges(window, edl, intro) for word in transcribe_master(start, end)]
         expected = expected_words(words, edl, window)
         for problem, index in diff_problems([(token(word["text"]), optional) for word, optional in expected], [word for word in heard if word]):
-            if index is None or not removed_alone(expected[index][0], words, edl, hear_source):
+            missed = None if index is None else expected[index][0]
+            if missed is None or not (not_lost_at_cut(missed, words, edl, hear_source) or master_holds(missed, edl, intro, transcribe_master)):
                 problems.append(f"cut at {cut_s:.2f} s: {problem}")
+        on_cut()
     return problems

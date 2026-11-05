@@ -1,4 +1,5 @@
 // Created by The Angelo Umali.
+import { CueSheetSchema } from "@zks/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
 import { anchoredKeyword, callTool, createTranscribedFixture, ENGINE_TIMEOUT_MS, messageOf, readStoredSheet } from "./cue-fixtures.ts";
@@ -37,7 +38,7 @@ describe("list_cue_kinds", () => {
   );
 
   it(
-    "searches purposes and leaves out kinds an agent cannot add",
+    "searches purposes and lists every kind the theme draws, the matte kinds included (#40)",
     async () => {
       const fixture = await createToolFixture(server);
       const subtitles = await callTool(fixture, "list_cue_kinds", { purpose: "subtitle" });
@@ -45,13 +46,44 @@ describe("list_cue_kinds", () => {
       const special = await callTool(fixture, "list_cue_kinds", { tier: "special" });
       const specialKinds = (special.structuredContent as { kinds: ListedKind[] }).kinds.map((entry) => entry.kind);
       expect(specialKinds).toContain("pipeline");
-      expect(specialKinds).not.toContain("backdrop");
+      expect(specialKinds).toEqual(expect.arrayContaining(["backdrop", "chatCard", "frameEscape", "headlineStack", "lineChart", "paperCutout", "phoneFrame"]));
     },
     ENGINE_TIMEOUT_MS,
   );
 });
 
 describe("add_cue", () => {
+  it(
+    "adds each kind the theme draws that the cue contract used to refuse (#40)",
+    async () => {
+      const fixture = await createTranscribedFixture(server);
+      const drawnKinds = [
+        { kind: "chatCard", messages: [{ from: "me", text: "Use the skill", at: 0.1 }] },
+        { kind: "headlineStack", items: [{ text: "AI takes jobs", at: 0.1 }], final: "Skills win" },
+        {
+          kind: "lineChart",
+          points: [
+            ["Mon", 2],
+            ["Tue", 5],
+          ],
+          focus: 1,
+        },
+        { kind: "phoneFrame", tilt: -6 },
+        { kind: "backdrop", src: "media/raw/beach.png", depth: "behind" },
+        { kind: "paperCutout", src: "work/cutouts/v1-2.png" },
+        { kind: "frameEscape", depth: "behind" },
+      ];
+      for (const fields of drawnKinds) {
+        const { kind: _keyword, text: _text, ...anchoredSpan } = anchoredKeyword();
+        const result = await callTool(fixture, "add_cue", { sheet: "main", cue: { ...anchoredSpan, ...fields } });
+        expect(result.isError, `${fields.kind}: ${messageOf(result)}`).toBeUndefined();
+      }
+      const storedKinds = CueSheetSchema.parse(await readStoredSheet(fixture)).map((cue) => cue.kind);
+      expect(storedKinds).toEqual(drawnKinds.map((fields) => fields.kind));
+    },
+    ENGINE_TIMEOUT_MS,
+  );
+
   it(
     "stores an anchored cue with an id, a version and a spec.version event",
     async () => {

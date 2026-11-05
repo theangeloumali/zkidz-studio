@@ -97,6 +97,10 @@ export function createProjectInPlace(path: string, title: string) {
   return requestJson(API_ROUTES.createProjectInPlace.response, API_ROUTES.createProjectInPlace.path, { method: "POST", body: { path, title } });
 }
 
+export function addMediaInPlace(projectId: string, path: string) {
+  return requestJson(API_ROUTES.addMediaInPlace.response, routeUrl(API_ROUTES.addMediaInPlace.path, { projectId }), { method: "POST", body: { path } });
+}
+
 export function listFolder(path: string | undefined) {
   const query = path === undefined ? "" : `?${new URLSearchParams({ path }).toString()}`;
   return requestJson(API_ROUTES.listFolder.response, `${API_ROUTES.listFolder.path}${query}`);

@@ -1,0 +1,9 @@
+%% Created by The Angelo Umali.
+flowchart LR
+  edit[agent edits] --> render[render_master]
+  render --> qc[qc_master]
+  qc -->|fails| fix[agent fixes]
+  fix --> render
+  render -.->|studio defect| studio[fixed in the studio with a test]
+  qc -.->|studio defect| studio
+  studio -.->|agent resumes on the new build| edit

@@ -97,6 +97,44 @@ class CliPathTests(unittest.TestCase):
             whispercpp.cli_path(FAKE_LOCK, "linux-x64")
 
 
+CUDA_SHA = "baa7fa6ceb2a164ba6f03561339ed08c1fab2744d9edd0597be479c55752bd5d"
+CUDA_LOCK = {"tools": {**FAKE_LOCK["tools"], "whisper-cuda": {"platforms": {"linux-x64": {
+    "url": "https://example.invalid/wc.tar.gz", "sha256": CUDA_SHA, "size": 1, "executable": "whisper-cuda/whisper-cli"}}}}}
+
+
+class CudaCliTests(unittest.TestCase):
+    """The CUDA build (about 12x faster on QC's re-hearing) when it is installed and the driver loads, else the CPU pin."""
+
+    def setUp(self):
+        self.home, patch = scratch_home()
+        self.addCleanup(patch.stop)
+        self.addCleanup(self.home.cleanup)
+        tools = Path(self.home.name) / "tools"
+        self.cpu = tools / "whisper-cpp" / SHA[:12] / "bin" / "whisper-cli"
+        self.cuda = tools / "whisper-cuda" / CUDA_SHA[:12] / "whisper-cuda" / "whisper-cli"
+        for path in (self.cpu, self.cuda):
+            path.parent.mkdir(parents=True)
+            path.touch()
+
+    def test_the_cuda_build_wins_when_the_driver_loads(self):
+        with mock.patch.object(whispercpp, "cuda_driver", return_value=True):
+            self.assertEqual(whispercpp.cli_path(CUDA_LOCK, "linux-x64"), self.cuda)
+
+    def test_without_the_driver_the_cpu_pin_runs(self):
+        with mock.patch.object(whispercpp, "cuda_driver", return_value=False):
+            self.assertEqual(whispercpp.cli_path(CUDA_LOCK, "linux-x64"), self.cpu)
+
+    def test_an_uninstalled_cuda_build_falls_back_to_the_cpu_pin(self):
+        self.cuda.unlink()
+        with mock.patch.object(whispercpp, "cuda_driver", return_value=True):
+            self.assertEqual(whispercpp.cli_path(CUDA_LOCK, "linux-x64"), self.cpu)
+
+    def test_the_cuda_build_finds_its_bundled_libraries(self):
+        env = whispercpp.cli_env(self.cuda, {"LD_LIBRARY_PATH": "/usr/lib/wsl/lib"})
+        self.assertEqual(env["LD_LIBRARY_PATH"], f"{self.cuda.parent}{os.pathsep}/usr/lib/wsl/lib")
+        self.assertNotIn("LD_LIBRARY_PATH", whispercpp.cli_env(self.cpu, {}))
+
+
 class ModelPathTests(unittest.TestCase):
     def setUp(self):
         self.home, patch = scratch_home()

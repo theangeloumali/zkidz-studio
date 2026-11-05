@@ -94,6 +94,13 @@ export const API_ROUTES = {
     body: z.strictObject({ path: z.string().min(1), title: ProjectTitleSchema }),
     response: ProjectWithAssetSchema,
   },
+  /** Another file in place for a project that exists: a multi-clip session is never copied. */
+  addMediaInPlace: {
+    method: "POST",
+    path: "/api/projects/:projectId/in-place",
+    body: z.strictObject({ path: z.string().min(1) }),
+    response: MediaAssetSchema,
+  },
   listFolder: {
     method: "GET",
     path: "/api/fs/list",

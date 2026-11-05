@@ -35,6 +35,12 @@ phrase file, and you only decide how phrases group and what each group says in E
 - Speech recognition often hears a product or person's name as a common word (an AI tool heard as "cloud" is the classic).
   Fix the word when the context makes the meaning clear.
 
+## Word captions (learning theme)
+
+On a `learning` project the render draws word captions: each line builds word by word. Group and write entries as below.
+Give an entry `pills` (words of its `en` that land as keyword pills) and a `scale` from 0.6 to 2.0 for a line that needs
+weight. Keep pills to the word that carries the line.
+
 ## Bleeps
 
 Place a bleep from the words of an isolated window around the swear (`check_window` on a range of a few seconds), never from

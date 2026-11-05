@@ -54,7 +54,7 @@ class GpuGraphTests(unittest.TestCase):
         self.assertIn("scale_cuda=1080:1920:interp_algo=lanczos", graph)
         self.assertIn("scale_cuda=1166:2074:interp_algo=lanczos", graph)
         self.assertIn("[wide][big]overlay_cuda=x=-43:y=-59:enable='between(n,30,59)'[framed]", graph)
-        self.assertIn(f"[framed]hwdownload,format=yuv420p,{render_final.DROP_ROTATION},{render_final.GRADE},hwupload[graded]", graph)
+        self.assertIn(f"[framed]hwdownload,format=yuv420p,{render_final.DROP_ROTATION},{render_final.grade_of({})},hwupload[graded]", graph)
         self.assertTrue(graph.endswith(f"[graded][ovl]overlay_opencl,hwdownload,format=yuv420p,{render_final.BT709_TV}[v]"))
         self.assertNotIn("flags=lanczos", graph)  # no CPU resample of the 4K frame
 
@@ -91,7 +91,7 @@ class GpuGraphTests(unittest.TestCase):
         graph = render_final.gpu_graph(self.timeline, "", (), render_final.UHD, render_final.CRISP)
         self.assertIn("scale_cuda=2160:3840:interp_algo=lanczos", graph)
         self.assertIn("overlay_cuda=x=-86:y=-119", graph)
-        self.assertIn(f"{render_final.GRADE},hwupload,{render_final.CRISP}[graded]", graph)
+        self.assertIn(f"{render_final.grade_of({})},hwupload,{render_final.CRISP}[graded]", graph)
         self.assertIn("libplacebo=w=2160:h=3840", graph)
         self.assertIn(render_final.DROP_ROTATION, graph)  # PNG and MP4 muxers would otherwise re-rotate the frames
 
@@ -101,7 +101,7 @@ class GpuGraphTests(unittest.TestCase):
         self.assertEqual(plain[:4], (200, 400, 600, 800))
         # y 400 * 4148/3840 - 119 = 313.08 -> 314; bottom 1200 * 4148/3840 - 119 = 1177.25 -> 1178.
         self.assertEqual(zoomed[:4], (130, 314, 648, 864))
-        graph = blur.gpu_blur_graph([plain], "soften", render_final.GRADE, render_final.UHD)
+        graph = blur.gpu_blur_graph([plain], "soften", render_final.grade_of({}), render_final.UHD)
         self.assertTrue(graph.startswith("[soften]scale_cuda=270:480"))
         self.assertIn("scale=2160:3840:flags=bilinear", graph)
         self.assertTrue(graph.endswith("hwupload[veil];"))

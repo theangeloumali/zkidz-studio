@@ -77,7 +77,7 @@ class HyperFramesRenderTests(unittest.TestCase):
     def test_frames_are_one_transparent_png_per_edited_frame(self):
         result = self.render("tiny")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        pngs = sorted(path.name for path in (self.work / "frames" / "tiny").iterdir())
+        pngs = sorted(path.name for path in (self.work / "frames" / "tiny").glob("*.png"))
         self.assertEqual(pngs, [f"{index:05d}.png" for index in range(60)])
         self.assertEqual(pixel(self.work / "frames" / "tiny" / "00030.png", 5, 5), bytes(4))  # untouched corner: clear
         self.assertFalse((self.work / "frames" / "tiny.hf").exists())
@@ -96,7 +96,7 @@ class HyperFramesRenderTests(unittest.TestCase):
         for index in (0, 30, 59):
             self.assertTrue((rgba(intro / f"{index:05d}.png")[..., 3] == 255).all(), f"pre-roll frame {index} is not opaque")
         # Opaque frames are still stored as RGBA, or render_final's PNG input changes format mid-chunk.
-        for png in [*intro.iterdir(), *(self.work / "frames" / "opener").iterdir()]:
+        for png in [*intro.glob("*.png"), *(self.work / "frames" / "opener").glob("*.png")]:
             self.assertEqual(png.read_bytes()[25], 6, f"{png.parent.name}/{png.name} is not RGBA")
         last, first = rgba(intro / "00059.png"), rgba(self.work / "frames" / "opener" / "00045.png")
         self.assertTrue((first[..., 3] == 255).all(), "the split's first frame lets footage through")
@@ -136,7 +136,8 @@ class HyperFramesRenderTests(unittest.TestCase):
                     self.assertEqual(track.getnframes(), 96096)
 
     def test_gallery_draws_every_brand_kind_and_composites_stills(self):
-        registry = subprocess.run(["node", "-e", f"console.log(JSON.stringify(Object.keys(require({json.dumps(str(ENGINE / 'hf' / 'components'))}).REGISTRY)))"],
+        # Every kind the default theme draws; the learning kinds have their own gallery (test_hf_learning.py).
+        registry = subprocess.run(["node", "-e", f"console.log(JSON.stringify(Object.keys(require({json.dumps(str(ENGINE / 'hf' / 'theme'))}).loadTheme('zkidz').components)))"],
                                   capture_output=True, text=True, check=True).stdout
         result = self.render("gallery", "--stills", "auto")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

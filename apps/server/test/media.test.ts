@@ -163,6 +163,21 @@ describe.skipIf(!ffmpegAvailable)("GET /api/media/:assetId", () => {
     expect((await getRequest(server, `/api/media/${asset.id}`)).status).toBe(404);
   });
 
+  it("adds another file in place to an existing project, without copying it (#42)", async () => {
+    const first = join(fixtures.dir, "session-part-1.mp4");
+    const second = join(fixtures.dir, "session-part-2.mp4");
+    await writeFile(first, await readFile(fixtures.clipMp4));
+    await writeFile(second, await readFile(fixtures.clipMp4));
+    const created = await postJson(server, API_ROUTES.createProjectInPlace.path, { title: "Session", path: first });
+    const { project } = API_ROUTES.createProjectInPlace.response.parse(await created.json());
+    const added = await postJson(server, API_ROUTES.addMediaInPlace.path.replace(":projectId", project.id), { path: second });
+    expect(added.status).toBe(201);
+    const asset = API_ROUTES.addMediaInPlace.response.parse(await added.json());
+    expect(asset).toMatchObject({ projectId: project.id, name: "session-part-2.mp4", kind: "camera" });
+    const listed = await getRequest(server, API_ROUTES.listMedia.path.replace(":projectId", project.id));
+    expect(API_ROUTES.listMedia.response.parse(await listed.json()).assets.map((each) => each.name)).toEqual(["session-part-1.mp4", "session-part-2.mp4"]);
+  });
+
   it("answers 404 for an unknown or malformed asset id", async () => {
     expect((await getRequest(server, `/api/media/${crypto.randomUUID()}`)).status).toBe(404);
     expect((await getRequest(server, "/api/media/..%2F..%2Fetc%2Fpasswd")).status).toBe(404);

@@ -2,6 +2,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { MAX_PROPOSED_CUTS } from "../../src/tools/cut-candidates.ts";
 import { findRejectedCandidates, MAX_REJECTED_SPANS, pendingCutReviewCards, recordRejectedCandidates, resolveCutReview } from "../../src/tools/cut-review.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
@@ -77,6 +78,21 @@ describe("set_cuts", () => {
   });
 });
 
+describe("set_cuts with blur boxes and zooms", () => {
+  // The render veils the cropped picture; a box over an animated zoom would stay put while the picture moves under it.
+  it("refuses a blur box whose span overlaps a zoom, and keeps one off every zoom", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const box = { x: 100, y: 100, w: 200, h: 200, reason: "a stranger's face on the monitor" };
+    const zooms = [{ at: 4, end: 6, preset: "push" as const }];
+    const overlapping = await callTool(fixture, "set_cuts", { cuts: { ...cutSpecFor(asset.id), zooms, blurBoxes: [{ ...box, at: 5, end: 8 }] } });
+    expect(overlapping.isError).toBe(true);
+    expect(JSON.stringify(overlapping.content)).toContain("blur box 0 overlaps zoom 0");
+    const apart = await callTool(fixture, "set_cuts", { cuts: { ...cutSpecFor(asset.id), zooms, blurBoxes: [{ ...box, at: 7, end: 9 }] } });
+    expect(apart.isError, JSON.stringify(apart.content)).toBeUndefined();
+  });
+});
+
 describe("set_cuts on hardware without animated zooms", () => {
   const capabilitiesPath = () => join(server.studioHome, "capabilities.json");
   const writeCapabilities = (zoomExpr: boolean) =>
@@ -106,6 +122,34 @@ describe("set_cuts on hardware without animated zooms", () => {
 });
 
 describe("propose_cuts", () => {
+  // A 43-min session's candidates were too many to return, so the agent trimmed fillers by hand (Phase 6, 2026-11-03).
+  it("proposes only inside the spans the edit keeps", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    await insertTranscript(fixture, asset.id, STUTTER_WORDS);
+    const pending = callTool(fixture, "propose_cuts", { within: [{ at: 0, end: 1 }] });
+    await expect.poll(() => fixture.events.find((event) => event.type === "cuts.proposed")).toBeDefined();
+    const proposal = fixture.events.find((event) => event.type === "cuts.proposed");
+    if (proposal?.type !== "cuts.proposed") throw new Error("no proposal");
+    expect(proposal.candidates.map((candidate) => candidate.kind)).toEqual(["filler"]);
+    resolveCutReview(fixture.context.projectId, proposal.requestId, { approved: [], rejected: proposal.candidates.map((candidate) => candidate.id) });
+    await pending;
+  });
+
+  it("refuses a proposal too long for the agent to read and names the fix", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const fillers = Array.from({ length: MAX_PROPOSED_CUTS + 1 }, (_, index) => [
+      { at: index * 2, end: index * 2 + 0.3, text: "um" },
+      { at: index * 2 + 0.4, end: index * 2 + 0.8, text: "right" },
+    ]).flat();
+    await insertTranscript(fixture, asset.id, fillers);
+    const result = await callTool(fixture, "propose_cuts", {});
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/within/);
+    expect(fixture.events.some((event) => event.type === "cuts.proposed")).toBe(false);
+  });
+
   it("emits cuts.proposed, waits for the review, and lets set_cuts use the approved ids", async () => {
     const fixture = await createToolFixture(server);
     const asset = await insertCameraAsset(fixture);
@@ -313,5 +357,20 @@ describe("validate_spec", () => {
     const valid = await callTool(fixture, "validate_spec", { videoId: "v1" });
     expect(valid.isError).toBeUndefined();
     expect(valid.structuredContent).toEqual({ errors: [] });
+  });
+});
+
+// set_cuts replaces the whole spec, so changing one field needs the stored one back: an agent without it retyped 28 zooms.
+describe("read_spec", () => {
+  it("returns the stored cut spec as set_cuts wrote it, and null before there is one", async () => {
+    const fixture = await createToolFixture(server);
+    expect((await callTool(fixture, "read_spec", { videoId: "v1", kind: "cuts" })).structuredContent).toEqual({ spec: null });
+
+    const asset = await insertCameraAsset(fixture);
+    const cuts = cutSpecFor(asset.id);
+    await callTool(fixture, "set_cuts", { cuts });
+    const read = await callTool(fixture, "read_spec", { videoId: "v1", kind: "cuts" });
+    expect(read.isError).toBeUndefined();
+    expect(read.structuredContent).toEqual({ spec: cuts });
   });
 });

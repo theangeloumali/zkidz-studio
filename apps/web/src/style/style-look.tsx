@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 import { THEME_TYPE_ROLES, type ProjectStyle, type ThemeId } from "@zks/shared";
 
-export const THEME_LABELS: Readonly<Record<ThemeId, string>> = { zkidz: "ZKidz", minimal: "Minimal" };
+export const THEME_LABELS: Readonly<Record<ThemeId, string>> = { zkidz: "ZKidz", minimal: "Minimal", learning: "v2 Live Motion (learning vlog)" };
 
 const SFX_LABELS = { none: "No sound effects", light: "Light sound effects", "every-cut": "A sound on every cut" } as const;
 const ROLE_LABELS = { display: "Display", body: "Body", label: "Label", kicker: "Kicker", hand: "Hand-lettered", mono: "Mono" } as const;

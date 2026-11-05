@@ -45,6 +45,15 @@ class CheckWindowTests(unittest.TestCase):
         self.assertEqual(list((self.work / "transcripts").iterdir()), [])
 
 
+    def test_a_word_heard_in_the_lead_silence_of_a_window_at_zero_never_goes_negative(self):
+        heard = [{"start": 300, "end": 500, "text": " uh"}, {"start": 500, "end": 900, "text": " git"}]
+        with (
+            mock.patch.object(check_windows.whispercpp, "transcribe_file", return_value=heard),
+            mock.patch.object(check_windows.whispercpp, "model_path", return_value=Path("m.bin")),
+        ):
+            words = check_windows.transcribe("audio/v1.wav", 0.0, 1.0, "en")
+        self.assertEqual(words, [{"start": 0, "end": 0, "text": " uh"}, {"start": 0, "end": 400, "text": " git"}])
+
     def test_windows_heard_side_by_side_split_the_cores_between_them(self):
         # ep 12, a 3 s window on turbo: 46.6 s on 1 thread, 7.4 s on 12, 16.9 s on all 24. The same words each time.
         threads = []

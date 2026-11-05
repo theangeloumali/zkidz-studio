@@ -107,6 +107,17 @@ describe("Style section: theme and reset", () => {
     await waitFor(() => expect(requestBody(fetchMock, STYLE_PATH, "PUT")).toEqual({ style: { theme: "minimal" } }));
   });
 
+  it("offers the v2 Live Motion look and saves it as the learning theme (#38)", async () => {
+    const fetchMock = stubStudio(null);
+    renderSection();
+
+    const picker = await screen.findByLabelText("Theme");
+    expect(within(picker).getByRole("option", { name: "v2 Live Motion (learning vlog)" })).toBeInTheDocument();
+    await userEvent.selectOptions(picker, "learning");
+
+    await waitFor(() => expect(requestBody(fetchMock, STYLE_PATH, "PUT")).toEqual({ style: { theme: "learning" } }));
+  });
+
   it("refetches the style after a save", async () => {
     const fetchMock = stubStudio(MATCHED);
     renderSection();

@@ -1,6 +1,7 @@
 # Created by The Angelo Umali.
 # make_covers (plan §6.8): HyperFrames stills of the edit at each time, then the cut spec's blur boxes live at that frame.
-# Stills skip render_final's blur, so without this pass a cover would leak what the master hides.
+# Stills skip render_final's blur, so without this pass a cover would leak what the master hides; the bystander face
+# mask is applied by the still itself (hf/stills.js).
 import shutil
 import string
 import subprocess
@@ -78,8 +79,10 @@ def make_covers(video, times, cover_sheet=None, draw_stills=draw_stills, work=No
         copy = pipeline.derived_file(work, f"cues/{video}-cover.json")
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(cover_sheet, copy)
-    stills = draw_stills(video, times, names)
     edl = inputs.read_json(work / "edl" / f"{video}.json")
+    if edl.get("faces") and not (work / edl["faces"]).is_file():  # fail closed, as render_final does for the master
+        raise GateFailed(f"{video}'s face mask {edl['faces']} is missing; render_master writes it, so render before make_covers")
+    stills = draw_stills(video, times, names)
     (work / "covers").mkdir(exist_ok=True)
     made = []
     for index, at in enumerate(times):

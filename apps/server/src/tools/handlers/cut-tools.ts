@@ -5,7 +5,7 @@ import { CutSpecSchema, keptSpansOf, type CutSpec } from "@zks/shared";
 import { readCapabilities } from "../../jobs/master-files.ts";
 import { implementTool } from "../define-tool.ts";
 import type { ToolContext } from "../context.ts";
-import { findCutCandidates } from "../cut-candidates.ts";
+import { findCutCandidates, MAX_PROPOSED_CUTS } from "../cut-candidates.ts";
 import {
   approvedCandidateSpan,
   assertRoomForRejections,
@@ -22,7 +22,7 @@ import { readLatestWords } from "../transcript-store.ts";
 
 const proposeCuts = implementTool("propose_cuts", {
   description:
-    "Find stutter, filler and pause cut candidates in the transcript and wait while the user approves or rejects each one on the timeline. Use the approved ids as fromCandidate in set_cuts.",
+    "Find stutter, filler and pause cut candidates in the transcript and wait while the user approves or rejects each one on the timeline. Use the approved ids as fromCandidate in set_cuts. On a long session pass within: the source spans the edit keeps.",
   handler: async (input, context, signal) => {
     const words = await readLatestWords(context);
     const requestId = randomUUID();
@@ -30,7 +30,11 @@ const proposeCuts = implementTool("propose_cuts", {
       removeFillers: input.removeFillers ?? true,
       trimPauses: input.trimPauses ?? true,
       idPrefix: requestId.slice(0, 8),
-    });
+    }).filter((candidate) => input.within === undefined || input.within.some((span) => span.at <= candidate.at && candidate.end <= span.end));
+    if (candidates.length > MAX_PROPOSED_CUTS)
+      throw new ToolError(
+        `${candidates.length} cut candidates are too many to review at once (at most ${MAX_PROPOSED_CUTS}); pass within with the source spans the edit keeps`,
+      );
     if (candidates.length === 0) return { output: { candidates, approved: [], rejected: [] } };
     await assertRoomForRejections(context, candidates);
     const review = awaitCutReview({ projectId: context.projectId, requestId, candidates }, signal);
@@ -71,6 +75,12 @@ const validateSpec = implementTool("validate_spec", {
   },
 });
 
+const readSpec = implementTool("read_spec", {
+  description:
+    "Read a video's stored spec (cuts, reels, cues, captions, inserts...) as its current version holds it, or null before one is written. Start from it before set_cuts, which replaces the whole spec.",
+  handler: async (input, context) => ({ output: { spec: (await readCurrentSpec(context, input)) ?? null } }),
+});
+
 async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<string[]> {
   const errors: string[] = [];
   await findFootageAsset(context, cuts.sourceAssetId).catch((error: unknown) => errors.push(error instanceof Error ? error.message : String(error)));
@@ -85,6 +95,13 @@ async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<s
   if ((cuts.zooms?.length ?? 0) > 0 && (await readCapabilities(context.studioHome))?.features.zoomExpr === false) {
     errors.push("this machine cannot render zooms (get_capabilities: zoomExpr is false); remove every zooms entry, snap included");
   }
+  // The render veils the cropped picture, so a box over an animated zoom would stay put while the picture moves under it.
+  (cuts.blurBoxes ?? []).forEach((box, boxIndex) => {
+    (cuts.zooms ?? []).forEach((zoom, zoomIndex) => {
+      if (box.at < zoom.end && zoom.at < box.end)
+        errors.push(`blur box ${boxIndex} overlaps zoom ${zoomIndex}; a box cannot follow a moving crop, so move one of them`);
+    });
+  });
   // Approved candidates are the user's own cuts, so only untagged removals can re-apply a rejected one.
   const untaggedRemovals = cuts.removals.filter((removal) => removal.fromCandidate === undefined);
   for (const rejectedId of await findRejectedCandidates(context, untaggedRemovals)) {
@@ -93,4 +110,4 @@ async function findCutSpecErrors(context: ToolContext, cuts: CutSpec): Promise<s
   return errors;
 }
 
-export const cutTools = [proposeCuts, setCuts, validateSpec];
+export const cutTools = [proposeCuts, setCuts, validateSpec, readSpec];

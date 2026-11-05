@@ -21,6 +21,18 @@
         "type": "number",
         "minimum": 0,
         "maximum": 1920
+      },
+      "pills": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "scale": {
+        "type": "number",
+        "minimum": 0.6,
+        "maximum": 2
       }
     },
     "required": [

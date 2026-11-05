@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "id": "learning",
+  "name": "Learning",
+  "components": [
+    {
+      "kind": "bigWord",
+      "tier": "core",
+      "purpose": "One huge spoken word or number: drops, tumbles, counts, steps or rolls through a slot, with an optional strike or scribble.",
+      "slots": {
+        "text": 12,
+        "kicker": 28,
+        "prefix": 4,
+        "suffix": 4
+      }
+    },
+    {
+      "kind": "caption",
+      "tier": "core",
+      "purpose": "The spoken words as one centred line built word by word (style words), with keyword pills.",
+      "slots": {
+        "text": 60,
+        "line": 60
+      }
+    },
+    {
+      "kind": "censor",
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    },
+    {
+      "kind": "chipRail",
+      "tier": "core",
+      "purpose": "A row of mono caps chips that pop in on their words: the labels or settings he names.",
+      "slots": {}
+    },
+    {
+      "kind": "footageCard",
+      "tier": "core",
+      "purpose": "The cue's own footage playing in a rounded card with file, timecode, chips and progress chrome; can grow to full bleed or shrink in.",
+      "slots": {
+        "file": 28,
+        "status": 40
+      }
+    },
+    {
+      "kind": "paperScene",
+      "tier": "core",
+      "purpose": "A full-frame cream paper sheet that slides over the footage; cards and captions placed after it draw on it in ink.",
+      "slots": {
+        "label": 24
+      }
+    },
+    {
+      "kind": "askField",
+      "tier": "accent",
+      "purpose": "A chat field: his message types, sends into a bubble, and status lines confirm the change.",
+      "slots": {
+        "label": 28,
+        "placeholder": 32,
+        "text": 44
+      }
+    },
+    {
+      "kind": "chatThread",
+      "tier": "accent",
+      "purpose": "A chat card: his message types and sends, the assistant's reply streams in word by word.",
+      "slots": {
+        "title": 20
+      }
+    },
+    {
+      "kind": "flowSteps",
+      "tier": "accent",
+      "purpose": "Up to three cards joined by arrows, each acting out a step: chores ticked, coins earned, a lock opening.",
+      "slots": {}
+    },
+    {
+      "kind": "listRows",
+      "tier": "accent",
+      "purpose": "A list that builds as he names each item, each row checked or crossed, optionally on white cards.",
+      "slots": {}
+    },
+    {
+      "kind": "meterGauge",
+      "tier": "accent",
+      "purpose": "A warm instrument card whose needle kicks and settles on a level between LOW and HIGH.",
+      "slots": {
+        "label": 24,
+        "tag": 24
+      }
+    },
+    {
+      "kind": "phoneScreen",
+      "tier": "accent",
+      "purpose": "A tilted phone playing a savings ring, allowance jars or a cart screen, beat by beat.",
+      "slots": {
+        "item": 16
+      }
+    },
+    {
+      "kind": "stepBars",
+      "tier": "accent",
+      "purpose": "A rise without numbers: dimensional bars that grow on their words, with an optional gold arrow.",
+      "slots": {}
+    },
+    {
+      "kind": "typedPrompt",
+      "tier": "accent",
+      "purpose": "A near-black terminal card where his prompt types in and output lines arrive.",
+      "slots": {
+        "title": 20,
+        "text": 160,
+        "output": 36
+      }
+    },
+    {
+      "kind": "commentCta",
+      "tier": "special",
+      "purpose": "The closing ask: a typed lead, a speech bubble filling with the one word to comment, and a sub chip.",
+      "slots": {
+        "lead": 16,
+        "word": 10,
+        "sub": 36
+      }
+    },
+    {
+      "kind": "gradeWipe",
+      "tier": "special",
+      "purpose": "The ungraded clip over the graded master, a divider sweeping across to reveal the grade.",
+      "slots": {}
+    },
+    {
+      "kind": "receipt",
+      "tier": "special",
+      "purpose": "The edit's input to output strip: clip bars, removed bad takes and pauses, the counter landing on the output length.",
+      "slots": {}
+    },
+    {
+      "kind": "receiptPrint",
+      "tier": "special",
+      "purpose": "A printer slot feeding a paper receipt line by line, ending on a rolling total.",
+      "slots": {
+        "title": 24
+      }
+    },
+    {
+      "kind": "routeMap",
+      "tier": "special",
+      "purpose": "A real map with a dashed gold route that draws stop to stop on the beat, the current pin orange; every place a vlog visits beyond home gets one.",
+      "slots": {
+        "name": 18
+      }
+    },
+    {
+      "kind": "tradeScreen",
+      "tier": "special",
+      "purpose": "A dark live trading card with streaming candles and no figures, for the top band.",
+      "slots": {}
+    }
+  ]
+}

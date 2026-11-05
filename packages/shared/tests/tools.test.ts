@@ -24,6 +24,7 @@ const EXPECTED_CATALOG = {
   make_caption_phrases: ["auto", true],
   set_captions: ["auto", false],
   validate_spec: ["auto", true],
+  read_spec: ["auto", true],
   render_preview: ["auto", false], // rebuilds the edit (work/edl, its audio) to draw the stills
   check_motion: ["auto", true],
   make_covers: ["auto", false],
@@ -40,6 +41,8 @@ const EXPECTED_CATALOG = {
   suggest_lessons: ["auto", true],
   sample_reference: ["auto", true],
   set_project_style: ["auto", false],
+  set_beat_map: ["auto", false],
+  frame_faces: ["auto", true],
 } as const;
 
 const VALID_INPUT_BY_TOOL: Record<keyof typeof EXPECTED_CATALOG, unknown> = {
@@ -61,6 +64,7 @@ const VALID_INPUT_BY_TOOL: Record<keyof typeof EXPECTED_CATALOG, unknown> = {
   make_caption_phrases: { reel: true },
   set_captions: { entries: [{ ids: [0], en: "Hello, bosses" }] },
   validate_spec: { videoId: "v1" },
+  read_spec: { videoId: "v1", kind: "cuts" },
   render_preview: { at: [1.5, 30], guides: true },
   check_motion: { stage: "master" },
   make_covers: { variants: [{ source: "intro", at: 2.3 }] },
@@ -77,6 +81,8 @@ const VALID_INPUT_BY_TOOL: Record<keyof typeof EXPECTED_CATALOG, unknown> = {
   suggest_lessons: { lessons: ["Open on the result, not the setup."] },
   sample_reference: { assetId: ASSET_ID, frames: 6 },
   set_project_style: { style: { theme: "minimal", tokens: { gold: "#ff3366" }, type: { display: "Inter" } } },
+  set_beat_map: { beats: [{ at: 12.4, word: "savings", visual: "phoneScreen savings ring fills", ground: "footage" }] },
+  frame_faces: { at: 0, end: 60, fps: 1 },
 };
 
 describe("STUDIO_TOOLS catalog (plan §6.8)", () => {
@@ -115,6 +121,16 @@ describe("STUDIO_TOOLS catalog (plan §6.8)", () => {
 });
 
 describe("tool input rejections", () => {
+  it("set_beat_map refuses an empty map and a beat on unknown ground", () => {
+    expect(STUDIO_TOOLS.set_beat_map.input.safeParse({ beats: [] }).success).toBe(false);
+    expect(STUDIO_TOOLS.set_beat_map.input.safeParse({ beats: [{ at: 1, word: "x", visual: "y", ground: "sky" }] }).success).toBe(false);
+  });
+
+  it("frame_faces samples at most 4 frames a second over a span that ends after it starts", () => {
+    expect(STUDIO_TOOLS.frame_faces.input.safeParse({ fps: 8 }).success).toBe(false);
+    expect(STUDIO_TOOLS.frame_faces.input.safeParse({ at: 5, end: 5 }).success).toBe(false);
+  });
+
   it("set_cuts rejects a cut spec carrying a path", () => {
     expect(STUDIO_TOOLS.set_cuts.input.safeParse({ cuts: { ...validCutSpec, source: "/etc/passwd" } }).success).toBe(false);
   });

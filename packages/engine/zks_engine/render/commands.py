@@ -1,21 +1,23 @@
 # Created by The Angelo Umali.
 # The studio's engine CLI commands after ingest and transcribe (cli.py): edit, render-master, qc-master, check-motion,
-# make-covers and qc-status, each printing one JSON report.
+# make-covers, qc-status, render-preview and frame-faces, each printing one JSON report.
 # Every path argument must sit under the project (pipeline.command_input), like a spec path.
+import argparse
 import contextlib
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
-from .. import covers, pipeline, qc
+from .. import covers, faces, pipeline, qc
 from ..pipeline import command_input, snapshot_input
 from ..qc.motion import SUBJECT_REGION
 from ..specs import SpecError
 from ..specs.gates import GateFailed
 from ..specs.paths import video_id
-from . import cue_sheet_names, render_master, render_stills, stages
+from . import cue_sheet_names, render_master, render_stills, run_step, stages, style_flags
 from .stages import engine_steps
 
 QUALITIES = ("draft", "final", "4k")
@@ -151,6 +153,8 @@ def draw_preview(video, args):
     # render.js skips a sheet with nothing but captions without clearing the folder, so an earlier preview's stills linger.
     shutil.rmtree(pipeline.WORK / "stills" / f"{'+'.join(names)}.hf", ignore_errors=True)
     with engine_steps():
+        # A footage card's clip is encoded before the stills that play it, as the render does.
+        run_step([sys.executable, "-m", "zks_engine.cardclip", f"{video}:{'+'.join(names)}", *style_flags()], "cardclip")
         folder = render_stills(video, names, times, *(["--guides"] if args.guides else []),
                                *([] if args.at else ["--max", str(MAX_PREVIEW_STILLS)]))
     if args.at:
@@ -160,6 +164,17 @@ def draw_preview(video, args):
     if missing := [png.name for png in stills.values() if not png.is_file()]:
         raise GateFailed(f"render.js did not write {', '.join(missing)}")
     return {"stills": [{"at": at, "path": png.relative_to(pipeline.WORK).as_posix()} for at, png in stills.items()]}
+
+
+def face_rate(value):
+    rate = float(value)
+    if not 0 < rate <= faces.MAX_FPS:
+        raise argparse.ArgumentTypeError(f"--fps is above 0 and at most {faces.MAX_FPS}")
+    return rate
+
+
+def frame_faces_payload(args):
+    return faces.frame_faces(video_id(args.video), args.at, args.end, args.fps)
 
 
 def register(commands):
@@ -198,6 +213,11 @@ def register(commands):
     preview.add_argument("--at", type=float, action="append", help="edited seconds, one per still; default: render.js picks (first 4)")
     preview.add_argument("--guides", action="store_true", help="draw the safe-area guides on the stills")
     preview.set_defaults(handler=render_preview_payload)
-    for command in (edit, master, check, motion, cover, status, preview):
+    faced = commands.add_parser("frame-faces", help="face boxes in the proxy on the 1080x1920 grid, and the picture band inside any letterbox")
+    faced.add_argument("--at", type=float, help="source seconds to start at (default 0)")
+    faced.add_argument("--end", type=float, help="source seconds to stop at (default the end)")
+    faced.add_argument("--fps", type=face_rate, default=1.0, help=f"samples a second, at most {faces.MAX_FPS} (default 1)")
+    faced.set_defaults(handler=frame_faces_payload)
+    for command in (edit, master, check, motion, cover, status, preview, faced):
         command.add_argument("--video", required=True)
         command.add_argument("--json", action="store_true", required=True, help="print JSON (the only output format)")

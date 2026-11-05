@@ -4,10 +4,11 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { probeColumns } from "../routes/media-ingest.ts";
 import type { ProbeResult } from "../media-io/probe.ts";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import type { StudioDatabase } from "@zks/db";
-import { mediaAssets, projects, transcripts } from "@zks/db/schema";
+import { jobs, mediaAssets, projects, transcripts } from "@zks/db/schema";
 import { IdSchema, INGEST_MODES, InsertSpecSchema, SourceSecondsSchema, type IngestMode } from "@zks/shared";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, like } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
 import type { JobRow } from "../dto.ts";
@@ -34,6 +35,7 @@ export const ENGINE_COMMANDS = [
   "energy-profile",
   "caption-phrases",
   "render-preview",
+  "frame-faces",
 ] as const;
 type EngineCommand = (typeof ENGINE_COMMANDS)[number];
 
@@ -62,7 +64,8 @@ export interface EngineJobDeps {
 }
 
 const WorkPathSchema = z.string().min(1);
-const TranscribeParamsSchema = z.object({ language: z.string(), model: z.string() });
+const AUDIO_POLL_MS = 500;
+export const TranscribeParamsSchema = z.object({ language: z.string(), model: z.string() });
 const TranscribeReportSchema = z.object({ wordsPath: WorkPathSchema, words: z.int().nonnegative(), chunks: z.int().positive() });
 export const IngestParamsSchema = z.object({
   clips: z.array(z.object({ assetId: IdSchema, zoom: z.number().positive().optional() })).min(1),
@@ -86,6 +89,7 @@ async function runTranscribe(deps: EngineJobDeps, job: JobRow, reportProgress: R
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "transcripts");
   await reportProgress({ stage: "transcribing", pct: 0 });
+  await waitForIngestAudio(deps.db, { job, wavPath: join(workDir, "audio", `${job.videoId}.wav`) }, signal);
   const args = ["--video", job.videoId, "--language", params.language, "--model", params.model];
   const engineReport = await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId: job.videoId }, reportProgress, () =>
     deps.engine.run({ command: "transcribe", args, workDir, signal }),
@@ -148,9 +152,42 @@ async function runIngest(deps: EngineJobDeps, job: JobRow, reportProgress: Repor
     })
     .returning();
   if (source === undefined) throw new Error("source asset upsert returned no row");
+  // A transcription of this ingest's audio can finish before the join, filed under a clip; QC looks it up by this source.
+  if (job.startedAt !== null) {
+    await deps.db
+      .update(transcripts)
+      .set({ mediaAssetId: source.id })
+      .where(
+        and(
+          eq(transcripts.projectId, job.projectId),
+          gte(transcripts.createdAt, job.startedAt),
+          // Only this video's words: another video's transcript can finish while this ingest runs.
+          like(transcripts.wordsRelPath, `%transcripts/${job.videoId}.words.json`),
+        ),
+      );
+  }
   const joins = report.joins.map((join) => ({ assetId: params.clips[join.clip]?.assetId, at: join.at }));
   await writeJobResult(projectRoot, job.id, { sourceAssetId: source.id, frames: report.frames, joins });
   await reportProgress({ stage: "joined", pct: 100 });
+}
+
+/**
+ * A transcription queued beside its ingest starts once that ingest has written this video's wav: the engine renames
+ * it into place whole, and one older than the ingest's start is the audio it replaces.
+ */
+async function waitForIngestAudio(db: StudioDatabase, target: { job: JobRow; wavPath: string }, signal: AbortSignal): Promise<void> {
+  for (;;) {
+    const [ingest] = await db
+      .select({ startedAt: jobs.startedAt })
+      .from(jobs)
+      .where(and(eq(jobs.projectId, target.job.projectId), eq(jobs.kind, "ingest"), inArray(jobs.status, ["queued", "running"])))
+      .orderBy(desc(jobs.queuedAt))
+      .limit(1);
+    if (ingest === undefined) return;
+    const written = ingest.startedAt === null ? undefined : await stat(target.wavPath).catch(() => undefined);
+    if (written !== undefined && ingest.startedAt !== null && written.mtimeMs >= ingest.startedAt.getTime()) return;
+    await delay(AUDIO_POLL_MS, undefined, { signal });
+  }
 }
 
 /** The template's mode when this footage fits it (the engine rejects a misfit); otherwise the mode the footage implies. */

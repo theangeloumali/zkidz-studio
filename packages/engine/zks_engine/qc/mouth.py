@@ -14,9 +14,13 @@ def covered_fraction(alpha, box):
     return float((alpha[y:y + h, x:x + w] > OPAQUE).mean())
 
 
-def hook_frames(edl, intro, facecam_spans):
-    """Edited frames of the hook before the intro plays; only face-cam frames when the spec marks any."""
-    count = min(round(HOOK_S * timeline.rate(edl)), edl["frames"], intro["at"] if intro else edl["frames"])
+def hook_frames(edl, intro, facecam_spans, covers=()):
+    """Edited frames of the hook before the intro plays, outside any full-frame cover (his mouth is off screen there);
+    only face-cam frames when the spec marks any."""
+    rate = timeline.rate(edl)
+    count = min(round(HOOK_S * rate), edl["frames"], intro["at"] if intro else edl["frames"])
+    if covers:
+        return [frame for frame in hook_frames(edl, intro, facecam_spans) if not any(at <= frame / rate < end for at, end in covers)]
     if not facecam_spans:
         return list(range(count))
     face = set()

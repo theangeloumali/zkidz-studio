@@ -9,14 +9,11 @@ import type { ToolContext } from "../context.ts";
 import { implementTool } from "../define-tool.ts";
 import { describeStudioGate } from "../gate-facts.ts";
 import { fenceJobError } from "../job-error-fence.ts";
-import { startIngest } from "../ingest-start.ts";
+import { startIngest, startTranscribe, TRANSCRIBE_DEFAULTS } from "../ingest-start.ts";
 import { readJobResult } from "../job-results.ts";
 import { findFootageAsset, loadProject, projectRootOf } from "../project-files.ts";
 import { ToolError } from "../result.ts";
 
-const DEFAULT_LANGUAGE = "auto";
-// Plan §7.4: the pinned whisper-cli is a CPU build, and on CPU the quantised turbo is the model; base mishears Taglish.
-const DEFAULT_WHISPER_MODEL = "turbo";
 const MS_PER_S = 1000;
 const OPEN_STATUSES: ReadonlySet<JobStatus> = new Set(["queued", "running"]);
 
@@ -32,12 +29,12 @@ const ingest = implementTool("ingest", {
 });
 
 const transcribe = implementTool("transcribe", {
-  description: "Transcribe the edit's source with whisper.cpp. Returns a jobId; follow it with job_wait, then read_transcript.",
+  description:
+    "Transcribe the edit's source with whisper.cpp. Returns a jobId; follow it with job_wait, then read_transcript. A transcription already running, or done since the last ingest, with the same language and model returns that job.",
   handler: async (input, context) => {
     const project = await loadProject(context);
-    const params = { language: input.language ?? DEFAULT_LANGUAGE, model: input.model ?? DEFAULT_WHISPER_MODEL };
-    const job = await context.jobs.enqueue({ projectId: context.projectId, kind: "transcribe", videoId: project.videoId, lane: "whisper", params });
-    return { output: { jobId: job.id } };
+    const params = { language: input.language ?? TRANSCRIBE_DEFAULTS.language, model: input.model ?? TRANSCRIBE_DEFAULTS.model };
+    return { output: await startTranscribe(context, { projectId: context.projectId, videoId: project.videoId, params }) };
   },
 });
 

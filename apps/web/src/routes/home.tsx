@@ -29,9 +29,9 @@ export function HomeRoute() {
       <InPlacePicker
         isOpen={isPickerOpen}
         onClose={() => setIsPickerOpen(false)}
-        onPick={(path) => {
+        onPick={(paths) => {
           setIsPickerOpen(false);
-          addInPlace(path);
+          addInPlace(paths);
         }}
       />
     </div>

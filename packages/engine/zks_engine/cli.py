@@ -84,13 +84,16 @@ def engine_inserts(source):
 def ingest_payload(args):
     video = video_id(args.video)
     check_ingest_mode(args)
-    if args.mode == "showcase":
-        clips = [showcase.main(video, args.clip[0], engine_inserts(args.inserts))]
+    if args.mode != "showcase" and len(args.clip) == 1:
+        clips = prepare.ingest_one(video, args.clip[0])
     else:
-        clips = join_sources.main(f"sources/{video}.mkv", args.clip)
-    source = WORK / "sources" / f"{video}.mkv"
-    prepare.build_audio(source, video)
-    prepare.build_proxy(source, video, backends.active())
+        if args.mode == "showcase":
+            clips = [showcase.main(video, args.clip[0], engine_inserts(args.inserts))]
+        else:
+            clips = join_sources.main(f"sources/{video}.mkv", args.clip)
+        source = WORK / "sources" / f"{video}.mkv"
+        prepare.build_audio(source, video)
+        prepare.build_proxy(source, video, backends.active())
     joins, cursor = [], 0
     for index, clip in enumerate(clips):
         num, den = clip.fps
@@ -105,7 +108,8 @@ def transcribe_payload(args):
         raise specs.SpecError(f"no audio/{video}.wav: ingest {video} first")
     try:
         with progress.job(video, "transcribing", unit="audio seconds") as stage:
-            words, chunks = transcribe.main(f"audio/{video}.wav", f"transcripts/{video}_words.jsonl", 6, args.language, args.model, stage=stage)
+            words, chunks = transcribe.main(f"audio/{video}.wav", f"transcripts/{video}_words.jsonl", language=args.language,
+                                            model=args.model, stage=stage)
     except ValueError as error:  # an unpinned model name
         raise specs.SpecError(str(error)) from error
     # The server's transcript shape: a JSON array in seconds, text trimmed.

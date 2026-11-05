@@ -5,12 +5,27 @@ const { loadTheme, DEFAULT_THEME } = require("../theme");
 const { REGISTRY } = require("../components");
 const { canvasBrand } = require("../brand/canvas");
 
-test("zkidz is the default theme and its manifest covers every kind the renderer draws", () => {
+const THEME_IDS = ["zkidz", "minimal", "learning"];
+
+test("zkidz is the default theme and draws every house kind, none of the learning ones", () => {
   assert.equal(DEFAULT_THEME, "zkidz");
   const theme = loadTheme("zkidz");
-  assert.deepEqual(Object.keys(theme.components).sort(), Object.keys(REGISTRY).sort());
+  assert.ok(!Object.hasOwn(theme.components, "bigWord"));
   assert.equal(theme.intro, true);
   assert.equal(theme.boil, true);
+});
+
+test("together the themes draw every kind the renderer has, and each draws only registered kinds", () => {
+  const union = new Set(THEME_IDS.flatMap((id) => Object.keys(loadTheme(id).components)));
+  assert.deepEqual([...union].sort(), Object.keys(REGISTRY).sort());
+  for (const id of THEME_IDS) for (const kind of Object.keys(loadTheme(id).components)) assert.ok(Object.hasOwn(REGISTRY, kind), `${id} ${kind}`);
+});
+
+test("learning draws the eighteen learning kinds (routeMap the 18th), word captions and the bleep censor in Chakra Petch", () => {
+  const theme = loadTheme("learning");
+  assert.equal(Object.keys(theme.components).length, 20);
+  for (const kind of ["caption", "censor"]) assert.ok(Object.hasOwn(theme.components, kind), kind);
+  assert.equal(theme.type.display.family, "Chakra Petch");
 });
 
 test("minimal proves the contract: no boil, no intro, one sans face, a subset of the kinds", () => {
@@ -23,7 +38,7 @@ test("minimal proves the contract: no boil, no intro, one sans face, a subset of
 });
 
 test("every component has a tier, a purpose and positive maxChars slots", () => {
-  for (const id of ["zkidz", "minimal"]) {
+  for (const id of THEME_IDS) {
     for (const [kind, component] of Object.entries(loadTheme(id).components)) {
       assert.ok(["core", "accent", "special"].includes(component.tier), `${id} ${kind} tier`);
       assert.ok(component.purpose.length > 10, `${id} ${kind} purpose`);

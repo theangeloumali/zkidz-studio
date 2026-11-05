@@ -31,6 +31,7 @@ export function makeAsset(overrides: Partial<MediaAsset> = {}): MediaAsset {
     height: 2160,
     fps: { num: 30000, den: 1001 },
     isHdr: true,
+    isBrowserPlayable: false,
     createdAt: "2026-10-21T10:00:00.000Z",
     ...overrides,
   };

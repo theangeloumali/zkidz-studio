@@ -10,7 +10,7 @@ const MIN_PAUSE_S = 0.8;
 const PAUSE_KEEP_S = 0.15;
 const CONTEXT_WORDS = 3;
 
-export interface CandidateOptions {
+interface CandidateOptions {
   readonly removeFillers: boolean;
   readonly trimPauses: boolean;
   readonly idPrefix: string;
@@ -18,8 +18,12 @@ export interface CandidateOptions {
 
 type CandidateDraft = Omit<CutCandidate, "id" | "context"> & { readonly wordIndex: number };
 
+/** More than an agent can read back in one tool result; a long session passes `within` (Phase 6, 43 min). */
+export const MAX_PROPOSED_CUTS = 150;
+
 export function findCutCandidates(words: readonly TranscriptWord[], options: CandidateOptions): CutCandidate[] {
-  const drafts = words.flatMap((word, wordIndex) => draftsAt(words, wordIndex, options));
+  // Whisper stamps some words with no length; a span without one cannot be cut.
+  const drafts = words.flatMap((word, wordIndex) => draftsAt(words, wordIndex, options)).filter((draft) => draft.end > draft.at);
   return drafts
     .sort((first, second) => first.at - second.at)
     .map(({ wordIndex, ...draft }, candidateIndex) => ({

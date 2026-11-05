@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CaptionPhraseSchema, type Cue, type ReelKeep } from "@zks/shared";
 import { z } from "zod";
+import { projectThemeId } from "../../projects/project-style.ts";
 import { findCaptionErrors } from "../caption-checks.ts";
 import { readCueSheet } from "../cue-sheets.ts";
 import { implementTool } from "../define-tool.ts";
@@ -25,7 +26,7 @@ const setCaptions = implementTool("set_captions", {
     const phrasesText = await readFile(phrasesPath, "utf8").catch(() => {
       throw new ToolError("There are no caption phrases yet: call make_caption_phrases first");
     });
-    const errors = findCaptionErrors(input.entries, PhraseFileSchema.parse(JSON.parse(phrasesText)));
+    const errors = findCaptionErrors(input.entries, PhraseFileSchema.parse(JSON.parse(phrasesText)), { words: projectThemeId(project) === "learning" });
     if (errors.length > 0) throw new ToolError(errors.join("; "));
     const version = await writeAgentSpec(context, { videoId: project.videoId, kind: "captions" }, input.entries);
     return { output: { version, warnings: [], cues: input.entries.length } };

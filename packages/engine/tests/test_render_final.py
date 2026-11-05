@@ -1,11 +1,13 @@
 # Created by The Angelo Umali.
 # Unit tests for render_final: range expressions, orientation placement, privacy blur, the soundtrack choice and the
 # brand pre-roll spliced in at its insert.
+import hashlib
 import json
 import math
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -23,6 +25,7 @@ from zks_engine import blur
 from zks_engine import ffio
 from zks_engine import render_final
 from zks_engine.backends import graph as backend_graph
+from zks_engine.specs import SpecError
 
 UPRIGHT_4K = (2160, 3840)
 CPU = backends.get("cpu")
@@ -362,9 +365,6 @@ class IntroTests(unittest.TestCase):
                 render_final.encode_master("v1", {**self.edl, **extra}, {}, None, CPU_ROUTE, render_final.OUTPUT, [], None, None, None)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ZoomGraphTests(unittest.TestCase):
     """Animated footage zoom: one libplacebo crop whose expression holds the punch-in and every zoom window."""
@@ -416,6 +416,13 @@ class ZoomGraphTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             render_final.gpu_graph(self.zoomed(), "", regions=[(0, 0, 64, 64, [(40, 50)])])
 
+    def test_a_blur_box_off_the_zoom_windows_veils_the_cropped_picture(self):
+        # A followed (reframed) or face-blurred edit always takes this graph, so a box anywhere must not stop the render.
+        graph = render_final.gpu_graph({**self.zoomed(), "faces": "mask/v1.faces.mkv", "faces_input": 2}, "",
+                                       regions=[(0, 0, 64, 64, [(70, 80)])])
+        self.assertIn("gblur", graph)
+        self.assertLess(graph.index("libplacebo"), graph.index("gblur"))  # boxes are on the output grid, so after the crop
+
     def test_zoom_chunk_command_opens_a_vulkan_device(self):
         command = render_final.device_args(self.zoomed())
         self.assertIn("vulkan=vk", " ".join(command))
@@ -427,7 +434,7 @@ def pipeline_eval(expr, t):
     import math
 
     names = {"t": t, "gte": lambda a, b: float(a >= b), "lt": lambda a, b: float(a < b), "if": lambda c, a, b: a if c else b,
-             "exp": math.exp, "min": min, "max": max, "sin": math.sin, "cos": math.cos, "PI": math.pi, "pow": math.pow}
+             "exp": math.exp, "min": min, "max": max, "clip": lambda v, lo, hi: min(max(v, lo), hi), "sin": math.sin, "cos": math.cos, "PI": math.pi, "pow": math.pow}
     return eval(expr.replace("if(", "if_(").replace("\\,", ","), {"__builtins__": {}}, {**names, "if_": names["if"]})
 
 
@@ -477,8 +484,9 @@ class MatteGraphTests(unittest.TestCase):
         self.assertNotIn("maskedmerge", render_final.gpu_graph(make_edl([(0, 90)]), ""))
 
     def test_matte_inputs_follow_the_overlay_frames(self):
-        inputs = render_final.matte_inputs(self.matted(), 0, Path("frames/v1.behind"), Path("mask/v1.mkv"), 1.5)
-        self.assertIn(str(Path("frames/v1.behind") / "%05d.png"), inputs)
+        with tempfile.TemporaryDirectory() as behind:
+            inputs = render_final.matte_inputs(self.matted(), 0, Path(behind), Path("mask/v1.mkv"), 1.5)
+        self.assertIn(str(Path(behind) / "%05d.png"), inputs)
         self.assertEqual(inputs[inputs.index(str(Path("mask/v1.mkv"))) - 1 - 0], "-i")
 
 
@@ -535,3 +543,322 @@ class UserMediaInputTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"ZKS_FFMPEG": "/pinned/bin/ffmpeg"}), \
              mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
             self.assertEqual(self.chunk(self.clip)[0], "/pinned/bin/ffmpeg")
+
+
+NVIDIA_CPU_ROUTE = render_final.Route(backends.get("nvidia"), False, "", UPRIGHT_4K)
+SQUARE_BAND = {"start": 0, "end": 600, "x": 0, "y": 840, "w": 2160, "h": 2160}
+
+
+def bands(*rows):
+    """bands.json from rows in source frames: seconds on the joined clock, the band on the 2160x3840 canvas."""
+    return [{"at": row["start"] / pipeline.FPS, "end": row["end"] / pipeline.FPS, "band": [row["x"], row["y"], row["w"], row["h"]]} for row in rows]
+
+
+class LiveMotionCurveTests(unittest.TestCase):
+    def test_lean_eases_to_1_05_and_matches_its_expression(self):
+        self.assertAlmostEqual(render_final.zoom_factor("lean", 0, 60), 1.0)
+        self.assertAlmostEqual(render_final.zoom_factor("lean", 59, 60), 1.05)
+        spec = make_edl([(0, 90)])
+        spec["zooms"] = [{"start": 30, "end": 90, "preset": "lean", "cx": 0.5, "cy": 0.5}]
+        for frame in (30, 45, 89):
+            self.assertAlmostEqual(pipeline_eval(render_final.scale_expr(spec), frame / pipeline.FPS),
+                                   render_final.zoom_factor("lean", frame - 30, 60), places=4)
+
+    def test_grades_default_to_house_and_name_the_unknown(self):
+        self.assertEqual(backend_graph.grade_of({}), "eq=contrast=1.03:saturation=1.05")
+        self.assertTrue(backend_graph.grade_of({"grade": "learning"}).startswith("curves="))
+        with self.assertRaisesRegex(ValueError, "unknown grade 'teal'.*house"):
+            backend_graph.grade_of({"grade": "teal"})
+
+    def test_the_learning_grade_reaches_both_composites(self):
+        spec = {**make_edl([(0, 30)]), "grade": "learning"}
+        self.assertIn("curves=", backend_graph.composite(CPU, spec))
+        self.assertIn("curves=", render_final.gpu_graph(spec, ""))
+
+
+class CropWindowTests(unittest.TestCase):
+    """The reframe crop (fractions of the canvas) with the punch-in and every zoom scaled inside it."""
+
+    def window_at(self, spec, frame):
+        return [pipeline_eval(part, frame) for part in render_final.crop_window(spec, "t")]
+
+    def test_outside_a_reframe_the_whole_letterboxed_frame_shows(self):
+        x, y, w, h = self.window_at(make_edl([(0, 90)]), 10)
+        self.assertEqual((round(x, 6), round(w, 6), round(h, 6)), (0, 1, 1))
+
+    def test_a_zoom_inside_a_reframe_scales_within_its_crop(self):
+        spec = make_edl([(0, 90)])
+        spec["crops"] = [{"start": 0, "end": 90, "x": 0.21875, "y": 0.21875, "w": 0.5625, "h": 0.5625}]
+        spec["zooms"] = [{"start": 30, "end": 60, "preset": "push", "cx": 0.5, "cy": 0.5}]
+        self.assertEqual([round(v, 6) for v in self.window_at(spec, 10)], [0.21875, 0.21875, 0.5625, 0.5625])
+        scale = render_final.zoom_factor("push", 29, 30)
+        x, y, w, h = self.window_at(spec, 59)
+        self.assertAlmostEqual(w, 0.5625 / scale, places=5)
+        self.assertAlmostEqual(x, 0.21875 + 0.5625 / 2 - w / 2, places=5)
+        self.assertGreaterEqual(y, 0.21875)
+        self.assertLessEqual(y + h, 0.21875 + 0.5625 + 1e-9)
+
+
+class ReframeBandTests(unittest.TestCase):
+    """A reframe crops a 9:16 slice of the source's picture band (sources/<v>.bands.json), centred at cx/cy, zoomed by scale."""
+
+    def reframed(self, ranges=((0, 300),), **reframe):
+        spec = make_edl(list(ranges))
+        spec["reframes"] = [{"start": 0, "end": 90, "cx": 0.5, "cy": 0.5, "scale": 1, **reframe}]
+        return spec
+
+    def test_a_square_band_gives_a_centred_9_16_slice(self):
+        (crop,) = render_final.reframe_crops(self.reframed(), bands(SQUARE_BAND))
+        self.assertEqual((crop["start"], crop["end"]), (0, 90))
+        self.assertAlmostEqual(crop["h"], 2160 / 3840)
+        self.assertAlmostEqual(crop["w"], 2160 * 9 / 16 / 2160)
+        self.assertAlmostEqual(crop["x"], (2160 - 1215) / 2 / 2160)
+        self.assertAlmostEqual(crop["y"], 840 / 3840)
+
+    def test_cx_clamps_inside_the_band_and_scale_zooms(self):
+        (left,) = render_final.reframe_crops(self.reframed(cx=0), bands(SQUARE_BAND))
+        self.assertEqual(left["x"], 0)
+        (close,) = render_final.reframe_crops(self.reframed(scale=2, cy=1), bands(SQUARE_BAND))
+        self.assertAlmostEqual(close["h"], 1080 / 3840)
+        self.assertAlmostEqual(close["y"], (840 + 2160 - 1080) / 3840)
+
+    def test_a_reframe_crossing_a_cut_takes_each_sides_band(self):
+        spec = self.reframed(ranges=((0, 60), (200, 260)), start=30, end=90)
+        landscape = {"start": 100, "end": 400, "x": 0, "y": 1312, "w": 2160, "h": 1216}
+        first, second = render_final.reframe_crops(spec, bands({**SQUARE_BAND, "end": 100}, landscape))
+        self.assertEqual([(first["start"], first["end"]), (second["start"], second["end"])], [(30, 60), (60, 90)])
+        self.assertAlmostEqual(first["y"], 840 / 3840)
+        self.assertAlmostEqual(second["y"], 1312 / 3840)
+
+    def test_a_band_that_already_fills_9_16_is_refused(self):
+        full = {"start": 0, "end": 600, "x": 0, "y": 0, "w": 2160, "h": 3840}
+        with self.assertRaisesRegex(SpecError, "already fills 9:16"):
+            render_final.reframe_crops(self.reframed(), bands(full))
+
+    def test_bands_are_read_beside_the_source_only_for_a_reframe(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        source = Path(folder.name) / "v1.mkv"
+        plain = make_edl([(0, 90)])
+        self.assertIs(render_final.with_crops(plain, source), plain)
+        with self.assertRaisesRegex(SpecError, "v1.bands.json"):
+            render_final.with_crops(self.reframed(), source)
+        source.with_suffix(".bands.json").write_text(json.dumps(bands(SQUARE_BAND)), encoding="utf-8")
+        self.assertEqual(len(render_final.with_crops(self.reframed(), source)["crops"]), 1)
+
+    def test_a_slice_keeps_crops_and_eased_focus_edges(self):
+        spec = {**make_edl([(0, 90)]), "crops": [{"start": 10, "end": 50, "x": 0, "y": 0, "w": 1, "h": 1}],
+                "focus": [{"start": 10, "end": 50, "blur": 12}]}
+        piece = render_final.edl_slice(spec, 20, 90)
+        self.assertEqual((piece["crops"][0]["start"], piece["crops"][0]["end"]), (0, 30))
+        self.assertEqual((piece["focus"][0]["start"], piece["focus"][0]["rise"], piece["focus"][0]["fall"]), (0, -10, 30))
+
+
+class FocusTests(unittest.TestCase):
+    def test_the_weight_eases_in_and_holds_inside_the_window(self):
+        rate = pipeline.FPS
+        expr = render_final.focus_weight_expr([{"start": 30, "end": 90}], rate)
+        self.assertAlmostEqual(pipeline_eval(expr, 10 / rate), 0)
+        self.assertAlmostEqual(pipeline_eval(expr, 60 / rate), 1)
+
+    def test_focus_outside_every_matte_window_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "add matteRanges over it"):
+            render_final.check_focus({"focus": [{"start": 0, "end": 30, "blur": 8}], "matte": [{"start": 10, "end": 40}]})
+
+
+class RunChunksTests(unittest.TestCase):
+    def test_a_failed_chunk_names_ffmpegs_last_error_line_and_keeps_its_log(self):
+        with tempfile.TemporaryDirectory() as folder:
+            logs = [Path(folder) / "00.log", Path(folder) / "01.log"]
+            ok = [sys.executable, "-c", "pass"]
+            bad = [sys.executable, "-c", "import sys; sys.stderr.write('frame 1\\n[fc#0] No such filter: perspective\\n[out#0] Nothing was written\\n'); sys.exit(234)"]
+            with self.assertRaisesRegex(SystemExit, r"exit codes \[234\]\): \[fc#0\] No such filter: perspective"):
+                render_final.run_chunks([ok, bad], logs, lambda: None)
+            self.assertIn("No such filter", logs[1].read_text(encoding="utf-8"))
+
+    def test_a_graph_over_linuxs_one_argument_limit_reaches_ffmpeg_from_a_file(self):
+        # A 6-minute edit's chunk graph measured 234,327 bytes; execve refuses any one argument over 131,072.
+        graph = "[0:v]" + "null," * 50_000 + "null[v]"
+        digest = hashlib.sha256(graph.encode()).hexdigest()
+        check = ("import hashlib, sys; args = sys.argv[1:]; path = args[args.index('-/filter_complex') + 1];"
+                 f"sys.exit(0 if hashlib.sha256(open(path, 'rb').read()).hexdigest() == '{digest}' and '-filter_complex' not in args else 3)")
+        with tempfile.TemporaryDirectory() as folder:
+            logs = [Path(folder) / "00.log"]
+            render_final.run_chunks([[sys.executable, "-c", check, "-filter_complex", graph]], logs, lambda: None)
+
+
+class CpuMotionGraphTests(unittest.TestCase):
+    """NVIDIA without OpenCL or libplacebo: NVDEC system frames, crop/zoom/focus/matte on CPU filters, then NVENC."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        self.clip = media_file("clip.mp4")
+
+    def chunk(self, piece, route=NVIDIA_CPU_ROUTE):
+        with mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
+            return render_final.chunk_command(piece, 0, {}, self.clip, route, UPRIGHT_4K, [], self.root / "frames", self.root / "c.mp4")
+
+    def motion(self, **extra):
+        spec = {**make_edl([(0, 90)]), "zooms": [{"start": 30, "end": 60, "preset": "push", "cx": 0.5, "cy": 0.5}], **extra}
+        return spec
+
+    def test_zooms_off_opencl_run_one_perspective_crop(self):
+        command = self.chunk(self.motion())
+        graph, joined = command[command.index("-filter_complex") + 1], " ".join(command)
+        self.assertEqual(graph.count("perspective="), 1)
+        self.assertIn("-hwaccel cuda", joined)
+        for gpu_only in ("libplacebo", "opencl", "vulkan", "hwupload"):
+            self.assertNotIn(gpu_only, joined)
+        self.assertIn("eval=frame", graph)
+
+    def test_the_cpu_matte_gives_the_mask_the_footage_crop_on_three_planes(self):
+        graph = render_final.cpu_motion_graph(self.motion(matte=[{"start": 0, "end": 90}], focus=[{"start": 20, "end": 70, "blur": 10}]),
+                                              NVIDIA_CPU_ROUTE.backend, UPRIGHT_4K)
+        crops = re.findall(r"perspective=([^,;]*)", graph)
+        self.assertEqual(len(crops), 2)
+        self.assertEqual(crops[0], crops[1])
+        self.assertIn("[2:v]", graph)
+        self.assertIn("[3:v]", graph)
+        self.assertIn("mergeplanes=0x001020:yuv420p", graph)
+        self.assertIn("boxblur=lr=20", graph)
+        self.assertNotIn("opencl", graph)
+        self.assertLess(graph.index("maskedmerge"), graph.index("overlay=alpha=straight"))
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_ffmpeg_negotiates_the_cpu_matte_and_focus_graph(self):
+        # The mask leaves scale with its format open; extractplanes then had none to choose (4K e2e, exit 251).
+        size, lavfi = (108, 192), lambda source, fmt: ["-f", "lavfi", "-i", f"{source}:size=54x96:rate=30000/1001:duration=3.1,format={fmt}"]
+        graph = render_final.cpu_motion_graph(self.motion(matte=[{"start": 0, "end": 90}], focus=[{"start": 20, "end": 70, "blur": 10}]),
+                                              NVIDIA_CPU_ROUTE.backend, size)
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *lavfi("testsrc2=alpha=0", "yuv420p"), *lavfi("color=c=black@0", "rgba"),
+                                 *lavfi("color=c=red@0.5", "rgba"), *lavfi("color=c=gray", "yuv420p"),
+                                 "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_a_reframe_with_no_zoom_on_it_renders(self):
+        # The window's upper bound rx+rw-w rounds a hair under rx when nothing zooms, and ffmpeg's clip() gives NaN for it.
+        size, lavfi = (108, 192), lambda source, fmt: ["-f", "lavfi", "-i", f"{source}:size=54x96:rate=30000/1001:duration=3.1,format={fmt}"]
+        crops = [{"start": 0, "end": 90, "x": 0.195625, "y": 0.265625, "w": 0.46875, "h": 0.46875}]
+        graph = render_final.cpu_motion_graph({**make_edl([(0, 90)]), "crops": crops}, NVIDIA_CPU_ROUTE.backend, size)
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *lavfi("testsrc2=alpha=0", "yuv420p"), *lavfi("color=c=black@0", "rgba"),
+                                 "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    # #44: the bystander mask is in source space, so it takes the footage's own crop and the blur follows every move.
+    def test_the_bystander_blur_crops_its_mask_like_the_footage(self):
+        graph = render_final.cpu_motion_graph(self.motion(faces="mask/v1.faces.mkv", faces_input=2), NVIDIA_CPU_ROUTE.backend, UPRIGHT_4K)
+        crops = re.findall(r"perspective=([^,;]*)", graph)
+        self.assertEqual((len(crops), crops[0]), (2, crops[1]))
+        self.assertIn("[2:v]", graph)
+        self.assertLess(graph.index("maskedmerge"), graph.index("overlay=alpha=straight"))
+        # A box blur kept the face's shape and smile, and SFace still matched it to its owner (people-proof, 38 s): the
+        # face is rebuilt from a 12x21 copy of the frame (a tenth of its width still read, 38 s), and its edge is feathered.
+        self.assertIn("scale=12:21:flags=area", graph)
+        self.assertNotIn("boxblur", graph.split("[fb_soft]")[0].split("[fb_src]")[-1])
+
+    def test_the_bystander_mask_is_seeked_on_its_own_frame_times(self):
+        # OnePuhunan: the mask's timestamps ran 27 ms behind the 4K source's by frame 74 424, so the source's seek landed
+        # the mask a frame late; the mask is seeked between its own frames, and the footage between the source's.
+        piece = {**self.motion(), "faces": "mask/v1.faces.mkv", "segments": make_edl([(1, 90)])["segments"]}
+        times = {self.clip: [0.0, 0.0334, 0.0668], render_final.WORK / "mask/v1.faces.mkv": [0.0, 0.0300, 0.0600]}
+        with mock.patch.object(render_final, "frame_times", side_effect=lambda path: times[path]):
+            command = render_final.chunk_command(piece, 0, {}, self.clip, NVIDIA_CPU_ROUTE, UPRIGHT_4K, [], self.root / "frames", self.root / "c.mp4")
+        seeks = [command[i + 1] for i, arg in enumerate(command) if arg == "-ss"]
+        self.assertEqual((seeks[0], seeks[-1]), ("0.016700", "0.015000"))
+
+    def test_the_bystander_mask_is_seeked_like_the_footage_after_the_captions(self):
+        captions = self.root / "frames.cc"
+        captions.mkdir()
+        command = self.chunk({**self.motion(), "faces": "mask/v1.faces.mkv"})
+        inputs = [command[i + 1] for i, arg in enumerate(command) if arg == "-i"]
+        self.assertEqual(Path(inputs[3]).name, "v1.faces.mkv")
+        self.assertIn("[3:v]", command[command.index("-filter_complex") + 1])
+
+    def test_a_bystander_blur_alone_takes_the_motion_graph(self):
+        self.assertTrue(render_final.has_motion({**make_edl([(0, 90)]), "faces": "mask/v1.faces.mkv"}))
+        self.assertFalse(render_final.has_motion({**make_edl([(0, 90)]), "faces": None}))
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_ffmpeg_negotiates_the_bystander_blur(self):
+        size, lavfi = (108, 192), lambda source, fmt: ["-f", "lavfi", "-i", f"{source}:size=54x96:rate=30000/1001:duration=3.1,format={fmt}"]
+        graph = render_final.cpu_motion_graph(self.motion(faces="mask/v1.faces.mkv", faces_input=2), NVIDIA_CPU_ROUTE.backend, size)
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *lavfi("testsrc2=alpha=0", "yuv420p"), *lavfi("color=c=black@0", "rgba"),
+                                 *lavfi("color=c=gray", "yuv420p"), "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_blur_box_over_an_animated_zoom_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "zoom"):
+            render_final.cpu_motion_graph(self.motion(), NVIDIA_CPU_ROUTE.backend, UPRIGHT_4K, regions=[(0, 0, 64, 64, [(40, 50)])])
+
+    def test_a_blur_box_off_the_zoom_windows_veils_the_reframed_picture_after_its_crop(self):
+        graph = render_final.cpu_motion_graph(self.motion(), NVIDIA_CPU_ROUTE.backend, UPRIGHT_4K, regions=[(0, 0, 64, 64, [(70, 80)])])
+        self.assertIn("gblur", graph)
+        self.assertLess(graph.index("perspective="), graph.index("gblur"))  # boxes are on the output grid, so after the crop
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_ffmpeg_negotiates_the_cpu_graph_with_a_blur_box(self):
+        size, lavfi = (108, 192), lambda source, fmt: ["-f", "lavfi", "-i", f"{source}:size=54x96:rate=30000/1001:duration=3.1,format={fmt}"]
+        graph = render_final.cpu_motion_graph(self.motion(), NVIDIA_CPU_ROUTE.backend, size, regions=[(8, 8, 32, 32, [(70, 80)])])
+        result = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", *lavfi("testsrc2=alpha=0", "yuv420p"), *lavfi("color=c=black@0", "rgba"),
+                                 "-filter_complex", graph, "-map", "[v]", "-f", "null", "-"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_edit_without_motion_keeps_the_composite(self):
+        piece = make_edl([(0, 30)])
+        command = self.chunk(piece)
+        self.assertEqual(command[command.index("-filter_complex") + 1],
+                         backend_graph.composite(NVIDIA_CPU_ROUTE.backend, piece, frame_size=UPRIGHT_4K, size=UPRIGHT_4K))
+
+    def test_nvidia_off_opencl_takes_motion_and_other_backends_refuse_it(self):
+        self.assertIsNone(render_final.refuse_off_gpu("v1", self.motion(), NVIDIA_CPU_ROUTE))
+        with self.assertRaisesRegex(SystemExit, "NVIDIA"):
+            render_final.refuse_off_gpu("v1", self.motion(), VAAPI_ROUTE)
+
+    def test_the_fast_path_mask_covers_all_three_planes(self):
+        matted = {**make_edl([(0, 90)]), "matte": [{"start": 10, "end": 40}]}
+        self.assertIn("mergeplanes=0x001020:yuv420p", render_final.gpu_graph(matted, ""))
+
+
+class CaptionLayerInputTests(unittest.TestCase):
+    """frames/<v>.cc/ (caption_layer.py), on the overlay's frame grid, goes in last and over the cards."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name)
+        (self.root / "frames" / "v1.cc").mkdir(parents=True)
+        self.clip = media_file("clip.mp4")
+
+    def chunk(self, piece, route):
+        with mock.patch.object(render_final, "frame_times", return_value=[0.0, 0.033]):
+            return render_final.chunk_command(piece, 0, {}, self.clip, route, UPRIGHT_4K, [], self.root / "frames" / "v1", self.root / "c.mp4")
+
+    def test_captions_are_the_last_input_and_lie_over_the_cards(self):
+        for route, piece, index in ((NVIDIA_CPU_ROUTE, make_edl([(0, 30)]), 2),
+                                    (NVIDIA_CPU_ROUTE, {**make_edl([(0, 30)]), "base": "v1", "matte": [{"start": 0, "end": 30}]}, 4),
+                                    (GPU_ROUTE, make_edl([(0, 30)]), 2)):
+            command = self.chunk(piece, route)
+            inputs = [command[at + 1] for at, arg in enumerate(command) if arg == "-i"]
+            self.assertEqual(inputs[-1], str(self.root / "frames" / "v1.cc" / "%05d.png"))
+            self.assertEqual(len(inputs), index + 1)
+            self.assertIn(f"[1:v][{index}:v]overlay=alpha=straight", command[command.index("-filter_complex") + 1])
+
+    def test_a_matte_without_a_behind_layer_takes_a_clear_one(self):
+        piece = {**make_edl([(0, 30)]), "base": "v1", "matte": [{"start": 0, "end": 30}]}
+        command = self.chunk(piece, NVIDIA_CPU_ROUTE)
+        inputs = [command[at + 1] for at, arg in enumerate(command) if arg == "-i"]
+        self.assertEqual(len(inputs), 5)
+        self.assertTrue(inputs[2].startswith("color=c=black@0:"), inputs[2])
+
+    def test_no_caption_folder_adds_no_input(self):
+        (self.root / "frames" / "v1.cc").rmdir()
+        command = self.chunk(make_edl([(0, 30)]), NVIDIA_CPU_ROUTE)
+        self.assertEqual(sum(arg == "-i" for arg in command), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -159,6 +159,7 @@ export function probeColumns(probe: ProbeResult) {
       audioCodec: probe.audioCodec,
       rotation: probe.rotation,
       colorTransfer: probe.colorTransfer,
+      pixelFormat: probe.pixelFormat,
     },
   };
 }

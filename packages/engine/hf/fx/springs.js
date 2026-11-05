@@ -15,8 +15,11 @@ function settleSeconds(preset, springAt) {
   return last + 1 / 240;
 }
 
+const easePoints = (curve) =>
+  Array.from({ length: SAMPLES + 1 }, (_, index) => [round(index / SAMPLES), round(index === SAMPLES ? 1 : curve(index / SAMPLES))]);
+
 function easePath(curve) {
-  const points = Array.from({ length: SAMPLES + 1 }, (_, index) => `${round(index / SAMPLES)},${round(index === SAMPLES ? 1 : curve(index / SAMPLES))}`);
+  const points = easePoints(curve).map(([x, y]) => `${x},${y}`);
   return `M${points[0]} L${points.slice(1).join(" ")}`;
 }
 
@@ -30,7 +33,11 @@ function springTable() {
       const travel = (progress) => scope.springAt(progress * duration, preset);
       const landing = scope.settleTime(preset);
       const land = easePath((progress) => scope.springAt(progress * landing, preset) / scope.springAt(landing, preset));
-      return [name, { duration, landing, travel: easePath(travel), alpha: easePath((progress) => scope.riseAlpha(travel(progress))), land }];
+      const alpha = (progress) => scope.riseAlpha(travel(progress));
+      return [
+        name,
+        { duration, landing, travel: easePath(travel), alpha: easePath(alpha), land, points: { travel: easePoints(travel), alpha: easePoints(alpha) } },
+      ];
     }),
   );
   return table;
@@ -59,4 +66,16 @@ function easeDefinitions(names) {
   );
 }
 
-module.exports = { spring, springAlpha, springLanding, easeDefinitions };
+// A spring ease `seconds` into its tween, linear between the page's CustomEase samples, for motion computed outside the
+// page (the caption layer). `which` is "travel" or "alpha".
+function springValue(name, which, seconds) {
+  const { duration, points } = springTable()[name];
+  const progress = Math.min(Math.max(seconds / duration, 0), 1);
+  const curve = points[which];
+  const index = Math.min(Math.floor(progress * SAMPLES), SAMPLES - 1);
+  const [x0, y0] = curve[index];
+  const [x1, y1] = curve[index + 1];
+  return y0 + ((y1 - y0) * (progress - x0)) / (x1 - x0);
+}
+
+module.exports = { spring, springAlpha, springLanding, easeDefinitions, springValue };

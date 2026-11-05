@@ -20,6 +20,9 @@ export const PinSecondsSchema = z.number().finite().nonnegative();
 /** Job progress, 0..100 everywhere: events, job snapshots, the REST DTO and the `jobs.pct` column. */
 export const JobPercentSchema = z.number().min(0).max(100);
 
+/** A share of a whole, 0–1: a crop corner, a reframe centre, a bar's height. */
+export const FractionSchema = z.number().min(0).max(1);
+
 /** Kept as a rational: 30000/1001 vs 29.97 decides frame identity. */
 export const FrameRateSchema = z.strictObject({ num: z.int().positive(), den: z.int().positive() });
 

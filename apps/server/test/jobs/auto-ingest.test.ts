@@ -2,7 +2,7 @@
 // A project's first uploads start their own ingest, once for the whole drop, without an agent session.
 import { setTimeout as delay } from "node:timers/promises";
 import { jobs, mediaAssets } from "@zks/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAutoIngest, type AutoIngest } from "../../src/jobs/auto-ingest.ts";
 import { createLogger } from "../../src/logging/logger.ts";
@@ -17,7 +17,7 @@ let runGate: Promise<void> | undefined;
 
 beforeAll(async () => {
   server = await createTestServer();
-  server.jobRunner.registerHandler("ingest", async (job, _report, signal) => {
+  const gatedRun = async (_job: unknown, _report: unknown, signal: AbortSignal) => {
     const gate = runGate;
     if (gate === undefined) return;
     await new Promise<void>((resolve, reject) => {
@@ -25,7 +25,9 @@ beforeAll(async () => {
       signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
       void gate.then(resolve);
     });
-  });
+  };
+  server.jobRunner.registerHandler("ingest", gatedRun);
+  server.jobRunner.registerHandler("transcribe", gatedRun);
   autoIngest = createAutoIngest({
     db: server.database.db,
     studioHome: server.studioHome,
@@ -49,9 +51,15 @@ async function upload(projectId: string, kind: "camera" | "image" | "source" | "
   });
 }
 
-async function ingestJobs(projectId: string) {
-  return server.database.db.select().from(jobs).where(eq(jobs.projectId, projectId)).orderBy(asc(jobs.queuedAt));
+async function projectJobs(projectId: string, kind: "ingest" | "transcribe") {
+  return server.database.db
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.projectId, projectId), eq(jobs.kind, kind)))
+    .orderBy(asc(jobs.queuedAt));
 }
+
+const ingestJobs = (projectId: string) => projectJobs(projectId, "ingest");
 
 describe("auto ingest", () => {
   it("starts one ingest of every clip in upload order once the drop goes quiet", async () => {
@@ -67,6 +75,34 @@ describe("auto ingest", () => {
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ kind: "ingest", lane: "gpu", videoId: project.videoId });
     expect(started[0]?.params).toMatchObject({ clips: clipIds.map((assetId) => ({ assetId })), mode: "join" });
+  });
+
+  it("queues the transcription beside the ingest, so whisper starts once the audio exists", async () => {
+    const project = await insertProject(server);
+    await upload(project.id);
+
+    await vi.waitFor(async () => expect(await projectJobs(project.id, "transcribe")).toHaveLength(1));
+    const [transcription] = await projectJobs(project.id, "transcribe");
+    expect(transcription).toMatchObject({ lane: "whisper", videoId: project.videoId, params: { language: "auto", model: "turbo" } });
+  });
+
+  it("replaces its transcription with the ingest when a later clip lands", async () => {
+    const project = await insertProject(server);
+    const release = Promise.withResolvers<void>();
+    runGate = release.promise;
+    try {
+      await upload(project.id);
+      await vi.waitFor(async () => expect(await projectJobs(project.id, "transcribe")).toHaveLength(1));
+      await upload(project.id);
+
+      await vi.waitFor(async () => expect(await projectJobs(project.id, "transcribe")).toHaveLength(2));
+      const [replaced, current] = await projectJobs(project.id, "transcribe");
+      expect(["cancelled", "interrupted"]).toContain(replaced?.status);
+      expect(current?.status).not.toBe("cancelled");
+    } finally {
+      runGate = undefined;
+      release.resolve();
+    }
   });
 
   it("does nothing for a project that already has its source", async () => {

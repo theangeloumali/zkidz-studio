@@ -7,7 +7,7 @@ from pathlib import Path
 
 import support  # noqa: F401  first: it sets a scratch ZKS_HOME
 
-from zks_engine.specs import SpecError, check_cue, cut_spec_to_engine, inside_project, load_spec, validate
+from zks_engine.specs import SpecError, check_cue, cut_spec_to_engine, inside_project, load_spec, migrate_cue_sheet, migrate_cuts, validate
 
 ASSET = "123e4567-e89b-42d3-a456-426614174000"
 
@@ -103,6 +103,12 @@ class CutObjectTests(unittest.TestCase):
         engine = cut_spec_to_engine(cut_spec(zooms=[{"at": 2, "end": 3, "preset": "push", "cy": 0.3}]))
         self.assertEqual(engine["zooms"], [[2, 3, "push", 0.5, 0.3]])
 
+    def test_a_focus_window_brings_its_own_matte(self):
+        # Rack focus blurs outside his mask; OpenCode set focus alone and the render failed asking for matte.py.
+        engine = cut_spec_to_engine(cut_spec(focus=[{"at": 2, "end": 4, "amount": 12}, {"at": 9, "end": 10, "amount": 8}],
+                                             matteRanges=[{"at": 3, "end": 6}]))
+        self.assertEqual(engine["matte"], [[2, 6], [9, 10]])
+
     def test_portal_corners_flatten(self):
         corners = [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": 6}, {"x": 7, "y": 8}]
         engine = cut_spec_to_engine(cut_spec(portals=[{"at": 1, "end": 2, "corners": corners}]))
@@ -151,6 +157,41 @@ class InsideProjectTests(unittest.TestCase):
         elsewhere = Path(tempfile.mkdtemp()) / "keep.mp4"
         elsewhere.write_bytes(b"x")
         self.assertEqual(inside_project(elsewhere, self.media, registered=[elsewhere]), elsewhere.resolve())
+
+
+class LiveMotionFieldTests(unittest.TestCase):
+    """The v2 Live Motion look: rack focus, the grade and reframes reach the engine and survive a migration back."""
+
+    def test_focus_grade_and_reframes_map_to_engine_rows(self):
+        engine = cut_spec_to_engine(cut_spec(focus=[{"at": 2, "end": 4, "amount": 12}], grade="learning",
+                                             reframes=[{"at": 1, "end": 3, "cx": 0.3}, {"at": 5, "end": 6, "cx": 0.7, "cy": 0.4, "scale": 1.5}]))
+        self.assertEqual(engine["focus"], [[2, 4, 12]])
+        self.assertEqual(engine["grade"], "learning")
+        self.assertEqual(engine["reframes"], [[1, 3, 0.3, 0.5, 1], [5, 6, 0.7, 0.4, 1.5]])
+
+    def test_follow_and_the_blur_answer_reach_the_edit_stage(self):
+        engine = cut_spec_to_engine(cut_spec(follow="speaker", blurFaces="others"))
+        self.assertEqual((engine["follow"], engine["blur_faces"]), ("speaker", "others"))
+        self.assertNotIn("follow", cut_spec_to_engine(cut_spec()))
+
+    def test_the_beds_level_reaches_sfx(self):
+        sections = [{"at": 0, "kind": "cold"}]
+        self.assertEqual(cut_spec_to_engine(cut_spec(music={"sections": sections, "under": 26, "duck": 6}))["bed"], {"under": 26, "duck": 6})
+        self.assertNotIn("bed", cut_spec_to_engine(cut_spec(music={"sections": sections})))
+
+    def test_the_grade_defaults_to_house(self):
+        self.assertEqual(cut_spec_to_engine(cut_spec())["grade"], "house")
+
+    def test_migrating_back_keeps_focus_grade_and_reframes(self):
+        spec = migrate_cuts({"duration": 20.0, "remove": [], "focus": [[2, 4, 12]], "grade": "learning", "reframes": [[1, 3, 0.3, 0.5, 1]]}, ASSET)
+        self.assertEqual(spec["focus"], [{"at": 2, "end": 4, "amount": 12}])
+        self.assertEqual(spec["grade"], "learning")
+        self.assertEqual(spec["reframes"], [{"at": 1, "end": 3, "cx": 0.3, "cy": 0.5, "scale": 1}])
+
+    def test_a_legacy_cue_sheet_keeps_depth_behind(self):
+        cues, warnings = migrate_cue_sheet('const CUE_SHEET = [{ kind: "keyword", at: 1, end: 2, text: "Hi", depth: "behind" }];')
+        self.assertEqual(cues[0]["depth"], "behind")
+        self.assertEqual(warnings, [])
 
 
 if __name__ == "__main__":

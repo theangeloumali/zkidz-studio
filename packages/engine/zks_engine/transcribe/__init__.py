@@ -2,6 +2,7 @@
 # Word-level transcription through whisper.cpp, split at quiet points and run in parallel.
 # Usage (from the work dir): python -m zks_engine.transcribe audio/v3.wav transcripts/v3_words.json [chunks] [language] [model]
 import json
+import math
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -14,6 +15,11 @@ from . import whispercpp
 
 SEARCH = 5.0  # seconds either side of an even split searched for the quietest point
 MIN_CHUNK = 20.0  # shorter chunks cost more in model start-up than they save
+CHUNK_SECONDS = 90.0  # long enough to amortise the model load, short enough to keep every worker busy
+
+
+def chunk_count(duration):
+    return max(1, math.ceil(duration / CHUNK_SECONDS))
 
 
 def split_points(energy_db, chunks):
@@ -41,11 +47,13 @@ def transcribe_chunk(wav, start, end, index, language, model, threads):
     return [{**word, "start": word["start"] + offset, "end": word["end"] + offset} for word in words]
 
 
-def main(wav, destination, chunks=6, language="tl", model=None, stage=None):
-    """stage: an optional progress.Job, told the audio seconds to hear and how many are heard so far."""
+def main(wav, destination, chunks=None, language="tl", model=None, stage=None):
+    """chunks: default one per CHUNK_SECONDS. stage: an optional progress.Job, told the audio seconds to hear and how many
+    are heard so far."""
     (WORK / "transcripts").mkdir(exist_ok=True)
     model_file = whispercpp.model_path(model)
-    points = split_points(load_energy(WORK / wav), chunks)
+    energy = load_energy(WORK / wav)
+    points = split_points(energy, chunks or chunk_count(len(energy) * ENERGY_WINDOW))
     count = len(points) - 1
     jobs = min(count, MAX_JOBS)
     threads = whispercpp.threads_for(jobs)

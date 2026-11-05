@@ -4,7 +4,7 @@
 
 A theme pack sets the look of every overlay the renderer draws: palette, type, hand-drawn boil, the brand intro, and which cue
 kinds exist. `zkidz` is the default; `minimal` proves the contract with near-black on white, one accent, one sans face, no boil
-and no intro.
+and no intro; `learning` is the v2 Live Motion learning-vlog look (paper scenes, big words, word captions).
 
 The renderer loads a theme by id from this folder only (`node packages/engine/hf/render.js v1 --theme minimal`), never from a URL
 or another path. A theme's look runs in Chrome and its words reach the agent, so a pack is reviewed like code.
@@ -20,7 +20,7 @@ or another path. A theme's look runs in Chrome and its words reach the agent, so
 | `intro`      | `true` plays the brand intro after a `hookTitle` with `intro: true`                                        |
 | `components` | The manifest: each cue kind the theme draws, with its `tier`, `purpose`, text `slots` and optional `tones` |
 
-Families must be faces the renderer bundles (Newsreader, Inter, Caveat, JetBrains Mono); a theme that names another face is
+Families must be faces the renderer bundles (Newsreader, Inter, Caveat, JetBrains Mono, Chakra Petch); a theme that names another face is
 refused when it loads.
 
 ## The component manifest

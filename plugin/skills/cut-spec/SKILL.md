@@ -8,7 +8,8 @@ description: Use before every set_cuts call. How a cut spec is built - removals,
 # Cut spec
 
 A cut spec describes the full edit as changes to one joined source. `set_cuts` replaces the whole spec, so always send every
-field you want to keep.
+field you want to keep. To change part of a stored spec, start from `read_spec` (`kind: "cuts"`) and send it back with
+only that part changed.
 
 ## Shape
 
@@ -34,12 +35,29 @@ field you want to keep.
   long-form transcript times, which drift by about half a second.
 - `blurBoxes`: on the 1080×1920 grid, inside the frame. Blur other people's private details (their faces in photos, names,
   addresses, phone numbers, emails). Do not blur the creator's own family or home unless the user asks, and then exactly
-  as asked.
-- `zooms`: a preset (`snap`, `push`, `reveal`, `through-out`, `through-in`, `portal`) over a span. Jump cuts already get an
+  as asked. A blur box sits still on the frame, so its span must not overlap a `zooms` window: the picture
+  would slide under it.
+- `zooms`: a preset (`snap`, `push`, `reveal`, `through-out`, `through-in`, `portal`, `lean`) over a span. `lean` is a
+  restrained 5 % push for where the face is already close. Jump cuts already get an
   alternating punch-in; add zooms for emphasis only. Every preset is animated: when `get_capabilities` reports
   `zoomExpr: false`, leave `zooms` empty and let the jump-cut punch-ins carry the emphasis.
 - `cutaways`: a title card `{ title, sub?, style? }` over a span, for a chapter change.
-- `faceCamRanges` and `matteRanges`: spans where the speaker's face is the subject.
+- `faceCamRanges` and `matteRanges`: spans where the speaker's face is the subject. A house-theme cue with
+  `depth: "behind"` draws under the person only inside a `matteRanges` window, so give every behind cue one that covers
+  it. Learning kinds have no `depth`: their text always stays in front.
+- `focus`: rack focus `{ at, end, amount }` (1–40 px of blur on the room behind him) where he turns inward. Each focus window is matted for you; no `matteRanges` needed.
+- `grade`: `"house"` (the default) or `"learning"` for the v2 Live Motion look.
+- `follow`: `"speaker"` frames every kept second without a `reframes` window on whoever is speaking (learning theme).
+- `blurFaces`: the user's answer to "are other people's faces blurred?": `"others"` blurs every face but the creator's,
+  a guest's even while they speak (the camera still follows them), following every reframe and zoom, and the covers too;
+  `"none"` leaves them. Ask before the first render: a learning edit of footage with anyone besides the creator does
+  not render without it.
+- `places`: `[{ name, lon, lat }]` for places the footage visits that its own GPS cannot prove (ask the user); each
+  needs a `routeMap` pin. Never home.
+- `reframes`: for a square or landscape source, `{ at, end, cx, cy?, scale? }` windows that crop a 9:16 slice of the
+  picture (`cx`/`cy` are shares of the picture band `frame_faces` reports). Cover every kept span, move only on a cut.
+- `music`: an original bed under his voice, `{ bpm?, sections: [{ at, kind, energy? }] }` with `kind` one of `cold`,
+  `intro`, `chapter` and `outro`; sections start at 0 and are in source seconds.
 
 ## Before you call set_cuts
 

@@ -17,7 +17,7 @@ describe.skipIf(!isFfmpegInstalled)("probeMedia", () => {
 
   it("reads duration, size and the exact NTSC frame rate", async () => {
     const probe = await probeMedia("ffprobe", fixtures.clipMp4);
-    expect(probe).toMatchObject({ kind: "camera", width: 64, height: 36, fps: { num: 30000, den: 1001 }, rotation: 0, isHdr: false });
+    expect(probe).toMatchObject({ kind: "camera", width: 64, height: 36, fps: { num: 30000, den: 1001 }, rotation: 0, isHdr: false, pixelFormat: "yuv420p" });
     expect(probe.durationS).toBeGreaterThan(0.4);
     expect(probe.formatName).toBe("mov,mp4,m4a,3gp,3g2,mj2");
   });

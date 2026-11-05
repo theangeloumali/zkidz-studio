@@ -35,9 +35,35 @@ def load_lock(path=TOOLS_LOCK):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+CUDA_TOOL = "whisper-cuda"  # the CUDA build: about 12x faster than the CPU pin on QC's re-hearing of every cut
+
+
+def cuda_driver():
+    """Whether the NVIDIA driver library loads (WSL ships it in /usr/lib/wsl/lib)."""
+    import ctypes
+
+    try:
+        ctypes.CDLL("libcuda.so.1")
+        return True
+    except OSError:
+        return False
+
+
+def pinned_path(lock, tool, key):
+    entry = lock["tools"].get(tool, {}).get("platforms", {}).get(key, {})
+    if "sha256" not in entry:
+        return None
+    path = data_dir("tools") / tool / entry["sha256"][:SHORT_HASH_LENGTH] / entry.get("executable", "whisper-cli")
+    return path if path.exists() else None
+
+
 def cli_path(lock=None, key=None):
-    """The pinned whisper-cli `pnpm zks setup` installed; PATH only for a Homebrew pin, never an unverified stand-in."""
-    entry = (lock or load_lock())["tools"]["whisper-cpp"]["platforms"].get(key or platform_key(), {})
+    """The pinned whisper-cli `pnpm zks setup` installed, the CUDA build first when the driver loads; PATH only for a
+    Homebrew pin, never an unverified stand-in."""
+    lock, key = lock or load_lock(), key or platform_key()
+    if (cuda := pinned_path(lock, CUDA_TOOL, key)) and cuda_driver():
+        return cuda
+    entry = lock["tools"]["whisper-cpp"]["platforms"].get(key, {})
     if "sha256" in entry:
         pinned = data_dir("tools") / "whisper-cpp" / entry["sha256"][:SHORT_HASH_LENGTH] / entry.get("executable", "whisper-cli")
         if pinned.exists():
@@ -59,6 +85,14 @@ def model_path(name=None, lock=None):
             return path
     wanted = models[candidates[0]]["file"] if name else "a whisper model"
     raise ToolMissing(f"{wanted} is not in {data_dir('models')}. {SETUP_FIX}")
+
+
+def cli_env(executable, env=None):
+    """The environment whisper-cli runs in: the CUDA build loads the CUDA libraries bundled beside it."""
+    env = dict(os.environ if env is None else env)
+    if Path(executable).parent.name == CUDA_TOOL:  # the bundle's own folder, holding libcudart and cuBLAS
+        env["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [str(Path(executable).parent), env.get("LD_LIBRARY_PATH")]))
+    return env
 
 
 def cli_args(executable, model, wav, output_base, language, threads):
@@ -110,8 +144,9 @@ def transcribe_file(wav, language, model, threads=None):
     """Word lines for one wav, timed from its first sample. threads: threads_for() when one process runs alone."""
     with tempfile.TemporaryDirectory(prefix="zks-whisper-") as scratch:
         output_base = Path(scratch) / "words"
-        command = cli_args(cli_path(), model, wav, output_base, language, threads or threads_for())
-        result = subprocess.run(command, capture_output=True, text=True)
+        executable = cli_path()
+        command = cli_args(executable, model, wav, output_base, language, threads or threads_for())
+        result = subprocess.run(command, capture_output=True, text=True, env=cli_env(executable))
         if result.returncode:
             raise RuntimeError(f"whisper-cli failed on {Path(wav).name} (exit {result.returncode}): {result.stderr.strip()[-300:]}")
         # A word split mid-character must not sink an hour-long transcription.

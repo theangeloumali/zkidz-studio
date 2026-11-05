@@ -10,7 +10,9 @@ from support import make_edl  # first: it sets a scratch ZKS_HOME
 
 from test_cli_inspect import ScratchWork, call_cli, write_wav
 from zks_engine import captions, cli, render
+from zks_engine.qc import inputs as qc_inputs
 from zks_engine.render import commands as render_commands
+from zks_engine.specs.gates import GateFailed
 
 WORDS = [{"at": 1.0, "end": 1.4, "text": " kumusta "}, {"at": 1.5, "end": 1.9, "text": "po"}, {"at": 3.0, "end": 3.4, "text": "salamat"}]
 
@@ -130,14 +132,33 @@ class RenderPreviewTests(ScratchWork):
         self.assertFalse((self.work / "edl" / "v1.csv").exists())
         self.assertEqual(sorted(path.name for path in self.work.iterdir() if path.name.startswith(".")), [])
 
+    def test_the_face_scan_cache_stays_in_place_and_keeps_what_a_preview_scanned(self):
+        # Set aside like an edit file, every preview rescanned the whole 43-min source: 10-25 min a preview.
+        cache = self.work / "faces" / "v1.speakers.json"
+        cache.parent.mkdir(exist_ok=True)
+        cache.write_text('{"chunks": {"0": []}}', encoding="utf-8")
+
+        def preview_edit(video, source, **_options):
+            self.assertEqual(cache.read_text(encoding="utf-8"), '{"chunks": {"0": []}}')
+            cache.write_text('{"chunks": {"0": [], "1": []}}', encoding="utf-8")
+            return self.build_edit(video, source)
+
+        self.edit.side_effect = preview_edit
+        self.draw("1")
+        code, payload = self.preview("--at", "1")
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(cache.read_text(encoding="utf-8"), '{"chunks": {"0": [], "1": []}}')
+
     def test_named_times_come_back_as_work_relative_stills(self):
         self.draw("1.5", "3")
         code, payload = self.preview("--at", "1.5", "--at", "3")
         self.assertEqual(code, 0, payload)
         self.assertEqual(payload, {"stills": [{"at": 1.5, "path": "stills/v1.hf/t1.5.png"}, {"at": 3.0, "path": "stills/v1.hf/t3.png"}]})
         self.edit.assert_called_once_with("v1", "media/s.mkv", with_audio=False)
-        self.assertEqual(self.drawn[0][0], "node")
-        self.assertEqual(self.drawn[0][2:], ["v1:v1", "--stills", "1.5", "3"])
+        cards, stills = self.drawn
+        self.assertEqual(cards[-2:], ["zks_engine.cardclip", "v1:v1"])  # the footage cards first, as the render encodes them
+        self.assertEqual(stills[0], "node")
+        self.assertEqual(stills[2:], ["v1:v1", "--stills", "1.5", "3"])
 
     # Review (Maya): with only captions left render.js takes no stills, and an earlier preview's stills came back.
     def test_auto_never_returns_an_earlier_previews_stills(self):
@@ -153,7 +174,7 @@ class RenderPreviewTests(ScratchWork):
         code, payload = self.preview("--guides")
         self.assertEqual(code, 0, payload)
         self.assertEqual([still["at"] for still in payload["stills"]], [0.5, 2.0, 4.25, 7.0])
-        self.assertEqual(self.drawn[0][2:], ["v1:v1", "--stills", "auto", "--guides", "--max", "4"])  # capped before drawing
+        self.assertEqual(self.drawn[1][2:], ["v1:v1", "--stills", "auto", "--guides", "--max", "4"])  # capped before drawing
 
     def test_a_still_render_js_did_not_write_fails_the_gate(self):
         self.draw("1.5")
@@ -167,7 +188,7 @@ class RenderPreviewTests(ScratchWork):
         self.draw("1")
         code, payload = self.preview("--at", "1")
         self.assertEqual(code, 0, payload)
-        self.assertEqual(self.drawn[0][2:], ["v1:v1", "--stills", "1", "--style", str(style)])
+        self.assertEqual([self.drawn[0][-2:], self.drawn[1][2:]], [["--style", str(style)], ["v1:v1", "--stills", "1", "--style", str(style)]])
 
     def test_refuses_more_than_four_times_before_editing(self):
         self.assert_refused("render-preview", "--json", "--video", "v1", "--source", "media/s.mkv",
@@ -180,19 +201,68 @@ class DrawOverlaysTests(ScratchWork):
         super().setUp()
         (self.work / "edl" / "v1.json").write_text(json.dumps(make_edl([(0, 300)])), encoding="utf-8")
         (self.work / "cues" / "v1.json").write_text("[]", encoding="utf-8")
+        self.patch(qc_inputs, "WORK", self.work)
         self.drawn = []
-        self.patch(render.subprocess, "run", side_effect=lambda argv, **_options: self.drawn.append(argv[2:]))
+        self.patch(render.subprocess, "run", side_effect=lambda argv, **_options: self.drawn.append(argv[2:]) or subprocess.CompletedProcess(argv, 0, stderr=""))
         self.patch(render.sfx, "main")
 
     def test_no_style_draws_exactly_as_before(self):
         render.draw_overlays("v1")
-        self.assertEqual(self.drawn, [["v1:v1", "--events"], ["v1:v1"]])
+        self.assertEqual(self.drawn, [["v1:v1", "--events"], ["zks_engine.cardclip", "v1:v1"], ["v1:v1"], ["v1:v1", "--layer", "behind"]])
+
+    def learning(self, measured):
+        (self.work / "style.json").write_text(json.dumps({"theme": "learning"}), encoding="utf-8")
+        (self.work / "edl" / "v1.text.json").write_text(json.dumps(measured), encoding="utf-8")
+        return self.patch(render.learning, "check_sheet")
+
+    def test_a_thin_sheet_stops_the_render_after_the_sfx_and_before_any_frame(self):
+        self.learning([]).side_effect = GateFailed("density (hook: longest gap 5.00s from 0.00s (limit 2.0s))")
+        with self.assertRaisesRegex(GateFailed, "density"):
+            render.draw_overlays("v1")
+        render.sfx.main.assert_called_once_with("v1")
+        self.assertEqual([argv[:2] for argv in self.drawn], [["v1:v1", "--events"], ["v1:v1", "--boxes"]])
+
+    def test_a_learning_edit_measures_its_text_right_after_the_events(self):
+        self.learning([])
+        render.draw_overlays("v1")
+        self.assertEqual([argv[:2] for argv in self.drawn[:2]], [["v1:v1", "--events"], ["v1:v1", "--boxes"]])
+
+    def test_colliding_text_stops_the_render_before_any_frame(self):
+        boxes = [[100, 100, 200, 50]]
+        self.learning([{"clip": "c0", "name": "a", "kind": "chipRail", "at": 0, "end": 2, "boxes": boxes},
+                       {"clip": "c1", "name": "b", "kind": "bigWord", "at": 1, "end": 3, "boxes": boxes}])
+        with self.assertRaisesRegex(GateFailed, "text overlaps text"):
+            render.draw_overlays("v1")
+        self.assertEqual(len(self.drawn), 2)
+
+    def test_matte_windows_matte_him_after_the_behind_layer(self):
+        (self.work / "edl" / "v1.json").write_text(json.dumps({**make_edl([(0, 300)]), "matte": [{"start": 0, "end": 30}]}), encoding="utf-8")
+        render.draw_overlays("v1")
+        self.assertEqual(self.drawn[-1], ["zks_engine.matte", "v1"])
+
+    def test_the_caption_layer_runs_even_when_the_edit_now_has_no_captions(self):
+        # Dropping every caption removes the plates; the last render's frames/<v>.cc/ must still be cleared.
+        build = self.patch(render.caption_layer, "build")
+        render.draw_overlays("v1")
+        build.assert_called_once_with("v1")
+
+    def test_a_behind_cue_without_a_matte_window_is_refused(self):
+        (self.work / "frames" / "v1.behind").mkdir(parents=True)
+        with self.assertRaisesRegex(GateFailed, "matte window"):
+            render.draw_overlays("v1")
+
+    def test_caption_plates_build_the_caption_layer(self):
+        (self.work / "frames" / "v1.plates").mkdir(parents=True)
+        with mock.patch.object(render.caption_layer, "build") as build:
+            render.draw_overlays("v1")
+        build.assert_called_once_with("v1")
 
     def test_a_project_style_reaches_both_passes(self):
         style = self.work / "style.json"
         style.write_text(json.dumps({"theme": "zkidz", "boil": False}), encoding="utf-8")
         render.draw_overlays("v1")
-        self.assertEqual(self.drawn, [["v1:v1", "--events", "--style", str(style)], ["v1:v1", "--style", str(style)]])
+        self.assertEqual([self.drawn[0], self.drawn[2]], [["v1:v1", "--events", "--style", str(style)], ["v1:v1", "--style", str(style)]])
+        self.assertEqual(self.drawn[3], ["v1:v1", "--layer", "behind", "--style", str(style)])
 
     def test_a_job_draws_the_style_its_snapshot_took(self):
         (self.work / "style.json").write_text(json.dumps({"theme": "minimal"}), encoding="utf-8")
@@ -201,7 +271,7 @@ class DrawOverlaysTests(ScratchWork):
         (snapshot / "style.json").write_text(json.dumps({"theme": "zkidz"}), encoding="utf-8")
         with mock.patch.dict(os.environ, {"ZKS_SPECS": str(snapshot)}):
             render.draw_overlays("v1")
-        self.assertEqual(self.drawn[1][1:], ["--style", str(snapshot / "style.json")])
+        self.assertEqual(self.drawn[2][1:], ["--style", str(snapshot / "style.json")])
 
 if __name__ == "__main__":
     unittest.main()

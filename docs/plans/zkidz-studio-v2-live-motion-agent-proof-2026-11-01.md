@@ -207,7 +207,7 @@ BUDGET: T3. The session is past its dispatch ceiling (about 61 of 60), so Phases
 - [x] Phase 5d: the camera follows the speaker; other faces blurred when the creator says so
 - [x] Phase 5e: map every place (the latest skill's rule 8): routeMap kind, map gate, cut-spec places
 - [x] Phase 6: Claude and OpenCode edits (full + reel), judged; Claude's re-render and Codex skipped on Angelo's "Ship now" (2026-11-05)
-- [ ] Phase 7: review, PRs, release, demo, close
+- [x] Phase 7: review, PRs, release, demo, close (2026-11-05: /simplify, Maya + Kai, Codex 3 turns and ci:local 9/9 done; the PR, release, demo and close run in the same session)
 
 ### Phase 0: contracts (primary)
 

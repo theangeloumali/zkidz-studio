@@ -33,5 +33,5 @@ describe("TerminalPanel", () => {
     rerender(panel("codex_terminal"));
 
     expect(await screen.findByText(`Codex terminal ${sessionIds[1]}`, {}, { timeout: 5000 })).toBeInTheDocument();
-  });
+  }, 15_000); // two 5 s waits: the default 5 s test timeout cut them short under ci:local's load
 });

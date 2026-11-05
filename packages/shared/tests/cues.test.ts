@@ -1,6 +1,7 @@
 // Created by The Angelo Umali.
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { CUE_KINDS, CueSchema, CueSheetSchema, ReelCuePatchSchema, type Cue } from "../src/index.ts";
+import { learningCueSchemas } from "../src/specs/learning-cues.ts";
 import { sampleCueByKind } from "./cue-samples.ts";
 
 describe("CueSchema", () => {
@@ -40,6 +41,57 @@ describe("CueSchema", () => {
     const anchoredCue = { ...sampleCueByKind.keyword, id: "cue-7", anchor: { phrase: "September 21", wordIndex: 3 } };
 
     expect(CueSchema.safeParse(anchoredCue).success).toBe(true);
+  });
+
+  it("refuses a plate behind a big word (the v2 rules ban backdrops behind words)", () => {
+    expect(CueSchema.safeParse({ ...sampleCueByKind.bigWord, plate: "ink" }).success).toBe(false);
+  });
+
+  it("accepts depth front or behind on a house kind and refuses anything else", () => {
+    expect(CueSchema.safeParse({ ...sampleCueByKind.keyword, depth: "behind" }).success).toBe(true);
+    expect(CueSchema.safeParse({ ...sampleCueByKind.keyword, depth: "under" }).success).toBe(false);
+  });
+
+  // v2 rule 5 (#43): every word on a learning edit stays fully visible, so none draws under the person matte.
+  it("refuses depth on every learning kind", () => {
+    const learningSamples = Object.values(sampleCueByKind).filter((cue) => learningCueSchemas.some((schema) => schema.safeParse(cue).success));
+    expect(learningSamples.length).toBeGreaterThanOrEqual(17);
+    for (const cue of learningSamples) expect(CueSchema.safeParse({ ...cue, depth: "behind" }).success, cue.kind).toBe(false);
+  });
+
+  it("takes a routeMap's region as a name or a lon/lat box, and refuses a stop off the globe", () => {
+    const map = sampleCueByKind.routeMap;
+    expect(CueSchema.safeParse({ ...map, region: [118, 4, 127, 21] }).success).toBe(true);
+    expect(CueSchema.safeParse({ ...map, region: "mars" }).success).toBe(false);
+    expect(CueSchema.safeParse({ ...map, stops: [{ name: "X", lon: 200, lat: 0, at: 0.5 }] }).success).toBe(false);
+  });
+
+  // An odd crop failed only at render, after a 10-min preview (Phase 6): the tool call refuses it at once.
+  it("refuses a footage card crop that is odd-sized or leaves the frame", () => {
+    const card = sampleCueByKind.footageCard;
+    expect(CueSchema.safeParse({ ...card, crop: [0, 360, 1080, 712] }).success).toBe(true);
+    expect(CueSchema.safeParse({ ...card, crop: [0, 360, 1080, 711] }).success).toBe(false);
+    expect(CueSchema.safeParse({ ...card, crop: [100, 360, 1080, 712] }).success).toBe(false);
+  });
+
+  it("refuses an image src that leaves the project", () => {
+    for (const src of ["/etc/passwd", "C:/Users/x.png", "media/../../secret.png"]) {
+      expect(CueSchema.safeParse({ ...sampleCueByKind.backdrop, src }).success).toBe(false);
+    }
+  });
+
+  it("accepts a words-style caption and refuses a scale outside 0.6-2.0", () => {
+    const wordsCaption = { kind: "caption", at: 1, end: 1.4, style: "words", text: "Save", line: "Save before you spend", pills: [0], scale: 1.2 };
+
+    expect(CueSchema.safeParse(wordsCaption).success).toBe(true);
+    expect(CueSchema.safeParse({ ...wordsCaption, scale: 3 }).success).toBe(false);
+  });
+
+  it("refuses a fourth flow step and a meter level off the dial", () => {
+    const steps = [...sampleCueByKind.flowSteps.steps, { label: "More", kind: "check", at: 2 }];
+
+    expect(CueSchema.safeParse({ ...sampleCueByKind.flowSteps, steps }).success).toBe(false);
+    expect(CueSchema.safeParse({ ...sampleCueByKind.meterGauge, level: 1.2 }).success).toBe(false);
   });
 
   it("narrows on kind", () => {

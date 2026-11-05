@@ -20,7 +20,7 @@ export const AGENT_KINDS = ["claude", "codex", "opencode"] as const;
 export const USAGE_SOURCES = ["sdk", "claude_statusline", "claude_transcript", "codex", "opencode"] as const;
 export const EDIT_STATUSES = ["open", "closed"] as const;
 /** Theme packs under themes/ that a project may render with (plan §7.8). */
-export const THEME_IDS = ["zkidz", "minimal"] as const;
+export const THEME_IDS = ["zkidz", "minimal", "learning"] as const;
 
 export const ProjectStatusSchema = z.enum(PROJECT_STATUSES);
 export const AssetKindSchema = z.enum(ASSET_KINDS);

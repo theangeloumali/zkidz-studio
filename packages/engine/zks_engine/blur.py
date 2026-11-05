@@ -83,20 +83,21 @@ def mask_boxes(regions):
                     for x, y, w, h, ranges in regions for bx, by, bw, bh in [small_box(x, y, w, h)])
 
 
-def blur_graph(regions, label, frame_size):
-    """CPU form, on the upright source before the punch-in split."""
+def blur_graph(regions, label, frame_size, prefix=""):
+    """CPU form, on the upright source before the punch-in split. `prefix` keeps two veils' labels apart in one graph."""
     if not regions:
         return "", label
     width, height = frame_size
     boxes = mask_boxes(regions)
     any_region = ranges_expr(sorted(span for *_, ranges in regions for span in ranges))
-    return (f"[{label}]split[sharp][soften];"
-            f"[soften]scale={width // BLUR_DOWN}:{height // BLUR_DOWN}:flags=area,gblur=sigma={BLUR_SIGMA / BLUR_DOWN},"
-            "format=yuv420p,split[soft][mask];"
-            f"[mask]format=gray,lut=c0=0,{boxes}[boxes];"
+    n = lambda name: f"{prefix}{name}"  # noqa: E731
+    return (f"[{label}]split[{n('sharp')}][{n('soften')}];"
+            f"[{n('soften')}]scale={width // BLUR_DOWN}:{height // BLUR_DOWN}:flags=area,gblur=sigma={BLUR_SIGMA / BLUR_DOWN},"
+            f"format=yuv420p,split[{n('soft')}][{n('mask')}];"
+            f"[{n('mask')}]format=gray,lut=c0=0,{boxes}[{n('boxes')}];"
             # Left to negotiation, the alpha branch dropped to grey and the blurred boxes lost their colour.
-            f"[soft][boxes]alphamerge,format=yuva420p,scale={width}:{height}:flags=bilinear,format=yuva420p[veil];"
-            f"[sharp][veil]overlay=0:0:format=yuv420:enable='{any_region}'[blurred];"), "blurred"
+            f"[{n('soft')}][{n('boxes')}]alphamerge,format=yuva420p,scale={width}:{height}:flags=bilinear,format=yuva420p[{n('veil')}];"
+            f"[{n('sharp')}][{n('veil')}]overlay=0:0:format=yuv420:enable='{any_region}'[{n('blurred')}];"), n("blurred")
 
 
 def gpu_blur_graph(regions, source, tone, size=OUTPUT):

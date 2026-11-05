@@ -89,7 +89,8 @@ class BrandTests(unittest.TestCase):
     def test_every_brand_face_ships_with_the_composition(self):
         fonts = node_json(FONTS)
         published = dict(fonts["assets"])
-        self.assertEqual(sorted(published), ["fonts/Caveat.ttf", "fonts/Inter.ttf", "fonts/JetBrainsMono.ttf", "fonts/Newsreader.ttf"])
+        self.assertEqual(sorted(published), ["fonts/Caveat.ttf", "fonts/ChakraPetch-Bold.ttf", "fonts/ChakraPetch-SemiBold.ttf", "fonts/Inter.ttf", "fonts/JetBrainsMono.ttf",
+                                             "fonts/Newsreader.ttf"])
         self.assertTrue(all(published.values()), published)
         for family in ("Newsreader", "Inter", "Caveat", "JetBrains Mono"):
             self.assertIn(f'font-family: "{family}"', fonts["css"])

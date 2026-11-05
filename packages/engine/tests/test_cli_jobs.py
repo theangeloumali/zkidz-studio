@@ -15,7 +15,7 @@ from unittest import mock
 from support import ENGINE, has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
 from test_cli import run_cli
-from zks_engine import cli, ffio, home, join_sources, progress, progress_store, showcase, transcribe
+from zks_engine import cli, ffio, home, join_sources, prepare, progress, progress_store, showcase, transcribe
 from zks_engine.transcribe import whispercpp
 
 JFK_WAV = ENGINE / "tests" / "fixture" / "whisper" / "jfk-3s.wav"
@@ -108,10 +108,19 @@ class IngestReportTests(ScratchWork):
             print("joining 1 clips")
             return [clip_of("a.mp4", 30)]
 
-        with mock.patch.object(join_sources, "main", side_effect=chatty_join), contextlib.redirect_stderr(io.StringIO()) as stderr:
+        with mock.patch.object(prepare, "ingest_one", side_effect=chatty_join), contextlib.redirect_stderr(io.StringIO()) as stderr:
             code, report = call_cli("ingest", "--json", "--video", "v1", "--mode", "single", "--clip", "a.mp4")
         self.assertEqual((code, report["frames"]), (0, 30))
         self.assertIn("joining 1 clips", stderr.getvalue())
+
+    def test_one_clip_is_prepared_from_the_raw_and_not_prepared_again_from_the_source(self):
+        self.mock_prepare()
+        with mock.patch.object(prepare, "ingest_one", return_value=[clip_of("a.mp4", 30)]) as ingest_one:
+            code, report = call_cli("ingest", "--json", "--video", "v1", "--mode", "single", "--clip", "a.mp4@1.2")
+        self.assertEqual((code, report["frames"]), (0, 30))
+        ingest_one.assert_called_once_with("v1", "a.mp4@1.2")
+        self.build_audio.assert_not_called()
+        self.build_proxy.assert_not_called()
 
 
 class TranscribeTests(ScratchWork):

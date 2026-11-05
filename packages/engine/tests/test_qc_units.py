@@ -84,6 +84,28 @@ class WordGateTests(unittest.TestCase):
         self.assertEqual(len(words.cut_word_problems(spoken, two_cuts, None, master, hear)), 2)
         self.assertEqual(len(calls), 1)
 
+    def test_a_word_the_source_hearing_cannot_place_is_not_judged_missing(self):
+        # 3 s of Taglish re-heard as Spanish: whisper missed 'kasi' in the uncut source too, so the cut did not lose it.
+        spoken = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.55, "end": 1.9, "text": " kasi"}]
+        master = self.hear_alone([{"at": 1.2, "end": 1.5, "text": " it"}])
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, master, self.hear_alone([{"at": 1.2, "end": 1.5, "text": " por"}])), [])
+
+    def test_a_word_the_master_holds_when_heard_around_it_is_not_missing(self):
+        # Whisper drops a filler at random in the cut's window; heard around the word, as the source is, the master has it.
+        spoken = [{"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.55, "end": 1.9, "text": " kasi"}]
+        kasi = {"at": 1.55, "end": 1.9, "text": " kasi"}
+        master = lambda start, end: [{"at": 1.2, "end": 1.5, "text": " it"}] + ([kasi] if start < 0.4 else [])  # noqa: E731
+        source = self.hear_alone(spoken)
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, master, source), [])
+        lost = lambda start, end: [{"at": 1.2, "end": 1.5, "text": " it"}]  # noqa: E731
+        self.assertEqual(words.cut_word_problems(spoken, EDL, None, lost, source), ["cut at 2.00 s: 'kasi' is missing"])
+
+    def test_each_cut_is_reported_once_it_has_been_heard(self):
+        two_cuts = make_edl([(0, 60), (90, 120), (150, 240)])
+        heard = []
+        words.cut_word_problems([], two_cuts, None, lambda start, end: [], on_cut=lambda: heard.append(len(heard) + 1))
+        self.assertEqual(heard, [1, 2])
+
     def test_a_word_missing_only_by_drifted_times_passes_once_heard_alone(self):
         spoken = [{"at": 0.78, "end": 0.95, "text": " hello"}, {"at": 1.2, "end": 1.5, "text": " it"}, {"at": 1.55, "end": 1.9, "text": " kasi"},
                   {"at": 3.2, "end": 3.5, "text": " again"}]

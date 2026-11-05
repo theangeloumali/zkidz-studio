@@ -98,6 +98,7 @@ export const JOINED_SOURCE_PROBE = {
   rotation: 0,
   isHdr: false,
   colorTransfer: "bt709",
+  pixelFormat: "yuv420p10le",
   videoCodec: "hevc",
   audioCodec: "flac",
 };

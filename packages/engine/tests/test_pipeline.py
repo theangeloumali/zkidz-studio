@@ -15,6 +15,21 @@ from zks_engine import pipeline
 from zks_engine import transcribe
 
 
+class CueSpanTests(unittest.TestCase):
+    # hf/overlay/timemap.js starts a cue within CUT_SNAP of a cut on the cut; QC must place it on the same frames.
+    EDL = {"fps_num": 30000, "fps_den": 1001, "segments": [{"in": 30191, "out": 30491, "target": 0}, {"in": 31756, "out": 32056, "target": 300}]}
+
+    def test_a_cue_a_few_frames_after_a_cut_starts_on_it(self):
+        rate = 30000 / 1001
+        spans = pipeline.cue_spans(30193 / rate, 30400 / rate, self.EDL)
+        self.assertEqual(spans[0][0], 0.0)
+        self.assertAlmostEqual(spans[0][1], 209 / rate)
+
+    def test_a_cue_well_after_a_cut_keeps_its_start(self):
+        rate = 30000 / 1001
+        self.assertAlmostEqual(pipeline.cue_spans(31766 / rate, 31900 / rate, self.EDL)[0][0], 310 / rate)
+
+
 class WorkDirTests(unittest.TestCase):
     def test_env_overrides_cwd(self):
         with mock.patch.dict(os.environ, {"ZKS_WORK": "/tmp/some-edit"}):

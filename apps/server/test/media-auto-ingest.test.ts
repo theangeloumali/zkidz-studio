@@ -4,7 +4,7 @@ import { readFile, rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { jobs } from "@zks/db/schema";
 import { API_ROUTES, MediaAssetSchema, PROJECT_TITLE_HEADER, ProjectSchema, UPLOAD_FILENAME_HEADER } from "@zks/shared";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createAutoIngest } from "../src/jobs/auto-ingest.ts";
@@ -41,10 +41,16 @@ describe.skipIf(!ffmpegAvailable)("auto ingest from the upload routes", () => {
     const second = MediaAssetSchema.parse(await (await post(`/api/projects/${created.project.id}/media`, "b.mp4")).json());
     const third = MediaAssetSchema.parse(await (await post(`/api/projects/${created.project.id}/media`, "c.mp4")).json());
 
-    await vi.waitFor(async () => expect(await server.database.db.select().from(jobs).where(eq(jobs.projectId, created.project.id))).toHaveLength(1));
+    // A finished ingest also queues its transcription (auto-transcribe), so only ingest jobs are counted.
+    const ingestJobs = () =>
+      server.database.db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.projectId, created.project.id), eq(jobs.kind, "ingest")));
+    await vi.waitFor(async () => expect(await ingestJobs()).toHaveLength(1));
     await delay(QUIET_MS * 3);
 
-    const started = await server.database.db.select().from(jobs).where(eq(jobs.projectId, created.project.id));
+    const started = await ingestJobs();
     expect(started).toHaveLength(1);
     expect(started[0]?.params).toMatchObject({ clips: [created.asset, second, third].map(({ id }) => ({ assetId: id })), mode: "join" });
   });

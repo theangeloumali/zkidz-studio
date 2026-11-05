@@ -56,6 +56,10 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 pnpm install --frozen-lockfile; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 uv sync --locked --project packages/engine; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# The person matte behind big words needs torch with CUDA, a large download only an NVIDIA machine can use.
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+  uv sync --locked --project packages/engine --extra matte; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 pnpm exec node packages/cli/src/main.ts setup; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($StartServer) { pnpm start; exit $LASTEXITCODE }
 Write-Host 'setup complete. Start with: pnpm start'

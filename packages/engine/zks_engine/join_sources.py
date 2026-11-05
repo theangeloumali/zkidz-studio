@@ -93,6 +93,23 @@ def letterbox(clip):
     return "" if height == SIZE[1] else f"pad={SIZE[0]}:{SIZE[1]}:0:{(SIZE[1] - height) // 2}:color=black,setsar=1"
 
 
+def picture_bands(clips):
+    """Each clip's picture [x, y, w, h] on the 2160x3840 canvas over [at, end) seconds of the joined source: reframes
+    crop inside it and qc's frame-faces reads it."""
+    bands, cursor = [], 0
+    for clip in clips:
+        width, height = fitted(clip)
+        seconds = lambda frame: frame * clip.fps[1] / clip.fps[0]  # noqa: E731
+        bands.append({"at": seconds(cursor), "end": seconds(cursor + clip.frames), "band": [(SIZE[0] - width) // 2, (SIZE[1] - height) // 2, width, height],
+                      "clip": str(clip.path)})
+        cursor += clip.frames
+    return bands
+
+
+def write_bands(target, clips):
+    target.with_suffix(".bands.json").write_text(json.dumps(picture_bands(clips), indent=1), encoding="utf-8")
+
+
 def common_rate(clips):
     """One source has one frame grid: clips at different rates would need a resample, which breaks decode-index identity."""
     rates = {clip.fps for clip in clips}
@@ -245,6 +262,7 @@ def main(target, arguments):
         if count_frames(target) != expected:
             sys.exit(f"{target.name}: {count_frames(target)} frames after the join, expected {expected}")
     shutil.rmtree(work)
+    write_bands(target, clips)
     starts, cursor = [], 0
     for clip in clips:
         notes = [note for note, on in (("HDR tone-mapped", clip.hdr), (f"zoom {clip.zoom}x", clip.zoom != 1)) if on]

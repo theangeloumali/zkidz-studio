@@ -101,7 +101,7 @@ describe("PreviewPlayer", () => {
   it("shows a preparing state while the source is still being ingested", () => {
     const clock = createPlaybackClock({ durationS: 0, ...manualTime() });
     renderWithProviders(<PreviewPlayer cuts={null} spans={[]} composition={null} clock={clock} footageUrl={undefined} preparing />);
-    expect(screen.getByText("Preparing your video…")).toBeInTheDocument();
+    expect(screen.getByText("Preparing the full-quality copy…")).toBeInTheDocument();
     expect(screen.queryByText("Add a clip to see it here.")).not.toBeInTheDocument();
   });
 

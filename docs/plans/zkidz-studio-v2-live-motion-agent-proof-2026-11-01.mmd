@@ -1,0 +1,20 @@
+%% Created by The Angelo Umali.
+flowchart TD
+  P0["Phase 0: contracts<br/>zod kinds, depth, cut spec, theme id"] --> P2a["2a @rio: learning kinds, theme pack"]
+  P0 --> P2b["2b @ravi: render path, reframes, bed"]
+  P0 --> P3["3 @maya: v2 QC gates"]
+  P0 --> P4["4 primary: tools, v2-vlog skill"]
+  P2b --> P5["5 @ravi: faster drop-to-preview"]
+  P2a --> P6["6: three agent edits, judged"]
+  P2b --> P6
+  P3 --> P6
+  P4 --> P6
+  P5 --> P6
+  P6 --> P7["7: review, PRs, demo, close"]
+%% ---
+flowchart TD
+  D["Phases 0–5 done"] --> B["5b latest v2 rules<br/>no behind-head text, captions 1750, full + reel"]
+  B --> C["5c text never on text<br/>render pre-check + textClear gate"]
+  C --> S["5d camera on the speaker<br/>speaker timeline, follow, asked-for blur"]
+  S --> P6["6 Claude, OpenCode, Codex<br/>full + reel each, judged"]
+  P6 --> P7["7 review, PRs, demo"]

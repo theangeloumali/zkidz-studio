@@ -52,7 +52,7 @@ look:
 1. Call `project_info` again, even if you called it earlier this session: the user often drops the reference after your
    first look, and an earlier result does not list it. Use the `assetId` it lists under `references`.
 2. Call `sample_reference` with that `assetId` and look at the contact sheet and frames it returns.
-3. Map what you see onto the style: the theme (`zkidz` for paper and ink, `minimal` for flat and clean), the colour tokens
+3. Map what you see onto the style: the theme (`zkidz` for paper and ink, `minimal` for flat and clean, `learning` for the v2 Live Motion learning vlog), the colour tokens
    closest to its palette, a bundled face per role (Newsreader, Inter, Caveat, JetBrains Mono), boil on for hand-drawn
    wobble, `sfx` from how busy its sound is, and `shotLengthS` from its `averageShotS`.
 4. Call `set_project_style` with that style and the reference's `assetId` as `referenceAssetId`. Read its `warnings`: each

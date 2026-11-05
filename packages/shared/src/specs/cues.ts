@@ -2,17 +2,11 @@
 // cues/vN.json replaces executable cues/vN.js (plan §7.7). Fields mirror the engine's documented cue kinds;
 // `at`/`end` are source seconds and every nested `at`/`subAt`/`swapAt` is a word pin after the cue's `at`.
 import { z } from "zod";
-import { CanvasXSchema, CanvasYSchema, PinSecondsSchema, SourceSecondsSchema, sourceSpan } from "../primitives.ts";
+import { CanvasXSchema, CanvasYSchema, PinSecondsSchema, SourceSecondsSchema } from "../primitives.ts";
+import { cueKind, optionalTextSchema, ProjectImagePathSchema, textSchema } from "./cue-kind.ts";
+import { learningCueSchemas } from "./learning-cues.ts";
 
-const textSchema = z.string().min(1);
-const optionalTextSchema = z.string().optional();
-
-/** The transcript word a cue lands on; Phase 3 checks `at` sits within -0.2..+1.8 s of it (plan §7.7). */
-export const CueAnchorSchema = z.strictObject({ phrase: textSchema, wordIndex: z.int().nonnegative() });
-
-function cueKind<Kind extends string, Fields extends z.ZodRawShape>(kind: Kind, fields: Fields) {
-  return sourceSpan({ kind: z.literal(kind), id: z.string().min(1).optional(), anchor: CueAnchorSchema.optional(), ...fields });
-}
+export { CUE_DEPTHS, CueAnchorSchema } from "./cue-kind.ts";
 
 const pinnedTextSchema = z.strictObject({ text: textSchema, at: PinSecondsSchema });
 const sideSchema = z.strictObject({ text: textSchema, sub: optionalTextSchema });
@@ -78,8 +72,60 @@ const cueSchemas = [
     scale: z.number().positive().max(1).optional(),
     signY: CanvasYSchema.optional(),
   }),
-  cueKind("caption", { text: textSchema, bottom: CanvasYSchema.optional() }),
+  // `style: "words"` is the v2 word caption: `text` is the words so far of `line`, `pills` index its keyword pills.
+  cueKind("caption", {
+    text: textSchema,
+    bottom: CanvasYSchema.optional(),
+    style: z.literal("words").optional(),
+    line: optionalTextSchema,
+    pills: z.array(z.int().nonnegative()).optional(),
+    scale: z.number().min(0.6).max(2).optional(),
+  }),
   cueKind("cutaway", { title: textSchema, sub: optionalTextSchema, style: z.enum(CUTAWAY_CUE_STYLES).optional() }),
+  cueKind("chatCard", {
+    title: optionalTextSchema,
+    messages: z.array(z.strictObject({ from: z.enum(["me", "claude"]), text: textSchema, at: PinSecondsSchema })).min(1),
+    typing: z.boolean().optional(),
+    typingAt: PinSecondsSchema.optional(),
+    stream: z.boolean().optional(),
+    accentPhrase: optionalTextSchema,
+    y: CanvasYSchema.optional(),
+  }),
+  cueKind("headlineStack", {
+    items: z.array(pinnedTextSchema).min(1),
+    final: textSchema,
+    finalAt: PinSecondsSchema.optional(),
+    kicker: optionalTextSchema,
+    title: optionalTextSchema,
+    note: optionalTextSchema,
+    y: CanvasYSchema.optional(),
+  }),
+  cueKind("lineChart", {
+    points: z.array(z.tuple([textSchema, z.number().finite()])).min(2),
+    focus: z.int().nonnegative().optional(),
+    suffix: optionalTextSchema,
+    kicker: optionalTextSchema,
+    title: optionalTextSchema,
+    note: optionalTextSchema,
+    y: CanvasYSchema.optional(),
+  }),
+  cueKind("phoneFrame", { tilt: z.number().min(-45).max(45).optional() }),
+  cueKind("backdrop", { src: ProjectImagePathSchema, fit: z.enum(["cover", "contain"]).optional() }),
+  cueKind("paperCutout", {
+    src: ProjectImagePathSchema,
+    x: CanvasXSchema.optional(),
+    y: CanvasYSchema.optional(),
+    scale: z.number().positive().max(2).optional(),
+    rot: z.number().min(-45).max(45).optional(),
+  }),
+  cueKind("frameEscape", {
+    x: CanvasXSchema.optional(),
+    y: CanvasYSchema.optional(),
+    w: z.number().positive().optional(),
+    h: z.number().positive().optional(),
+    tilt: z.number().min(-45).max(45).optional(),
+  }),
+  ...learningCueSchemas,
 ] as const;
 
 export const CueSchema = z.discriminatedUnion("kind", cueSchemas);

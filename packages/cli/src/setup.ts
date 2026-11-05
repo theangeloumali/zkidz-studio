@@ -1,7 +1,8 @@
 // Created by The Angelo Umali.
+import { existsSync } from "node:fs";
 import os from "node:os";
 import { redactText } from "@zks/shared";
-import type { ToolName } from "@zks/shared/node";
+import type { PlatformKey, ToolName, ToolsLock } from "@zks/shared/node";
 import { writeCapabilities } from "./capabilities.ts";
 import { ensureHomeLayout, type ZksContext } from "./context.ts";
 import { runCommand, type CommandRunner } from "./exec.ts";
@@ -9,13 +10,20 @@ import { fetchModel } from "./models.ts";
 import { installTool, toolExecutablePath } from "./tools.ts";
 
 const SETUP_TOOLS: readonly ToolName[] = ["ffmpeg", "whisper-cpp", "chrome-headless-shell"];
+// Where the NVIDIA driver library sits: WSL's own folder, then the usual distro paths.
+const CUDA_DRIVERS = ["/usr/lib/wsl/lib/libcuda.so.1", "/usr/lib/x86_64-linux-gnu/libcuda.so.1", "/usr/lib64/libcuda.so.1"];
+
+/** The tools setup installs: the CUDA whisper build too where it is pinned and an NVIDIA driver can run it. */
+export function setupTools(lock: ToolsLock, platform: PlatformKey, hasNvidia = CUDA_DRIVERS.some((file) => existsSync(file))): ToolName[] {
+  return [...SETUP_TOOLS, ...(hasNvidia && lock.tools["whisper-cuda"].platforms[platform] ? (["whisper-cuda"] as const) : [])];
+}
 
 /** Idempotent: a second run verifies what is there and downloads nothing. Returns the number of downloads. */
 export async function runSetup(context: ZksContext, log: (line: string) => void = console.log): Promise<number> {
   ensureHomeLayout(context);
   log(redactText(`ZKS_HOME ${context.home} (${context.platform})`, { homeDir: os.homedir() }));
   let downloadCount = 0;
-  for (const name of SETUP_TOOLS) {
+  for (const name of setupTools(context.lock, context.platform)) {
     const status = await installTool(context, name);
     if (status === "installed") downloadCount += 1;
     log(`${name.padEnd(22)} ${status}`);

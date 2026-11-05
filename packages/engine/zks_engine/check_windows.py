@@ -26,7 +26,9 @@ def transcribe(wav, start, end, language, model=None, threads=None):
     finally:
         window.unlink(missing_ok=True)
     shift = round((start - LEAD) * 1000)
-    return [{**word, "start": word["start"] + shift, "end": word["end"] + shift} for word in words]
+    # A window at 0 pads silence before the source starts; anything heard there is clamped to the window, never negative.
+    floor = round(start * 1000)
+    return [{**word, "start": max(word["start"] + shift, floor), "end": max(word["end"] + shift, floor)} for word in words]
 
 
 def transcribe_all(wav, spans, language, model=None):

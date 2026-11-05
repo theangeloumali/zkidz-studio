@@ -10,7 +10,8 @@ import { buttonClass } from "./button-class.ts";
 interface InPlacePickerProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
-  readonly onPick: (path: string) => void;
+  /** One file, or every video in the open folder. */
+  readonly onPick: (paths: readonly string[]) => void;
 }
 
 /** Native <dialog> + showModal gives the focus trap, Escape and focus return for free. */
@@ -49,7 +50,8 @@ export function InPlacePicker({ isOpen, onClose, onPick }: InPlacePickerProps) {
 interface FolderListingProps {
   readonly folder: string | undefined;
   readonly onOpenFolder: (path: string) => void;
-  readonly onPick: (path: string) => void;
+  /** One file, or every video in the open folder. */
+  readonly onPick: (paths: readonly string[]) => void;
 }
 
 function FolderListing({ folder, onOpenFolder, onPick }: FolderListingProps) {
@@ -65,6 +67,7 @@ function FolderListing({ folder, onOpenFolder, onPick }: FolderListingProps) {
   }
 
   const { path, entries } = listing.data;
+  const videos = entries.filter((entry) => !entry.isDirectory);
   const parent = parentPath(path);
   return (
     <div className="flex flex-col gap-2 px-5 pt-3 pb-5">
@@ -82,6 +85,11 @@ function FolderListing({ folder, onOpenFolder, onPick }: FolderListingProps) {
           {path}
         </p>
       </div>
+      {videos.length > 1 && (
+        <button type="button" className={buttonClass("secondary")} onClick={() => onPick(videos.map((entry) => joinPath(path, entry.name)))}>
+          Use all {videos.length} videos in this folder
+        </button>
+      )}
       {entries.length === 0 ? (
         <p className="py-6 text-center text-ui text-copy-muted">This folder is empty.</p>
       ) : (
@@ -91,7 +99,7 @@ function FolderListing({ folder, onOpenFolder, onPick }: FolderListingProps) {
               <button
                 type="button"
                 className="flex min-h-(--target-min) w-full items-center gap-3 px-3 text-left text-ui transition-colors duration-(--dur-hover) hover:bg-surface"
-                onClick={() => (entry.isDirectory ? onOpenFolder : onPick)(joinPath(path, entry.name))}
+                onClick={() => (entry.isDirectory ? onOpenFolder(joinPath(path, entry.name)) : onPick([joinPath(path, entry.name)]))}
               >
                 {entry.isDirectory ? (
                   <Folder aria-hidden="true" className="size-4 shrink-0 text-accent" />

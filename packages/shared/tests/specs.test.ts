@@ -70,7 +70,60 @@ describe("ReelSpecSchema", () => {
   });
 });
 
+describe("CutSpecSchema v2 fields", () => {
+  const v2Fields = {
+    zooms: [{ at: 4, end: 6, preset: "lean" }],
+    focus: [{ at: 10, end: 12, amount: 16 }],
+    grade: "learning",
+    reframes: [{ at: 0, end: 30, cx: 0.42 }],
+    music: {
+      bpm: 96,
+      sections: [
+        { at: 0, kind: "cold", energy: 0.4 },
+        { at: 20, kind: "chapter" },
+      ],
+    },
+  };
+
+  it("accepts the lean zoom, rack focus, the learning grade, reframes and a music bed", () => {
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, ...v2Fields }).error?.issues ?? []).toEqual([]);
+  });
+
+  it("refuses an unknown grade, a reframe centre off the band and a bed that does not start at 0", () => {
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, grade: "teal" }).success).toBe(false);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, reframes: [{ at: 0, end: 3, cx: 1.4 }] }).success).toBe(false);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, music: { sections: [{ at: 5, kind: "intro" }] } }).success).toBe(false);
+  });
+
+  // #44 #45: the camera follows whoever speaks; the creator says whether other faces are blurred.
+  it("takes follow: speaker and the blur answer, and nothing else for either", () => {
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, follow: "speaker", blurFaces: "others" }).success).toBe(true);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, blurFaces: "none" }).success).toBe(true);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, follow: "face" }).success).toBe(false);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, blurFaces: "all" }).success).toBe(false);
+  });
+
+  // Rule 8 (map every place): footage without GPS declares the places it visits.
+  it("takes declared places with a real longitude and latitude", () => {
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, places: [{ name: "Makati", lon: 121.03, lat: 14.55 }] }).success).toBe(true);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, places: [{ name: "Nowhere", lon: 121, lat: 95 }] }).success).toBe(false);
+  });
+
+  // films d176181: the bed's level under his speech and its duck while he talks live in the spec (dB).
+  it("takes the bed's level under speech and its duck, within sane bounds", () => {
+    const sections = [{ at: 0, kind: "cold" }];
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, music: { sections, under: 26, duck: 6 } }).success).toBe(true);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, music: { sections, under: 2 } }).success).toBe(false);
+    expect(CutSpecSchema.safeParse({ ...validCutSpec, music: { sections, duck: 30 } }).success).toBe(false);
+  });
+});
+
 describe("captions", () => {
+  it("accepts keyword pills and a size step on an entry, and refuses a step outside 0.6-2.0", () => {
+    expect(CaptionEntrySchema.safeParse({ ids: [1], en: "save before you spend", pills: ["save"], scale: 1.4 }).success).toBe(true);
+    expect(CaptionEntrySchema.safeParse({ ids: [1], en: "too big", scale: 2.5 }).success).toBe(false);
+  });
+
   it("accepts a phrase that sits in no reel keep", () => {
     expect(CaptionPhraseSchema.safeParse({ id: 0, at: 0, end: 2.16, reel: null, text: "Yo mga boss" }).success).toBe(true);
   });

@@ -90,6 +90,11 @@ class MakeCoversTests(unittest.TestCase):
             covers.make_covers("v1", [seconds(70)], draw_stills=self.draw_stills, work=self.work)
         self.assertFalse((self.work / "covers").exists() and any((self.work / "covers").iterdir()))
 
+    def test_a_cover_of_an_edit_with_a_face_blur_fails_closed_without_its_mask(self):
+        (self.work / "edl" / "v1.json").write_text(json.dumps({**EDL, "faces": "mask/v1.faces.mkv"}), encoding="utf-8")
+        with self.assertRaisesRegex(GateFailed, "face mask"):
+            covers.make_covers("v1", [seconds(70)], draw_stills=self.draw_stills, work=self.work)
+
     def test_a_reels_cover_carries_the_base_edits_blur(self):
         (self.work / "edl" / "v1r.json").write_text(json.dumps(EDL), encoding="utf-8")
         made = covers.make_covers("v1r", [seconds(70)], draw_stills=self.draw_stills, work=self.work)
@@ -112,6 +117,40 @@ class MakeCoversTests(unittest.TestCase):
         covers.make_covers("v1", [seconds(10)], cover_sheet=sheet, draw_stills=self.draw_stills, work=self.work)
         self.assertEqual(self.drawn[0][2], ["v1", "v1-cc", "v1-cover"])  # the frame's caption shows on the cover
         self.assertEqual(json.loads((self.work / "derived" / "cues" / "v1-cover.json").read_text(encoding="utf-8"))[0]["kind"], "hookTitle")
+
+
+@unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+class FaceMaskStillTests(unittest.TestCase):
+    """A cover is a still: the faces the master frosts under mask/<video>.faces.mkv are frosted on it too (#44)."""
+
+    def setUp(self):
+        self.work = Path(tempfile.mkdtemp(prefix="zks-still-faces-"))
+        for sub in ("edl", "mezz", "mask"):
+            (self.work / sub).mkdir()
+        ffmpeg = ffio.ffmpeg_bin()
+        subprocess.run([ffmpeg, "-v", "error", "-f", "lavfi", "-i", "cellauto=size=1080x1920:rate=30000/1001:rule=110:random_seed=4:random_fill_ratio=0.5",
+                        "-t", "3", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", str(self.work / "mezz" / "v1.mp4")], check=True)
+        x, y, w, h = BOX
+        subprocess.run([ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=c=black:size=1080x1920:rate=30000/1001", "-t", "3",
+                        "-vf", f"drawbox=x={x}:y={y}:w={w}:h={h}:color=white:t=fill", "-c:v", "ffv1", "-pix_fmt", "yuv420p",
+                        str(self.work / "mask" / "v1.faces.mkv")], check=True)
+        subprocess.run([ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=c=black@0:size=1080x1920,format=rgba", "-frames:v", "1",
+                        str(self.work / "overlay.png")], check=True)
+
+    def composite(self, edl):
+        script = ("const s=require(process.argv[1]);const [work,edl]=[process.argv[2],JSON.parse(process.argv[3])];"
+                  "s.compositeStills(work,'v1',edl,[{time:1,overlayPng:work+'/overlay.png',outPng:work+'/out.png'}]).catch(e=>{console.error(e);process.exit(1)})")
+        subprocess.run(["node", "-e", script, str(Path(__file__).resolve().parents[1] / "hf" / "stills.js"), str(self.work), json.dumps(edl)],
+                       check=True)
+        return read_rgb(self.work / "out.png")
+
+    def test_the_still_frosts_every_face_under_the_edits_mask_and_nothing_else(self):
+        plain = self.composite(make_edl([(0, 90)]))
+        frosted = self.composite({**make_edl([(0, 90)]), "faces": "mask/v1.faces.mkv"})
+        inside = (BOX[0] + 40, BOX[1] + 40, BOX[2] - 80, BOX[3] - 80)  # clear of the feathered edge
+        self.assertLess(detail(frosted, inside), detail(plain, inside) / 4)
+        outside = (0, 0, 200, 200)
+        self.assertAlmostEqual(detail(frosted, outside), detail(plain, outside), delta=1)
 
 
 class PostCaptionTests(unittest.TestCase):

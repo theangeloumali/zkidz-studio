@@ -6,7 +6,17 @@ import { ToolError } from "../../../src/tools/result.ts";
 describe("studio skills", () => {
   it("lists every plugin skill with its one-line description", async () => {
     const skills = await listSkills(PLUGIN_SKILLS_DIR);
-    expect(skills.map((skill) => skill.name)).toEqual(["captions", "covers", "cues", "cut-spec", "edit-director", "qc-gates", "reels", "style-rules"]);
+    expect(skills.map((skill) => skill.name)).toEqual([
+      "captions",
+      "covers",
+      "cues",
+      "cut-spec",
+      "edit-director",
+      "qc-gates",
+      "reels",
+      "style-rules",
+      "v2-vlog",
+    ]);
     expect(skills.every((skill) => skill.description.length > 0 && !skill.description.includes("\n"))).toBe(true);
   });
 

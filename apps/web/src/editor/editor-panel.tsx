@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { API_ROUTES, CueSheetSchema, CutSpecSchema, keptSpansOf, type PlayerEdl } from "@zks/shared";
+import { API_ROUTES, CueSheetSchema, CutSpecSchema, keptSpansOf, type MediaAsset, type PlayerEdl } from "@zks/shared";
 import { useEffect, useMemo, useState } from "react";
 import { decideCutCandidates, fetchSpecs, restoreSpecVersion, routeUrl, type SpecAddress } from "../api/client.ts";
 import { mediaQuery, playerEdlQuery, projectQuery, queryKeys, specsQuery, specVersionQuery } from "../api/queries.ts";
@@ -18,6 +18,13 @@ import { VersionStrip } from "./version-strip.tsx";
 
 const EMPTY_SPECS: Awaited<ReturnType<typeof fetchSpecs>> = [];
 const NO_SPANS: readonly TimeSpan[] = [];
+
+/** A lone H.264 8-bit SDR clip plays as uploaded until ingest makes the proxy; a join waits for its joined source. */
+function playableRawOf(media: readonly MediaAsset[] | undefined): MediaAsset | undefined {
+  const clips = media?.filter((asset) => asset.kind === "camera") ?? [];
+  const [clip] = clips;
+  return clips.length === 1 && clip?.isBrowserPlayable && (clip.durationS ?? 0) > 0 ? clip : undefined;
+}
 
 const spansOfEdl = (edl: PlayerEdl): TimeSpan[] => edl.segments.map((segment) => ({ at: segment.sourceAtS, end: segment.sourceEndS }));
 
@@ -56,7 +63,15 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
   const sourceDurationS = media?.find((asset) => asset.kind === "source")?.durationS ?? 0;
   const originalVideoId = sourceDurationS > 0 ? project?.videoId : undefined;
   const footageVideoId = cutsSummary?.videoId ?? originalVideoId;
-  const footageUrl = footageVideoId === undefined ? undefined : routeUrl(API_ROUTES.streamProxy.path, { projectId, videoId: footageVideoId });
+  const rawClip = footageVideoId === undefined ? playableRawOf(media) : undefined;
+  const originalDurationS = rawClip?.durationS ?? sourceDurationS;
+  const isShowingOriginal = originalVideoId !== undefined || rawClip !== undefined;
+  const footageUrl =
+    footageVideoId !== undefined
+      ? routeUrl(API_ROUTES.streamProxy.path, { projectId, videoId: footageVideoId })
+      : rawClip === undefined
+        ? undefined
+        : routeUrl(API_ROUTES.streamMedia.path, { assetId: rawClip.id });
   const isPreparing = footageUrl === undefined && media !== undefined && media.length > 0;
   const cuts = useMemo(() => {
     const parsed = CutSpecSchema.safeParse(cutsVersion.data?.content);
@@ -73,13 +88,13 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
     enabled: isLiveVersion,
   }).data;
   const spans = useMemo(() => {
-    if (cutsSummary === undefined) return originalVideoId === undefined ? NO_SPANS : [{ at: 0, end: sourceDurationS }];
+    if (cutsSummary === undefined) return isShowingOriginal ? [{ at: 0, end: originalDurationS }] : NO_SPANS;
     if (isLiveVersion) return playerEdl === undefined ? NO_SPANS : spansOfEdl(playerEdl);
     return cuts === null ? NO_SPANS : keptSpansOf(cuts);
-  }, [cutsSummary, originalVideoId, sourceDurationS, isLiveVersion, playerEdl, cuts]);
+  }, [cutsSummary, isShowingOriginal, originalDurationS, isLiveVersion, playerEdl, cuts]);
   const tracks = useMemo(
-    () => buildTimelineTracks(cuts, cueSheet, originalVideoId === undefined ? 0 : sourceDurationS),
-    [cuts, cueSheet, originalVideoId, sourceDurationS],
+    () => buildTimelineTracks(cuts, cueSheet, isShowingOriginal ? originalDurationS : 0),
+    [cuts, cueSheet, isShowingOriginal, originalDurationS],
   );
   const [clock] = useState(() => createPlaybackClock({ durationS: 0 }));
   useEffect(() => () => clock.pause(), [clock]);
@@ -121,7 +136,7 @@ export function EditorPanel({ projectId }: { readonly projectId: string }) {
       <div className="flex flex-col gap-3">
         <Timeline
           tracks={tracks}
-          sourceDurationS={cuts?.durationS ?? (originalVideoId === undefined ? 0 : sourceDurationS)}
+          sourceDurationS={cuts?.durationS ?? (isShowingOriginal ? originalDurationS : 0)}
           keptSpans={spans}
           clock={clock}
           meta={

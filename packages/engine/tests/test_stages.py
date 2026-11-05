@@ -60,7 +60,7 @@ class TranscribeTests(unittest.TestCase):
     def test_words_come_back_in_source_seconds_as_the_studio_reads_them(self):
         work = Path(tempfile.mkdtemp(prefix="zks-words-"))
 
-        def fake_main(wav, destination, _chunks, language, model, stage=None):
+        def fake_main(wav, destination, chunks=None, language="tl", model=None, stage=None):
             self.assertEqual((wav, language, model), ("audio/v1.wav", "auto", "base"))
             (work / destination).parent.mkdir(exist_ok=True)  # where the real transcribe.main writes its JSONL
             return [{"start": 400, "end": 800, "text": " we"}, {"start": 1200, "end": 1650, "text": " ship"}], 1

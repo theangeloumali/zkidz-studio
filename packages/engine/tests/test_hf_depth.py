@@ -138,7 +138,7 @@ class BehindRenderTests(unittest.TestCase):
         result = self.render("depth", "--layer", "behind")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         behind = self.work / "frames" / "depth.behind"
-        self.assertEqual(sorted(path.name for path in behind.iterdir()), [f"{index:05d}.png" for index in range(150)])
+        self.assertEqual(sorted(path.name for path in behind.glob("*.png")), [f"{index:05d}.png" for index in range(150)])
         self.assertFalse((self.work / "frames" / "depth").exists(), "the behind pass wrote the normal pass's frames")
         # The backdrop covers the whole frame while it holds (1.5 s), and the sheet's paper fills the frame edge at 3.5 s.
         self.assertTrue((rgba(behind / "00045.png")[..., 3] == 255).all(), "the backdrop lets footage through")

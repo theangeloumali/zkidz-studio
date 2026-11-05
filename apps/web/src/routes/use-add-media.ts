@@ -2,7 +2,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { Project } from "@zks/shared";
 import { useCallback, useState } from "react";
-import { createProjectInPlace } from "../api/client.ts";
+import { addMediaInPlace, createProjectInPlace } from "../api/client.ts";
 import { queryKeys } from "../api/queries.ts";
 import { createProjectWithMedia, uploadFile } from "../api/upload.ts";
 import type { UploadItem, UploadState } from "../components/upload-list.tsx";
@@ -82,13 +82,17 @@ export function useAddMedia() {
     [run, setUploadState],
   );
 
+  /** The first file creates the project; the rest join it, all where they lie. */
   const addInPlace = useCallback(
-    (path: string) => {
+    (paths: readonly string[]) => {
+      const [first, ...rest] = paths;
+      if (first === undefined) return;
       setUploads([]);
-      const name = path.split(/[\\/]/).pop() ?? path;
+      const name = first.split(/[\\/]/).pop() ?? first;
       void run(async () => {
-        const { project } = await createProjectInPlace(path, titleFrom(name));
-        return { project, addedCount: 1 };
+        const { project } = await createProjectInPlace(first, titleFrom(name));
+        for (const path of rest) await addMediaInPlace(project.id, path);
+        return { project, addedCount: paths.length };
       });
     },
     [run],

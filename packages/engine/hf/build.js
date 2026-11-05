@@ -7,8 +7,10 @@
 //   the normal build skips them
 //   --theme id → themes/<id>/ (default zkidz): palette, type, boil, intro, and the kinds it draws
 //   --style file → a project style (work/style.json): its theme with the colours and faces it sets
-// A hookTitle with `intro: true` also gets the brand pre-roll (when the theme has an intro): hf/<target>.intro/, and an `intro` block in the sfx file
-// that sfx.py and render_final.py read.
+//   --clips → only edl/<video>.clips.json: each footage cue's card clip (source frame runs, grade) for cardclip.py
+// A hookTitle or paperScene with `intro: true` also gets the brand pre-roll (when the theme has an intro): hf/<target>.intro/,
+// and an `intro` block in the sfx file that sfx.py and render_final.py read.
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { createTimemap, sfxEvents } = require("./overlay/timemap");
@@ -20,11 +22,14 @@ const { canvasBrand } = require("./brand/canvas");
 const { fontAssets, fontFaceCss } = require("./brand/fonts");
 const { redesign } = require("./fx/sound");
 const { INTRO, LAYOUTS, introFrames, brandIntro, brandSplit } = require("./components/intro");
+const { frameAtOrAfter } = require("./components/learning/footage-parts");
+const { COVER_KINDS, coverSpan } = require("./learning/cover");
 
 const WORK = process.env.ZKS_WORK || process.cwd();
 // Cue images (a backdrop, a cutout) are project-relative like a cut spec's inserts.
 const REPO = path.dirname(WORK);
-const LAYERS = ["front", "behind"];
+// "captions": the words captions alone (render.js drawCaptions); "above": the front cards placed after one of them.
+const LAYERS = ["front", "behind", "captions", "above"];
 const vendor = (file) => require.resolve(`gsap/dist/${file}`, { paths: [__dirname] });
 const ASSETS = {
   ...fontAssets(),
@@ -39,13 +44,14 @@ const pageCss = () => `${CSS}
 :root { --glow: ${canvasBrand().scope.BRAND.goldBright}; }`;
 const isKnownKind = (kind) => Object.hasOwn(REGISTRY, kind);
 
-// The edit's brand pre-roll, from its one hookTitle with `intro: true`. It goes in when that hook ends, or after a vlog-style
-// cold open where the hook's `introAt` pin says it ends (never before the hook has gone): sfx.py puts the insert at the
-// first pause after that and writes it to vN.sfx.json (intro.at).
+// The edit's brand pre-roll, from its one hookTitle or paperScene (the learning look's paper hook) with `intro: true`. It
+// goes in when that hook ends, or after a vlog-style cold open where the hook's `introAt` pin says it ends (never before the
+// hook has gone): sfx.py puts the insert at the first pause after that and writes it to vN.sfx.json (intro.at).
+const INTRO_HOSTS = new Set(["hookTitle", "paperScene"]);
 function introOf(cues, edl) {
-  const hooks = cues.filter((cue) => cue.kind === "hookTitle" && cue.intro);
+  const hooks = cues.filter((cue) => INTRO_HOSTS.has(cue.kind) && cue.intro);
   if (!hooks.length) return null;
-  if (hooks.length > 1) throw new Error(`${hooks.length} hookTitles have intro: true; an edit has one brand intro`);
+  if (hooks.length > 1) throw new Error(`${hooks.map((hook) => hook.kind).join(", ")} have intro: true; an edit has one brand intro`);
   const [hook] = hooks;
   const after = hook.introAt === undefined ? hook.stop : Math.max(hook.stop, hook.start + hook.introAt);
   return { ...prerollAt(edl.fps_num / edl.fps_den), hookEnd: after };
@@ -64,7 +70,7 @@ const splitClip = (rate, layout, startFrame = 0) => ({
 // Speech and footage set these kinds' times; every other card after the hook may wait for the insert.
 const LOCKED_KINDS = new Set(["caption", "censor", "cutaway"]);
 const movableCards = (cues, hookEnd) =>
-  cues.filter((cue) => !LOCKED_KINDS.has(cue.kind) && cue.start >= hookEnd - 1e-6).map(({ kind, start }) => ({ kind, start }));
+  cues.filter((cue) => !LOCKED_KINDS.has(cue.kind) && !REGISTRY[cue.kind]?.video && cue.start >= hookEnd - 1e-6).map(({ kind, start }) => ({ kind, start }));
 
 // The insert sfx.py picked (vN.sfx.json's intro), or null until it has run.
 function insertOf(video) {
@@ -119,8 +125,37 @@ function brandIntroCompositions(orientation, fps, dir) {
   };
 }
 
-// The clips one layer draws: a behind cue only in the behind pass, captions always in front.
-const inLayer = (cue, layer) => (cue.depth === "behind" && cue.kind !== "caption") === (layer === "behind");
+// A words state split at each cover edge it crosses: its colour comes from its start (onCover), so one straddling an edge
+// drew ink on footage or white on paper. The pieces join, so a continuing line cross-fades through the join fade.
+function splitAtCovers(cues) {
+  const edges = cues.filter((cue) => COVER_KINDS.includes(cue.kind)).flatMap((cover) => [cover.start, cover.start + coverSpan(cover)]);
+  return cues.flatMap((cue) => {
+    if (!REGISTRY[cue.kind]?.splitsAtCovers?.(cue)) return [cue];
+    const cuts = [...new Set(edges.filter((edge) => edge > cue.start && edge < cue.stop))].sort((first, second) => first - second);
+    const bounds = [cue.start, ...cuts, cue.stop];
+    return cuts.length === 0
+      ? [cue]
+      : bounds.slice(0, -1).map((start, index) => ({
+          ...cue,
+          start,
+          stop: bounds[index + 1],
+          joinsBefore: index > 0 || cue.joinsBefore,
+          joinsAfter: index < cuts.length || cue.joinsAfter,
+          // A name plate meeting any part of the state lifts every piece, so the line never jumps mid-state.
+          dodge: cue.dodge ?? [cue.start, cue.stop],
+        }));
+  });
+}
+
+// The clips one layer draws: a behind cue only in the behind pass. Words captions have their own layer (caption_layer.py
+// lays it over the cards) except on stills; house captions always draw in front.
+const isWordsCaption = (cue) => cue.kind === "caption" && cue.style === "words";
+function inLayer(cue, layer, variant) {
+  if (variant === "boxes") return layer === "front"; // render.js --boxes measures every cue's text in one page (#43)
+  if (isWordsCaption(cue)) return layer === "captions" || (layer === "front" && variant === "stills");
+  if (cue.kind === "caption") return layer === "front";
+  return layer !== "captions" && (cue.depth === "behind") === (layer === "behind");
+}
 
 // specs/paths.inside_project's twin: the realpath must sit under the project's media/ or work dir, or be a file registered
 // in place (ZKS_INPLACE). Resolving first defeats `..` and symlinks; Windows paths compare case-folded.
@@ -152,9 +187,109 @@ function withImages(clips) {
   return { clips: resolved, images };
 }
 
-// Writes the composition and returns what the renderer needs; warns like the canvas page, throws on an unknown kind.
-function build(target, { guides = false, events = false, settled = false, variant = "", layer = "front", theme: themeId = DEFAULT_THEME } = {}) {
-  if (!LAYERS.includes(layer)) throw new Error(`--layer is behind (or omitted for the normal pass), not ${layer}`);
+// The source frame runs a cue's edited window shows, following the EDL across cuts (punched runs flagged).
+function editRuns(cue, edl) {
+  const fps = edl.fps_num / edl.fps_den;
+  const [first, end] = [frameAtOrAfter(cue.start, fps), frameAtOrAfter(cue.stop, fps)];
+  const runs = [];
+  for (const segment of [...edl.segments].sort((a, b) => a.target - b.target)) {
+    const [from, to] = [Math.max(first, segment.target), Math.min(end, segment.target + segment.out - segment.in)];
+    if (to > from) runs.push([segment.in + from - segment.target, segment.in + to - segment.target, segment.zoom > 1]);
+  }
+  return { first, end, runs };
+}
+
+// The source frames a card plays: its own window's edit runs, or one unbroken run from `sourceSecond` as long as the
+// window. Only edit runs must clear the master's animated zooms, which they mirror.
+function sourceRuns(cue, edl) {
+  const { first, end, runs } = editRuns(cue, edl);
+  const covered = runs.reduce((sum, [from, to]) => sum + to - from, 0);
+  if (covered !== end - first) throw new Error(`${cue.kind} at ${cue.at}s: the EDL covers ${covered} of its ${end - first} frames`);
+  if (cue.sourceSecond === undefined) {
+    const zoom = (edl.zooms ?? []).find((item) => item.start < end && item.end > first);
+    if (zoom)
+      throw new Error(`${cue.kind} at ${cue.at}s overlaps an animated zoom (${zoom.preset}, frames ${zoom.start}–${zoom.end}); card clips can't follow it`);
+    return { first, frames: end - first, ranges: runs };
+  }
+  if (!(cue.sourceSecond >= 0)) throw new Error(`${cue.kind} at ${cue.at}s: sourceSecond is source seconds, not ${cue.sourceSecond}`);
+  const from = Math.round((cue.sourceSecond * edl.fps_num) / edl.fps_den);
+  return { first, frames: end - first, ranges: [[from, from + end - first, false]] };
+}
+
+// `crop` [x, y, w, h] on the 1080 grid frames one part of the source.
+function checkCrop(cue) {
+  if (!cue.crop) return;
+  const [x, y, w, h] = cue.crop;
+  if (!(w % 2 === 0 && h % 2 === 0 && x >= 0 && y >= 0 && x + w <= 1080 && y + h <= 1920))
+    throw new Error(`${cue.kind} at ${cue.at}s: crop ${JSON.stringify(cue.crop)} is not an even-sized box inside the 1080x1920 frame`);
+}
+
+// A footage cue's card clip, named by a hash of what it shows so a changed cue never plays a stale clip.
+function clipPlan(cue, edl, video) {
+  const grade = REGISTRY[cue.kind].clipGrade?.(cue) ?? cue.grade ?? "edit";
+  if (!["edit", "raw"].includes(grade)) throw new Error(`${cue.kind} at ${cue.at}s: grade is edit or raw, not ${grade}`);
+  const { first, frames, ranges } = sourceRuns(cue, edl);
+  checkCrop(cue);
+  const base = edl.base ?? video;
+  const look = grade === "raw" ? "raw" : (edl.grade ?? "house");
+  const id = `${cue.kind}-${crypto
+    .createHash("sha256")
+    .update(JSON.stringify({ base, ranges, look, punch: edl.punch_crop, ...(cue.crop ? { crop: cue.crop } : {}) }))
+    .digest("hex")
+    .slice(0, 10)}`;
+  return {
+    id,
+    kind: cue.kind,
+    at: cue.at,
+    start: cue.start,
+    stop: cue.stop,
+    firstFrame: first,
+    frames,
+    grade,
+    ranges,
+    crop: cue.crop,
+    file: `cardclips/${video}-${id}.mp4`,
+  };
+}
+
+// Each footage cue's clip copied into the composition when cardclip.py has encoded it; render.js refuses the missing ones.
+function withClips(clips, edl, video) {
+  const files = {};
+  const missing = [];
+  const resolved = clips.map((cue) => {
+    if (!REGISTRY[cue.kind]?.video) return cue;
+    const plan = clipPlan(cue, edl, video);
+    const source = path.join(WORK, plan.file);
+    if (fs.existsSync(source)) files[`media/clip-${plan.id}.mp4`] = source;
+    else missing.push(plan);
+    return { ...cue, src: `media/clip-${plan.id}.mp4`, ranges: plan.ranges };
+  });
+  return { clips: resolved, files, missing };
+}
+
+// grow.at / shrink.at are source seconds after cue.at like any pin; the kind reads them on the edit, across its cuts.
+function movesOnEdit(cue, edl) {
+  const fps = edl.fps_num / edl.fps_den;
+  const { first, end, runs } = editRuns(cue, edl);
+  const onEdit = (move) => {
+    if (typeof move?.at !== "number") return move;
+    const frame = (cue.at + move.at) * fps;
+    let edited = end;
+    let offset = first;
+    for (const [from, to] of runs) {
+      if (frame < to) {
+        edited = offset + Math.max(0, frame - from);
+        break;
+      }
+      offset += to - from;
+    }
+    return { ...move, at: edited / fps - cue.start };
+  };
+  return Object.fromEntries(["grow", "shrink"].filter((key) => cue[key]).map((key) => [key, onEdit(cue[key])]));
+}
+
+// The target's EDL and its cue sheet mapped onto the edit in `theme`'s look; throws on a kind it does not draw.
+function loadEdit(target, themeId) {
   const [video, cueList = video] = target.split(":");
   const cueNames = cueList.split(/[+ ,]/).filter(Boolean);
   const edl = JSON.parse(fs.readFileSync(path.join(WORK, "edl", `${video}.json`), "utf8"));
@@ -175,20 +310,76 @@ function build(target, { guides = false, events = false, settled = false, varian
   // Derived kinds (censor, cutaway) count too: a theme must draw everything the edit puts on screen.
   const undrawn = [...new Set(cues.map((cue) => cue.kind).filter((kind) => !Object.hasOwn(theme.components, kind)))];
   if (undrawn.length) throw new Error(`theme ${theme.id} does not draw ${undrawn.join(", ")}; its kinds: ${Object.keys(theme.components).join(", ")}`);
+  // Footage moves mapped once, so the render and the --events sounds read the same edited pins.
+  const placed = cues.map((cue) => (REGISTRY[cue.kind].video ? { ...cue, ...movesOnEdit(cue, edl) } : cue));
+  return { video, cueNames, edl, theme, cues: placed };
+}
+
+// edl/<video>.clips.json: every footage cue's clip, for cardclip.py (no composition is written).
+function writeClipManifest(target, themeId = DEFAULT_THEME) {
+  const { video, edl, cues } = loadEdit(target, themeId);
+  const plans = cues.filter((cue) => REGISTRY[cue.kind].video).map((cue) => clipPlan(cue, edl, video));
+  const clips = [...new Map(plans.map((plan) => [plan.id, plan])).values()];
+  const file = path.join(WORK, "edl", `${video}.clips.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ video, base: edl.base ?? video, fps_num: edl.fps_num, fps_den: edl.fps_den, clips }, null, 1));
+  return { file, clips };
+}
+
+// Writes the composition and returns what the renderer needs; warns like the canvas page, throws on an unknown kind.
+// `window` [first, end) composes only those edited frames, clips shifted to start at its first frame (span renders).
+// `plates` holds every caption at rest (no rise, no fade): the caption pass snapshots each one once.
+// `after` (the "above" layer): draw only the front cards placed after this page index, i.e. over that caption.
+function build(
+  target,
+  {
+    guides = false,
+    events = false,
+    settled = false,
+    variant = "",
+    layer = "front",
+    theme: themeId = DEFAULT_THEME,
+    window = null,
+    plates = false,
+    after = -1,
+  } = {},
+) {
+  if (!LAYERS.includes(layer)) throw new Error(`--layer is ${LAYERS.slice(1).join(", ")} (or omitted for the normal pass), not ${layer}`);
+  const { video, cueNames, edl, theme, cues } = loadEdit(target, themeId);
+  const drawable = splitAtCovers(cues);
 
   const folder = target.replace(/:/g, "--");
   const behind = layer === "behind";
-  const dir = path.join(WORK, "hf", [folder, variant, behind && "behind"].filter(Boolean).join("."));
+  const dir = path.join(WORK, "hf", [folder, variant, layer !== "front" && layer, plates && "plates", window && `span${window[0]}`].filter(Boolean).join("."));
   const compositionId = `zkidz-${folder.replace(/[^A-Za-z0-9-]/g, "-")}`;
   const intro = theme.intro ? introOf(cues, edl) : null;
   const insert = intro ? insertOf(video) : null;
-  // Deferred cards move to the insert in both layers; the Z-split goes over the front one only.
-  const moved = insert ? aroundInsert(cues, insert, edl.fps_num / edl.fps_den) : cues;
-  const { clips, images } = withImages(moved.filter((cue) => (cue.kind === "brandSplit" ? !behind : inLayer(cue, layer))));
+  const rate = edl.fps_num / edl.fps_den;
+  // Deferred cards move to the insert in every layer; the Z-split goes over the front one only.
+  const moved = insert ? aroundInsert(drawable, insert, rate) : drawable;
+  // In one page a later clip draws on top, so a front card covers the captions placed before it: the "above" pass draws
+  // the cards after one caption alone.
+  const front = (cue) => cue.kind === "brandSplit" || inLayer(cue, "front", variant);
+  const kept =
+    layer === "above"
+      ? moved.filter((cue, index) => index > after && front(cue))
+      : moved.filter((cue) => (cue.kind === "brandSplit" ? layer === "front" : inLayer(cue, layer, variant)));
+  const withImageFiles = withImages(kept);
+  const { clips, files, missing } = withClips(withImageFiles.clips, edl, video);
+  const images = { ...withImageFiles.images, ...files };
+  const drawnClips = plates ? clips.map((cue) => ({ ...cue, joinsBefore: true, joinsAfter: true, atRest: true })) : clips;
   const registry = insert ? { ...REGISTRY, brandSplit } : REGISTRY;
+  const shift = window ? window[0] / rate : 0;
   const { html, placed } = composeDocument({
-    edl,
-    cues: clips,
+    edl: window ? { ...edl, frames: window[1] - window[0] } : edl,
+    // Only the window's own clips: one before it, shifted to negative times, would be clamped to its first frame and drawn.
+    cues: window
+      ? drawnClips
+          .filter((cue) => cue.stop > shift && cue.start < window[1] / rate)
+          .map((cue) => ({ ...cue, start: cue.start - shift, stop: cue.stop - shift }))
+      : drawnClips,
+    // The whole sheet, whatever this pass draws: a caption still dodges the name plates drawn in another layer.
+    contextCues: moved,
     registry,
     compositionId: behind ? `${compositionId}-behind` : compositionId,
     css: pageCss(),
@@ -200,7 +391,7 @@ function build(target, { guides = false, events = false, settled = false, varian
 
   // The pre-roll is its own composition, written beside the frame render's (stills never need one).
   let preroll = null;
-  if (!variant && !behind) {
+  if (!variant && layer === "front" && !window) {
     const introDir = path.join(WORK, "hf", `${folder}.intro`);
     fs.rmSync(introDir, { recursive: true, force: true });
     if (intro) writeComposition(introDir, clipPage(edl, intro.frames, intro.clip, brandIntro, `${compositionId}-intro`));
@@ -211,24 +402,31 @@ function build(target, { guides = false, events = false, settled = false, varian
     const soundsOf = (cue, duration) => redesign((REGISTRY[cue.kind].sfx ?? canvasBrand().scope.SFX_OF[cue.kind])?.(cue, duration) ?? [], duration);
     const payload = { frames: edl.frames, events: sfxEvents(cues, soundsOf) };
     if (intro) {
-      const rate = edl.fps_num / edl.fps_den;
       payload.intro = {
         frames: intro.frames,
         events: introEvents(intro),
         hookEnd: intro.hookEnd,
+        splitFrames: splitFrames(rate), // the edit frames the Z-split covers on purpose (v2_qc.py skips them)
         splitEvents: sfxEvents([splitClip(rate, "portrait")], brandSplit.sfx),
         cards: movableCards(cues, intro.hookEnd),
       };
     }
     fs.writeFileSync(path.join(WORK, "edl", `${video}.sfx.json`), JSON.stringify(payload, null, 1));
   }
-  return { video, cueNames, edl, dir, placed, intro: preroll };
+  // Each placed clip's page index: its place in the one page, which decides what it covers.
+  const pages = placed.map((cue) => moved.indexOf(kept[Number(cue.id.slice(1))]));
+  return { video, cueNames, edl, dir, placed, clips, pages, intro: preroll, missingClips: missing };
 }
 
 if (require.main === module) {
   const [target, ...args] = process.argv.slice(2);
   try {
     const valueOf = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
+    if (args.includes("--clips")) {
+      const { file, clips } = writeClipManifest(target, themeFrom(args));
+      console.log(`${target}: ${clips.length} card clips → ${file}`);
+      process.exit(0);
+    }
     const options = {
       guides: args.includes("--guides"),
       events: args.includes("--events"),
@@ -243,4 +441,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { build, brandIntroCompositions };
+module.exports = { build, brandIntroCompositions, writeClipManifest, splitAtCovers };

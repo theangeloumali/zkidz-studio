@@ -39,6 +39,8 @@ raw/
 models/
 .models/
 data/
+# The engine ships its own data (the place-name table); only local data dirs stay out.
+!packages/engine/zks_engine/data/
 .data/
 .zks/
 *.gguf

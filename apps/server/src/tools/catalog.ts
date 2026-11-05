@@ -7,6 +7,7 @@ import { captionReelTools } from "./handlers/caption-reel-tools.ts";
 import { cueTools } from "./handlers/cue-tools.ts";
 import { cutTools } from "./handlers/cut-tools.ts";
 import { jobTools } from "./handlers/job-tools.ts";
+import { learningTools } from "./handlers/learning-tools.ts";
 import { lessonTools } from "./handlers/lesson-tools.ts";
 import { mediaCheckTools } from "./handlers/media-check-tools.ts";
 import { previewTools } from "./handlers/preview-tools.ts";
@@ -34,6 +35,7 @@ export function studioToolCatalog(): readonly StudioTool[] {
     ...referenceTools,
     ...styleTools,
     ...skillTools,
+    ...learningTools,
   ];
 }
 

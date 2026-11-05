@@ -5,6 +5,7 @@ node_modules/
 claudedocs/
 # HTML review twins (built by plan-to-html.sh)
 docs/plans/*.html
+docs/reports/*.html
 # Secrets and local data
 .env
 .env.*

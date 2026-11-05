@@ -2,14 +2,18 @@
 # English caption track: kept speech split into short phrases timed to the audio, then the translations as cues.
 # Usage (from the work dir): python -m zks_engine.captions v6 --phrases [--reel reels/v6.json]  → captions/v6.phrases.json
 #                            python -m zks_engine.captions v6                                  → derived/cues/v6-cc.json from captions/v6.json
-# captions/vN.json = [{"ids": [3, 4], "en": "..."}]; timing always comes from the phrase file, never the translation.
+#                            python -m zks_engine.captions v6 --words                          → the same, one cue per word state
+# captions/vN.json = [{"ids": [3, 4], "en": "..."}]; timing always comes from the phrase file, never the translation. Word
+# captions (the learning theme) may add "pills" (words of `en`) and "scale"; each entry then builds word by word.
+import functools
 import json
 import sys
 
 import numpy as np
 
 from . import edl
-from .pipeline import ENERGY_WINDOW, FPS, WORK, derived_file, load_cuts, load_energy, spec_file
+from .caption_words import bare, check_words, word_cues
+from .pipeline import ENERGY_WINDOW, FPS, WORK, derived_file, load_cuts, load_edl, load_energy, spec_file
 from .specs import gates
 
 PAUSE_BREAK = 0.35
@@ -24,6 +28,8 @@ SENTENCE_END = (".", "?", "!")
 # Greedy wrap at the plate's 813 px text width with Inter 600 50 px advance widths (em); the component re-measures.
 LINE_EM = 813 / 50
 NARROW, WIDE = set("ijlrtfI.,:;'!|() "), set("mwMW")
+WORDS_BOTTOM = 1750  # the learning theme's caption line, below his mouth and chin (v2 rule 4)
+WORDS_THEME = "learning"
 
 
 def text_em(text):
@@ -79,6 +85,11 @@ def transcript_words(video):
     return [(word["start"] / 1000, word["end"] / 1000, word["text"]) for word in lines]
 
 
+def word_spans(video):
+    """[(at, end)] of every transcript word, for edl.build to keep its cuts off; none before the video is transcribed."""
+    return [(at, end) for at, end, _ in transcript_words(video)] if transcript_path(video).exists() else []
+
+
 def kept_words(video, segments, keeps):
     words = []
     for start, end, raw_text in transcript_words(video):
@@ -120,11 +131,26 @@ def snap_start(words, previous, previous_start, onset_times):
     return float(nearby[np.argmin(abs(nearby - start))]) if len(nearby) else start
 
 
+def merge_empty_phrases(phrases):
+    """Whisper times some words at a segment edge with no length, so a group of them can be squeezed to no time by its
+    neighbour. Such a phrase's words join the phrase before it (the one after, for the first); ids stay consecutive."""
+    merged = []
+    for phrase in phrases:
+        if merged and merged[-1]["end"] <= merged[-1]["at"]:  # an empty first phrase waits for the next one
+            empty = merged.pop()
+            phrase = {**phrase, "at": empty["at"], "text": f"{empty['text']} {phrase['text']}"}
+        if merged and phrase["end"] <= phrase["at"]:
+            merged[-1]["text"] += f" {phrase['text']}"
+            continue
+        merged.append(dict(phrase))
+    return [{**phrase, "id": index} for index, phrase in enumerate(merged)]
+
+
 def build_phrases(video, reel_path):
     # Segments from the current cut spec, as the edit stage builds them: edl/ is the last render's, missing before one.
     spec = load_cuts(video)
     energy_db = load_energy(WORK / "audio" / f"{spec.get('base', video)}.wav")
-    segments, _frames = edl.build(spec, energy_db)
+    segments, _frames = edl.build(spec, energy_db, word_spans(spec.get("base", video)))
     words = kept_words(video, segments, reel_keeps(reel_path))
     onset_times = onsets(energy_db) * ENERGY_WINDOW
     groups = group(words)
@@ -151,6 +177,7 @@ def build_phrases(video, reel_path):
             end = min(end, starts[index + 1])  # two plates never share the band
         phrases.append({"id": index, "at": round(starts[index], 3), "end": round(end, 3), "reel": words_in[0]["reel"],
                         "text": " ".join(word["text"] for word in words_in)})
+    phrases = merge_empty_phrases(phrases)
     out = WORK / "captions" / f"{video}.phrases.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(phrases, indent=1, ensure_ascii=False), encoding="utf-8")
@@ -158,14 +185,21 @@ def build_phrases(video, reel_path):
     return phrases
 
 
-def check_entries(entries, phrases):
+def check_entries(entries, phrases, words=False):
     problems, covered = [], []
     for entry in entries:
         ids = entry["ids"]
         if ids != list(range(ids[0], ids[0] + len(ids))):
             problems.append(f"ids {ids} are not consecutive")
+        if unknown := [i for i in ids if not 0 <= i < len(phrases)]:
+            problems.append(f"ids {unknown} are not phrases of this edit")
+            continue
         if not entry.get("en", "").strip():
             problems.append(f"ids {ids} have no English")
+        elif words:
+            if len({phrases[i]["reel"] for i in ids}) > 1:
+                problems.append(f"ids {ids} cross a Reels keep edge")
+            problems += check_words(entry, ids)
         covered += ids
     missing = sorted(set(range(len(phrases))) - set(covered))
     doubled = sorted({i for i in covered if covered.count(i) > 1})
@@ -176,22 +210,39 @@ def check_entries(entries, phrases):
     return problems
 
 
-def emit_cues(video):
+def word_style(work):
+    """Word captions when the project's style (work/style.json, the job's snapshot copy in a job) draws the learning theme."""
+    style = spec_file(work, "style.json")
+    return style.is_file() and json.loads(style.read_text(encoding="utf-8")).get("theme") == WORDS_THEME
+
+
+def emit_cues(video, words=False):
     phrases = json.loads((WORK / "captions" / f"{video}.phrases.json").read_text(encoding="utf-8"))
     entries = json.loads(spec_file(WORK, f"captions/{video}.json").read_text(encoding="utf-8"))
-    try:
-        gates.check_captions(entries, phrases)
-    except gates.GateFailed as failure:
-        sys.exit(f"{video} captions: {failure}")
-    if problems := check_entries(entries, phrases):
+    if not words:  # the plate's two-line wrap; a word caption builds in 1-4 word lines instead
+        try:
+            gates.check_captions(entries, phrases)
+        except gates.GateFailed as failure:
+            sys.exit(f"{video} captions: {failure}")
+    if problems := check_entries(entries, phrases, words):
         sys.exit(f"{video} captions:\n  " + "\n  ".join(problems))
-    cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip(),
-             **({"bottom": entry["bottom"]} if "bottom" in entry else {})}
-            for entry in sorted(entries, key=lambda entry: entry["ids"][0])]
+    ordered = sorted(entries, key=lambda entry: entry["ids"][0])
+    if words:
+        @functools.cache
+        def transcript():
+            timeline = load_edl(video)  # a reel's words are its base's transcript, kept by the reel's own segments
+            kept = kept_words(timeline.get("base", video), timeline["segments"], [])
+            return kept, [bare(word["text"]) for word in kept]
+
+        cues = [cue for entry in ordered for cue in word_cues(entry, phrases, transcript, WORDS_BOTTOM)]
+    else:
+        cues = [{"kind": "caption", "at": phrases[entry["ids"][0]]["at"], "end": phrases[entry["ids"][-1]]["end"], "text": entry["en"].strip(),
+                 **({"bottom": entry["bottom"]} if "bottom" in entry else {})}
+                for entry in ordered]
     target = derived_file(WORK, f"cues/{video}-cc.json")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(cues, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"{video}: {len(cues)} captions -> {target}")
+    print(f"{video}: {len(cues)} {'word ' if words else ''}captions -> {target}")
 
 
 if __name__ == "__main__":
@@ -199,4 +250,4 @@ if __name__ == "__main__":
     if "--phrases" in flags:
         build_phrases(name, flags[flags.index("--reel") + 1] if "--reel" in flags else None)
     else:
-        emit_cues(name)
+        emit_cues(name, words="--words" in flags)

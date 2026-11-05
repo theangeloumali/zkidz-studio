@@ -45,11 +45,26 @@ RVM_WEIGHTS = "https://github.com/PeterL1n/RobustVideoMatting/releases/download/
 RVM_SHA256 = "c191a807251164c073dce5fa408e7a816070d539b882b2a3150330a9fec112ce"
 
 
+TORCH_MISSING = "the matte needs torch with CUDA: run `uv sync --project packages/engine --extra matte`"
+
+
+def torch_cuda():
+    """torch imported and sees a CUDA device: what RVM runs on."""
+    try:
+        import torch
+    except ImportError:
+        return False
+    return torch.cuda.is_available()
+
+
 def model():
     import hashlib
     from pathlib import Path
 
-    import torch
+    try:
+        import torch
+    except ImportError:
+        sys.exit(TORCH_MISSING)
 
     weights = Path(torch.hub.get_dir()) / "checkpoints" / "rvm_resnet50.pth"
     if not weights.exists():
@@ -83,13 +98,15 @@ def alphas(net, frames):
 
 
 def encode(pipe_frames, count, out):
-    """Gray masks as TV-range luma (16..235), lossless HEVC on NVENC; render_final expands them back after the crop."""
+    """Gray masks (0..1 float, or 0..255 uint8) as TV-range luma (16..235), lossless HEVC on NVENC; render_final expands
+    them back after the crop. ffmpeg reads raw gray as full range and does the 16..235 squash itself (#44)."""
     width, height = OUTPUT
     encoder = subprocess.Popen([ffio.ffmpeg_bin(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{width}x{height}",
                                 "-framerate", f"{FPS_NUM}/{FPS_DEN}", "-i", "-", *ENCODER, "-frames:v", str(count), str(out)],
                                stdin=subprocess.PIPE)
     for mask in pipe_frames:
-        encoder.stdin.write((16 + np.clip(mask, 0, 1) * 219).astype(np.uint8).tobytes())
+        full = mask if mask.dtype == np.uint8 else np.rint(np.clip(mask, 0, 1) * 255).astype(np.uint8)
+        encoder.stdin.write(full.tobytes())
     encoder.stdin.close()
     if encoder.wait():
         sys.exit(f"mask encode failed: {out}")
@@ -101,6 +118,28 @@ def black(count, out):
                     *ENCODER, "-frames:v", str(count), str(out)], check=True)
 
 
+def write_mask(out, total, drawn):
+    """A source-space mask video of `total` frames: black, except each (first, count, masks) run of 0..1 gray frames. Pieces
+    are encoded one by one and joined without re-encoding, so the unkept stretches of a long source cost nothing."""
+    folder = out.with_name(f"{out.stem}-pieces")
+    folder.mkdir(parents=True, exist_ok=True)
+    pieces, cursor = [], 0
+    for first, count, masks in drawn:
+        if first > cursor:
+            pieces.append(folder / f"{len(pieces):03d}.mkv")
+            black(first - cursor, pieces[-1])
+        pieces.append(folder / f"{len(pieces):03d}.mkv")
+        encode(masks, count, pieces[-1])
+        cursor = first + count
+    if cursor < total:
+        pieces.append(folder / f"{len(pieces):03d}.mkv")
+        black(total - cursor, pieces[-1])
+    listing = folder / "pieces.txt"
+    listing.write_text(ffio.concat_listing(pieces), encoding="utf-8")
+    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(out)], check=True)
+    print(f"wrote {out}")
+
+
 def build_mask(video):
     spec = load_cuts(video)
     base = spec.get("base", video)
@@ -109,27 +148,15 @@ def build_mask(video):
     frames = matted_frames(spec.get("matte", []), total)
     if not frames:
         sys.exit(f"{video}: the cut spec has no matte windows")
-    net, pieces, cursor = model(), [], 0
-    folder = WORK / "mask" / f"{base}-pieces"
-    folder.mkdir(parents=True, exist_ok=True)
-    for first, count in runs(frames):
-        if first > cursor:
-            pieces.append(folder / f"{len(pieces):03d}.mkv")
-            black(first - cursor, pieces[-1])
+    net = model()
+
+    def matted(first, count):
         warm = min(first, round(WARMUP * FPS))
         masks = alphas(net, proxy_frames(proxy, first - warm, count + warm))[warm:]
-        pieces.append(folder / f"{len(pieces):03d}.mkv")
-        encode(masks, count, pieces[-1])
         print(f"matted {first / FPS:.2f}-{(first + count) / FPS:.2f}s ({count} frames)", flush=True)
-        cursor = first + count
-    if cursor < total:
-        pieces.append(folder / f"{len(pieces):03d}.mkv")
-        black(total - cursor, pieces[-1])
-    listing = folder / "pieces.txt"
-    listing.write_text(ffio.concat_listing(pieces), encoding="utf-8")
-    out = WORK / "mask" / f"{base}.mkv"
-    subprocess.run([ffio.ffmpeg_bin(), "-y", "-v", "error", *ffio.concat_input_args(listing), "-c", "copy", str(out)], check=True)
-    print(f"wrote {out}")
+        return masks
+
+    write_mask(WORK / "mask" / f"{base}.mkv", total, ((first, count, matted(first, count)) for first, count in runs(frames)))
 
 
 def build_cutout(video, seconds):

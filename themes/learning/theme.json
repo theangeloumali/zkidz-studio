@@ -1,0 +1,245 @@
+{
+  "id": "learning",
+  "name": "Learning",
+  "version": 1,
+  "description": "The v2 Live Motion learning-vlog look: navy ink on cream paper, a gold accent with orange accent text, Chakra Petch display and word captions, the Z brand intro.",
+  "tokens": {
+    "ink": "#172230",
+    "muted": "#526171",
+    "lineStrong": "#172230",
+    "steel": "#172230",
+    "gold": "#c9a838",
+    "goldInk": "#ea580c",
+    "paper": "#f3efe8",
+    "white": "#ffffff",
+    "line": "rgba(23, 34, 48, 0.18)",
+    "goldBright": "#c9a838",
+    "steelOnInk": "#c9d2dc",
+    "copyOnInk": "#f3efe8",
+    "mutedOnInk": "#95a3b3",
+    "negative": "#c8322f",
+    "logoSteel": "#172230",
+    "logoGold": "#c9a838"
+  },
+  "type": {
+    "display": {
+      "family": "Chakra Petch",
+      "size": 96,
+      "weight": 700
+    },
+    "body": {
+      "family": "Inter",
+      "size": 36,
+      "weight": 500
+    },
+    "label": {
+      "family": "Inter",
+      "size": 32,
+      "weight": 600
+    },
+    "kicker": {
+      "family": "JetBrains Mono",
+      "size": 30,
+      "weight": 600,
+      "trackingEm": 0.08
+    },
+    "hand": {
+      "family": "Chakra Petch",
+      "size": 60,
+      "weight": 600
+    },
+    "mono": {
+      "family": "JetBrains Mono",
+      "size": 30,
+      "weight": 500
+    }
+  },
+  "boil": false,
+  "intro": true,
+  "components": {
+    "paperScene": {
+      "tier": "core",
+      "purpose": "A full-frame cream paper sheet that slides over the footage; cards and captions placed after it draw on it in ink.",
+      "slots": {
+        "label": {
+          "maxChars": 24
+        }
+      }
+    },
+    "bigWord": {
+      "tier": "core",
+      "purpose": "One huge spoken word or number: drops, tumbles, counts, steps or rolls through a slot, with an optional strike or scribble.",
+      "slots": {
+        "text": {
+          "maxChars": 12
+        },
+        "kicker": {
+          "maxChars": 28
+        },
+        "prefix": {
+          "maxChars": 4
+        },
+        "suffix": {
+          "maxChars": 4
+        }
+      }
+    },
+    "chipRail": {
+      "tier": "core",
+      "purpose": "A row of mono caps chips that pop in on their words: the labels or settings he names.",
+      "slots": {}
+    },
+    "caption": {
+      "tier": "core",
+      "purpose": "The spoken words as one centred line built word by word (style words), with keyword pills.",
+      "slots": {
+        "text": {
+          "maxChars": 60
+        },
+        "line": {
+          "maxChars": 60
+        }
+      }
+    },
+    "footageCard": {
+      "tier": "core",
+      "purpose": "The cue's own footage playing in a rounded card with file, timecode, chips and progress chrome; can grow to full bleed or shrink in.",
+      "slots": {
+        "file": {
+          "maxChars": 28
+        },
+        "status": {
+          "maxChars": 40
+        }
+      }
+    },
+    "listRows": {
+      "tier": "accent",
+      "purpose": "A list that builds as he names each item, each row checked or crossed, optionally on white cards.",
+      "slots": {}
+    },
+    "stepBars": {
+      "tier": "accent",
+      "purpose": "A rise without numbers: dimensional bars that grow on their words, with an optional gold arrow.",
+      "slots": {}
+    },
+    "meterGauge": {
+      "tier": "accent",
+      "purpose": "A warm instrument card whose needle kicks and settles on a level between LOW and HIGH.",
+      "slots": {
+        "label": {
+          "maxChars": 24
+        },
+        "tag": {
+          "maxChars": 24
+        }
+      }
+    },
+    "flowSteps": {
+      "tier": "accent",
+      "purpose": "Up to three cards joined by arrows, each acting out a step: chores ticked, coins earned, a lock opening.",
+      "slots": {}
+    },
+    "chatThread": {
+      "tier": "accent",
+      "purpose": "A chat card: his message types and sends, the assistant's reply streams in word by word.",
+      "slots": {
+        "title": {
+          "maxChars": 20
+        }
+      }
+    },
+    "phoneScreen": {
+      "tier": "accent",
+      "purpose": "A tilted phone playing a savings ring, allowance jars or a cart screen, beat by beat.",
+      "slots": {
+        "item": {
+          "maxChars": 16
+        }
+      }
+    },
+    "typedPrompt": {
+      "tier": "accent",
+      "purpose": "A near-black terminal card where his prompt types in and output lines arrive.",
+      "slots": {
+        "title": {
+          "maxChars": 20
+        },
+        "text": {
+          "maxChars": 160
+        },
+        "output": {
+          "maxChars": 36
+        }
+      }
+    },
+    "askField": {
+      "tier": "accent",
+      "purpose": "A chat field: his message types, sends into a bubble, and status lines confirm the change.",
+      "slots": {
+        "label": {
+          "maxChars": 28
+        },
+        "placeholder": {
+          "maxChars": 32
+        },
+        "text": {
+          "maxChars": 44
+        }
+      }
+    },
+    "receiptPrint": {
+      "tier": "special",
+      "purpose": "A printer slot feeding a paper receipt line by line, ending on a rolling total.",
+      "slots": {
+        "title": {
+          "maxChars": 24
+        }
+      }
+    },
+    "tradeScreen": {
+      "tier": "special",
+      "purpose": "A dark live trading card with streaming candles and no figures, for the top band.",
+      "slots": {}
+    },
+    "commentCta": {
+      "tier": "special",
+      "purpose": "The closing ask: a typed lead, a speech bubble filling with the one word to comment, and a sub chip.",
+      "slots": {
+        "lead": {
+          "maxChars": 16
+        },
+        "word": {
+          "maxChars": 10
+        },
+        "sub": {
+          "maxChars": 36
+        }
+      }
+    },
+    "receipt": {
+      "tier": "special",
+      "purpose": "The edit's input to output strip: clip bars, removed bad takes and pauses, the counter landing on the output length.",
+      "slots": {}
+    },
+    "gradeWipe": {
+      "tier": "special",
+      "purpose": "The ungraded clip over the graded master, a divider sweeping across to reveal the grade.",
+      "slots": {}
+    },
+    "routeMap": {
+      "tier": "special",
+      "purpose": "A real map with a dashed gold route that draws stop to stop on the beat, the current pin orange; every place a vlog visits beyond home gets one.",
+      "slots": {
+        "name": {
+          "maxChars": 18
+        }
+      }
+    },
+    "censor": {
+      "tier": "core",
+      "purpose": "Covers a bleeped word on screen; derived from the cut spec's bleeps.",
+      "slots": {}
+    }
+  }
+}

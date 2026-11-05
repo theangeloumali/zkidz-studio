@@ -4,9 +4,9 @@
 import subprocess
 import sys
 
-from .. import backends, pipeline, qc, render_final, sfx
+from .. import backends, caption_layer, pipeline, qc, render_final, sfx
 from ..pipeline import HF_DIR, loudness
-from ..qc import inputs
+from ..qc import inputs, learning, text_gates
 from ..specs import gates
 from ..specs.gates import GateFailed
 from .stages import edit_stage
@@ -48,13 +48,39 @@ def cue_sheet_names(video, work):
     return [name for name in names if pipeline.spec_file(work, f"cues/{name}.json").exists()]
 
 
+def run_step(command, name):
+    """One overlay step; a failure raises its own last error line (a word too wide, a missing clip), not an exit code, so
+    the job and the agent see what to fix."""
+    result = subprocess.run(command, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    if result.stderr:
+        sys.stderr.write(result.stderr)
+    if result.returncode:
+        lines = [line for line in (result.stderr or "").splitlines() if line.strip()]
+        raise GateFailed(f"{name}: {lines[-1] if lines else f'exit {result.returncode}'}")
+
+
 def draw_overlays(video):
-    """The SFX sheet first, since sfx.py picks the intro's insert that the overlay frames are then drawn around."""
+    """The SFX sheet first, since sfx.py picks the intro's insert that the overlay frames are then drawn around; the
+    footage cards' clips before the frames that play them; then the behind layer, his matte and the caption layer."""
     target = f"{video}:{'+'.join(cue_sheet_names(video, pipeline.WORK))}"
     style = style_flags()
-    subprocess.run(["node", str(HF_DIR / "render.js"), target, "--events", *style], check=True)
+    render_js = ["node", str(HF_DIR / "render.js"), target]
+    run_step([*render_js, "--events", *style], "render.js")
+    if learning.is_learning():  # text never overlaps text (#43): seconds here, against a frame render and a QC
+        run_step([*render_js, "--boxes", *style], "render.js")
+        text_gates.check(video)
     sfx.main(video)
-    subprocess.run(["node", str(HF_DIR / "render.js"), target, *style], check=True)
+    if learning.is_learning():  # density and variety from the sheet: seconds here, against a 20-min render and a QC
+        learning.check_sheet(video)
+    run_step([sys.executable, "-m", "zks_engine.cardclip", target, *style], "cardclip")
+    run_step([*render_js, *style], "render.js")
+    run_step([*render_js, "--layer", "behind", *style], "render.js")
+    frames = pipeline.WORK / "frames"
+    if inputs.read_json(pipeline.WORK / "edl" / f"{video}.json").get("matte"):
+        run_step([sys.executable, "-m", "zks_engine.matte", video], "matte")
+    elif (frames / f"{video}.behind").is_dir():
+        raise GateFailed(f'{video}: a depth "behind" cue draws under him only inside a matte window; add matteRanges over it or drop the depth')
+    caption_layer.build(video)  # also clears the last render's caption frames when this edit has none
 
 
 def render_master(video, quality, source, backend=None, edit=edit_stage, preflight=render_final.preflight, overlays=draw_overlays,

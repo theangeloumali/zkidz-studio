@@ -95,18 +95,59 @@ describe("EditorPanel", () => {
       expect(screen.getByRole("slider")).toHaveAttribute("aria-valuemax", "468");
     });
 
-    it("shows a preparing state while the source is being ingested", async () => {
-      stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [makeAsset({ kind: "camera" })] }) });
+    it("waits for the full-quality copy when the raw is HEVC, 10-bit or HDR", async () => {
+      stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [makeAsset({ kind: "camera", isBrowserPlayable: false })] }) });
       const { container } = renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
 
-      expect(await screen.findByText("Preparing your video…")).toBeInTheDocument();
+      expect(await screen.findByText("Preparing the full-quality copy…")).toBeInTheDocument();
       expect(container.querySelector("video")).toBeNull();
     });
 
     it("keeps preparing when the source has no duration yet", async () => {
       stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [makeAsset({ kind: "source", durationS: null })] }) });
       renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
-      expect(await screen.findByText("Preparing your video…")).toBeInTheDocument();
+      expect(await screen.findByText("Preparing the full-quality copy…")).toBeInTheDocument();
+    });
+
+    describe("a browser-playable raw", () => {
+      const RAW = makeAsset({ id: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", kind: "camera", isHdr: false, isBrowserPlayable: true, durationS: 107 });
+      const RAW_URL = `/api/media/${RAW.id}`;
+
+      it("plays the raw straight away while its proxy is prepared", async () => {
+        stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [RAW] }) });
+        const { container } = renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+        await waitFor(() => expect(container.querySelector("video")).toHaveAttribute("src", RAW_URL));
+        expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
+        expect(screen.getByRole("slider")).toHaveAttribute("aria-valuemax", "107");
+      });
+
+      it("switches to the proxy once ingest has made the source", async () => {
+        let assets = [RAW];
+        stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets }) });
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+        const { container } = render(
+          <QueryClientProvider client={queryClient}>
+            <EditorPanel projectId={PROJECT_ID} />
+          </QueryClientProvider>,
+        );
+        await waitFor(() => expect(container.querySelector("video")).toHaveAttribute("src", RAW_URL));
+
+        assets = [RAW, SOURCE_ASSET];
+        await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.media(PROJECT_ID) }));
+
+        await waitFor(() => expect(container.querySelector("video")).toHaveAttribute("src", PROXY_URL));
+        expect(screen.getByRole("slider")).toHaveAttribute("aria-valuemax", "468");
+      });
+
+      it("waits for the join when two clips make the video", async () => {
+        const second = { ...RAW, id: "2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a", name: "beach-2.mp4" };
+        stubEditorApi({ ...noSpecs, [`GET ${MEDIA_URL}`]: () => jsonResponse({ assets: [RAW, second] }) });
+        const { container } = renderWithProviders(<EditorPanel projectId={PROJECT_ID} />);
+
+        expect(await screen.findByText("Preparing the full-quality copy…")).toBeInTheDocument();
+        expect(container.querySelector("video")).toBeNull();
+      });
     });
 
     it("asks for a clip when the project has no media", async () => {

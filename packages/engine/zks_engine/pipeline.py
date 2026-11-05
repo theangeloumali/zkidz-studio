@@ -43,8 +43,19 @@ HF_DIR = Path(__file__).resolve().parent.parent / "hf"
 
 
 WORK = work_dir()
-# At most this many ffmpeg/whisper jobs at once: more saturated the machine (6 in flight hung the desktop).
-MAX_JOBS = int(os.environ.get("ZKS_JOBS", "2"))
+
+
+def default_jobs(cores):
+    """One job per 6 cores, never under 2: 6 in flight on this 24-core box hung the desktop."""
+    return max(2, (cores or 0) // 6)
+
+
+def max_jobs():
+    """ffmpeg/whisper jobs at once: ZKS_JOBS, else default_jobs for this machine."""
+    return int(os.environ.get("ZKS_JOBS") or default_jobs(os.cpu_count()))
+
+
+MAX_JOBS = max_jobs()
 
 
 def source_record(video):
@@ -142,6 +153,19 @@ def source_to_edited(seconds, edl):
         if seg["in"] <= frame <= seg["out"]:
             return (seg["target"] + frame - seg["in"]) * edl["fps_den"] / edl["fps_num"]
     raise ValueError(f"source {seconds:.2f}s falls inside a removed range")
+
+
+CUT_SNAP = 0.2  # hf/overlay/timemap.js CUT_SNAP: a cue starting this soon after a cut is drawn from the cut
+
+
+def cue_spans(start, end, edl):
+    """map_interval for a cue as the renderer draws it: a first span starting within CUT_SNAP after a cut starts on it."""
+    spans = map_interval(start, end, edl)
+    if not spans:
+        return spans
+    rate = edl["fps_num"] / edl["fps_den"]
+    cuts = [seg["target"] / rate for seg in edl["segments"] if 0 <= spans[0][0] - seg["target"] / rate < CUT_SNAP]
+    return [(max(cuts), spans[0][1]), *spans[1:]] if cuts else spans
 
 
 def map_interval(start, end, edl):

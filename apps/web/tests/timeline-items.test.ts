@@ -25,6 +25,34 @@ describe("buildTimelineTracks", () => {
     expect(tracks.audio).toEqual([expect.objectContaining({ variant: "sfx", at: 10, end: 10.4 })]);
   });
 
+  it("lays reframes and rack focus on the video track and the music bed's sections on audio (#38)", () => {
+    const v2Cuts: CutSpec = {
+      ...CUTS,
+      reframes: [{ at: 0, end: 12, cx: 0.4 }],
+      focus: [{ at: 16, end: 18, amount: 12 }],
+      music: {
+        sections: [
+          { at: 0, kind: "cold" },
+          { at: 20, kind: "chapter" },
+        ],
+      },
+    };
+    const tracks = buildTimelineTracks(v2Cuts, []);
+    expect(tracks.video.filter((block) => block.variant === "frame").map((block) => [block.label, block.at, block.end])).toEqual([
+      ["Reframe", 0, 12],
+      ["Focus", 16, 18],
+    ]);
+    expect(tracks.audio.filter((block) => block.variant === "music").map((block) => [block.label, block.at, block.end])).toEqual([
+      ["Music · cold", 0, 20],
+      ["Music · chapter", 20, 30],
+    ]);
+  });
+
+  it("labels a learning cue by its kind and headline", () => {
+    const tracks = buildTimelineTracks(CUTS, [{ kind: "bigWord", at: 2, end: 4, text: "SAVE", drop: true }]);
+    expect(tracks.cues.map((block) => block.label)).toEqual(["bigWord · SAVE"]);
+  });
+
   it("splits caption cues from the other cues", () => {
     const tracks = buildTimelineTracks(CUTS, [
       { kind: "caption", at: 1, end: 3, text: "Hello there" },

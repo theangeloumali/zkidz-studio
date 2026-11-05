@@ -1,13 +1,13 @@
 # Created by The Angelo Umali.
 # ZKS_HOME/capabilities.json (plan §7.2): the probed backend and what the engine can render with it on this machine.
 # get_capabilities and the Render page read it; `pnpm zks doctor` writes it through `zks-engine capabilities --json`.
-import importlib.util
 import json
 import os
 import shutil
 
-from . import backends, doctor, render_final
+from . import backends, doctor
 from .home import zks_home
+from .matte import torch_cuda
 from .render import UHD_BACKEND, master_flags
 
 FILE_NAME = "capabilities.json"
@@ -15,22 +15,21 @@ FILE_NAME = "capabilities.json"
 TRANSCRIBER = "whisper.cpp"
 
 
-def summarize(backend, opencl, hyperframes, torch):
-    """getCapabilities.output; zooms and the matte need render_final's zoom_graph: CUDA + OpenCL + libplacebo."""
-    zoom_graph = backend.name == UHD_BACKEND and opencl and backend.libplacebo
+def summarize(backend, hyperframes, torch):
+    """getCapabilities.output; zooms and the matte run on NVIDIA (libplacebo, else CPU filters between NVDEC and NVENC)."""
+    motion = backend.name == UHD_BACKEND
     return {
         "profile": backend.name,
-        "features": {"uhd": master_flags(backend.name, "4k")[1], "intro": hyperframes, "zoomExpr": zoom_graph, "matte": zoom_graph and torch},
+        "features": {"uhd": master_flags(backend.name, "4k")[1], "intro": hyperframes, "zoomExpr": motion, "matte": motion and torch},
         "transcribe": TRANSCRIBER,
     }
 
 
 def machine_support(backend):
-    """What the features need beyond the backend: OpenCL (asked only on nvidia), the HyperFrames renderer, torch for RVM."""
+    """What the features need beyond the backend: the HyperFrames renderer, and torch on CUDA for RVM (asked only on nvidia)."""
     return {
-        "opencl": backend.name == UHD_BACKEND and render_final.has_opencl(),
         "hyperframes": bool(shutil.which("node")) and doctor.check_chrome()[0] and doctor.check_hyperframes()[0],
-        "torch": importlib.util.find_spec("torch") is not None,
+        "torch": backend.name == UHD_BACKEND and torch_cuda(),
     }
 
 

@@ -48,6 +48,8 @@ command -v uv >/dev/null || {
 
 pnpm install --frozen-lockfile
 uv sync --locked --project packages/engine
+# The person matte behind big words needs torch with CUDA, a large download only an NVIDIA machine can use.
+if command -v nvidia-smi >/dev/null; then uv sync --locked --project packages/engine --extra matte; fi
 pnpm exec node packages/cli/src/main.ts setup
 if [ "$START" = 1 ]; then exec pnpm start; fi
 echo "setup complete. Start with: pnpm start"

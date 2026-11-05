@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+import wave
 from pathlib import Path
 from unittest import mock
 
@@ -156,8 +157,8 @@ class IngestStepsTests(RecordedProgress):
         code, _ = call_cli("ingest", "--json", "--video", "v1", "--mode", "join", *[arg for clip in clips for arg in ("--clip", str(clip))])
         self.assertEqual(code, 0)
 
-    def assert_every_step_ran_to_its_total(self):
-        self.assertEqual(self.stages(), ["joining", "audio", "proxy"])
+    def assert_every_step_ran_to_its_total(self, order=("audio", "joining", "proxy")):
+        self.assertEqual(self.stages(), list(order))
         for stage in self.stages():
             first, last = self.of(stage)[0], self.of(stage)[-1]
             self.assertEqual((first["state"], first["done"]), ("running", 0), stage)
@@ -166,9 +167,16 @@ class IngestStepsTests(RecordedProgress):
 
     def test_a_joined_pair_reports_joining_then_audio_then_proxy(self):
         self.ingest(self.clip("a.mkv", 0.5), self.clip("b.mkv", 1))
-        self.assert_every_step_ran_to_its_total()
+        self.assert_every_step_ran_to_its_total(("joining", "audio", "proxy"))
         self.assertEqual(self.of("joining")[-1]["total"], 45)
         self.assertEqual(self.of("audio")[-1]["unit"], "seconds")
+
+    def test_one_clip_takes_its_audio_from_the_raw_before_the_join_trimmed_to_its_frames(self):
+        self.ingest(self.clip("a.mkv", 1.2))
+        self.assert_every_step_ran_to_its_total()
+        with wave.open(str(self.work / "audio" / "v1.wav"), "rb") as audio:
+            self.assertEqual(audio.getnframes(), 36 * 16000 // 30)
+        self.assertEqual(list(self.work.joinpath("audio").iterdir()), [self.work / "audio" / "v1.wav"])
 
     def test_one_variable_rate_clip_reports_every_step_too(self):
         self.ingest(self.clip("phone.mkv", 1, variable_rate=True))
@@ -185,7 +193,7 @@ class IngestStepsTests(RecordedProgress):
         began = time.time()
         self.ingest(self.clip("a.mkv", 0.5))
         first = self.records[0]
-        self.assertEqual((first["stage"], first["state"], first["done"]), ("joining", "running", 0))
+        self.assertEqual((first["stage"], first["state"], first["done"]), ("audio", "running", 0))
         self.assertGreaterEqual(first["updated"], began)
 
 
@@ -203,6 +211,20 @@ class FailingStepTests(RecordedProgress):
             with self.assertRaises(SystemExit):
                 join_sources.main("sources/v1.mkv", ["a.mp4"])
         self.assertEqual((self.records[-1]["stage"], self.records[-1]["state"]), ("joining", "failed"))
+
+    def test_the_audio_is_written_beside_its_target_and_renamed_in_whole(self):
+        source = self.source()
+        outputs = []
+
+        def encode(command, on_seconds):
+            outputs.append(Path(command[-1]))
+            Path(command[-1]).write_bytes(b"RIFF")
+
+        with mock.patch.object(prepare.ffio, "probe", return_value={"durationS": 5.0}), mock.patch.object(prepare.ffio, "user_input_args", return_value=["-i", str(source)]), \
+                mock.patch.object(prepare.ffio, "run_reporting", encode):
+            target = prepare.build_audio(source, "v1")
+        self.assertNotEqual(outputs, [target])
+        self.assertEqual((target.read_bytes(), outputs[0].exists()), (b"RIFF", False))
 
     def test_an_audio_step_that_fails_leaves_a_failed_audio_record(self):
         source = self.source()

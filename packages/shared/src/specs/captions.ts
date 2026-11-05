@@ -10,7 +10,14 @@ export const CaptionPhraseSchema = sourceSpan({ id: PhraseIdSchema, reel: z.int(
 
 /** Wrap and reel-edge checks need font metrics and the phrase list, so they run in `set_captions`, not here. `bottom` is
  * the plate's lower edge on the canvas, for a line the default band would put over the speaker's mouth. */
-export const CaptionEntrySchema = z.strictObject({ ids: z.array(PhraseIdSchema).min(1), en: z.string().min(1), bottom: CanvasYSchema.optional() });
+export const CaptionEntrySchema = z.strictObject({
+  ids: z.array(PhraseIdSchema).min(1),
+  en: z.string().min(1),
+  bottom: CanvasYSchema.optional(),
+  /** v2 word captions: words of `en` drawn as keyword pills, and the size step. */
+  pills: z.array(z.string().min(1)).optional(),
+  scale: z.number().min(0.6).max(2).optional(),
+});
 
 export type CaptionPhrase = z.infer<typeof CaptionPhraseSchema>;
 export type CaptionEntry = z.infer<typeof CaptionEntrySchema>;

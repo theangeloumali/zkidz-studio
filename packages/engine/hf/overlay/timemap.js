@@ -13,6 +13,8 @@
   const CENSOR_HOLD = 0.25;
   // A caption this close to its neighbour swaps in place instead of rising or fading.
   const CAPTION_JOIN = 0.3;
+  // A cue starting this soon after a cut starts on it: a few frames late, a cover flashes the footage under it.
+  const CUT_SNAP = 0.2;
   // Word pins inside a cue (a row's `at`, `subAt`, `swapAt`, a marker's `moveAt`) are source seconds after cue.at.
   const isPinKey = (key) => key === "at" || /[a-z]At$/.test(key);
   // Not `item.constructor === Object`: cue files run in a vm context in Node, whose objects carry that context's Object.
@@ -47,28 +49,38 @@
       return spans;
     }
 
+    // The edited second of the cut just before `start` when `start` is within CUT_SNAP of it, else `start`.
+    function snapToCut(start) {
+      const cut = segments.map((segment) => segment.target / fps).filter((edge) => edge <= start && start - edge < CUT_SNAP);
+      return cut.length ? Math.max(...cut) : start;
+    }
+
     // Reels keep a cue only if most of it survives, clamped to its kept frames; full edits keep every cue as authored.
     // A derived cue on wholly removed footage (a bleep inside a cut) is expected, so it drops without a warning.
     function editedWindow(cue, label) {
+      // A caption is timed to its word, and its states run back to back: snapping one would lay it over the one before.
+      const onCut = cue.kind === "caption" ? (start) => start : snapToCut;
       const spans = keptSpans(cue.at, cue.end);
       if (cue.isDerived && !spans.length) return null;
-      if (!edl.reel || cue.isDerived) return { start: toEdited(cue.at, label), stop: toEdited(cue.end, label) };
+      if (cue.isDerived) return { start: toEdited(cue.at, label), stop: toEdited(cue.end, label) };
+      if (!edl.reel) return { start: onCut(toEdited(cue.at, label)), stop: toEdited(cue.end, label) };
       const kept = spans.reduce((sum, [start, stop]) => sum + stop - start, 0);
       const share = spans.length ? kept / (cue.end - cue.at) : 0;
       if (share < REEL_MIN_KEPT) {
         warnings.push(`${label} @${cue.at}s dropped from the reel (${Math.round(share * 100)}% of its span kept)`);
         return null;
       }
-      return { start: spans[0][0], stop: spans.at(-1)[1] };
+      return { start: onCut(spans[0][0]), stop: spans.at(-1)[1] };
     }
 
     // Mapping pins onto the edit keeps each on its word across a trimmed pause or a clamped reel start.
     function pinsOnEdit(cue, start, label) {
       const toLocal = (key, value) => (isPinKey(key) && typeof value === "number" ? toEdited(cue.at + value, `${label} ${key}`) - start : value);
       const mapItem = (item) => (isPlainObject(item) ? Object.fromEntries(Object.entries(item).map(([key, value]) => [key, toLocal(key, value)])) : item);
-      return Object.fromEntries(
-        Object.entries(cue).map(([key, value]) => [key, key === "at" ? value : Array.isArray(value) ? value.map(mapItem) : toLocal(key, value)]),
-      );
+      // A list one object down (bigWord's slot.words) holds pins too; the object's own keys stay as they are (grow.at).
+      const mapLists = (value) => Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, Array.isArray(inner) ? inner.map(mapItem) : inner]));
+      const mapValue = (key, value) => (Array.isArray(value) ? value.map(mapItem) : isPlainObject(value) ? mapLists(value) : toLocal(key, value));
+      return Object.fromEntries(Object.entries(cue).map(([key, value]) => [key, key === "at" ? value : mapValue(key, value)]));
     }
 
     function derivedCues() {

@@ -1,12 +1,12 @@
 // Created by The Angelo Umali.
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { join } from "node:path";
-import { jobs, mediaAssets, transcripts } from "@zks/db/schema";
+import { jobs, mediaAssets, projects, transcripts } from "@zks/db/schema";
 import { STUDIO_TOOLS } from "@zks/shared";
-import { desc, eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { and, desc, eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { engineProgressRecordPath } from "../../src/jobs/engine-progress.ts";
 import { STUDIO_TOOLS_BY_NAME } from "../../src/tools/catalog.ts";
 import { writeProjectTemplate } from "../../src/onboarding/project-template.ts";
@@ -20,6 +20,8 @@ const engineRequests: EngineRequest[] = [];
 /** Set by a test: the transcribe fake writes a half-done engine record and reads the job row back mid-run. */
 let midRunPct: number | undefined;
 let reportsChunks = false;
+const MIRROR_POLLS = 100;
+const MIRROR_POLL_MS = 100;
 /** Set by a test: the ingest fake writes the engine's per-step records and reads the job row back after each. */
 let ingestSteps: { stage: string; done: number }[] | undefined;
 const ingestRowsSeen: { stage: string | null; pct: number | null }[] = [];
@@ -39,9 +41,7 @@ beforeAll(async () => {
             const nowS = Date.now() / 1000;
             await mkdir(dirname(recordPath), { recursive: true });
             await writeFile(recordPath, JSON.stringify({ stage: "transcribing", state: "running", done: 1, total: 2, started: nowS, updated: nowS }));
-            await delay(1500);
-            const [running] = await server.database.db.select().from(jobs).where(eq(jobs.kind, "transcribe")).orderBy(desc(jobs.queuedAt));
-            midRunPct = running?.pct ?? undefined;
+            midRunPct = await waitForMirroredPct(request.workDir);
           }
           const words = [{ at: 0, end: 0.5, text: "hello" }];
           await writeFile(join(request.workDir, "transcripts", "v1.words.json"), JSON.stringify(words));
@@ -118,6 +118,159 @@ describe("transcribe defaults", () => {
     expect(engineRequests.at(-1)?.args).toEqual(["--video", "v1", "--language", "tl", "--model", "turbo"]);
   });
 });
+
+async function jobStatus(jobId: string) {
+  const [row] = await server.database.db.select({ status: jobs.status }).from(jobs).where(eq(jobs.id, jobId));
+  return row?.status;
+}
+
+function transcribeRuns(fixture: ToolFixture) {
+  return engineRequests.filter((request) => request.command === "transcribe" && request.workDir.startsWith(fixture.projectRoot));
+}
+
+describe("transcribe beside a running ingest", () => {
+  it("waits for that ingest's audio, then runs whisper while the ingest still joins", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const wavPath = join(fixture.projectRoot, "work", "audio", "v1.wav");
+    await mkdir(dirname(wavPath), { recursive: true });
+    await writeFile(wavPath, "an earlier ingest's audio");
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const ingestJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+      await vi.waitFor(async () => expect(await jobStatus(ingestJobId)).toBe("running"));
+      const transcribeJobId = jobIdOf(await callTool(fixture, "transcribe", {}));
+      await delay(1200);
+      expect(transcribeRuns(fixture)).toHaveLength(0);
+
+      await writeFile(wavPath, "this ingest's audio");
+      const waited = await callTool(fixture, "job_wait", { jobId: transcribeJobId, timeoutS: 10 });
+      expect(waited.structuredContent).toMatchObject({ status: "succeeded" });
+      expect(await jobStatus(ingestJobId)).toBe("running");
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
+  it("files a transcript that finished first under the source the ingest then joins, which QC looks it up by", async () => {
+    // OnePuhunan: whisper beat a 3-clip join, the words were filed under clip 1, and QC of every master said "no transcript".
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const wavPath = join(fixture.projectRoot, "work", "audio", "v1.wav");
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const ingestJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+      await vi.waitFor(async () => expect(await jobStatus(ingestJobId)).toBe("running"));
+      await mkdir(dirname(wavPath), { recursive: true });
+      await writeFile(wavPath, "this ingest's audio");
+      const transcribeJobId = jobIdOf(await callTool(fixture, "transcribe", {}));
+      await callTool(fixture, "job_wait", { jobId: transcribeJobId, timeoutS: 10 });
+      release.resolve();
+      const joined = await callTool(fixture, "job_wait", { jobId: ingestJobId, timeoutS: 10 });
+      const { sourceAssetId } = (joined.structuredContent as { result: { sourceAssetId: string } }).result;
+      const filed = await server.database.db.select().from(transcripts).where(eq(transcripts.projectId, fixture.context.projectId));
+      expect(filed.map((row) => row.mediaAssetId)).toEqual([sourceAssetId]);
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
+  it("leaves another video's transcript finished during the ingest under its own asset", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const release = Promise.withResolvers<void>();
+    ingestGate = release.promise;
+    try {
+      const ingestJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+      await vi.waitFor(async () => expect(await jobStatus(ingestJobId)).toBe("running"));
+      await server.database.db.insert(transcripts).values({
+        projectId: fixture.context.projectId,
+        mediaAssetId: asset.id,
+        model: "base",
+        language: "en",
+        wordsRelPath: "transcripts/v2.words.json",
+        wordCount: 1,
+      });
+      release.resolve();
+      await callTool(fixture, "job_wait", { jobId: ingestJobId, timeoutS: 10 });
+      const filed = await server.database.db.select().from(transcripts).where(eq(transcripts.projectId, fixture.context.projectId));
+      expect(filed.map((row) => row.mediaAssetId)).toEqual([asset.id]);
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+});
+
+describe("transcribe reuse", () => {
+  async function waitingTranscribe(fixture: ToolFixture, release: Promise<void>) {
+    const asset = await insertCameraAsset(fixture);
+    ingestGate = release;
+    const ingestJobId = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    await vi.waitFor(async () => expect(await jobStatus(ingestJobId)).toBe("running"));
+    return jobIdOf(await callTool(fixture, "transcribe", {}));
+  }
+
+  it("returns the open job for the same language and model, so whisper runs once", async () => {
+    const fixture = await createToolFixture(server);
+    const release = Promise.withResolvers<void>();
+    try {
+      const first = await waitingTranscribe(fixture, release.promise);
+      expect(jobIdOf(await callTool(fixture, "transcribe", { language: "auto", model: "turbo" }))).toBe(first);
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
+  it("stops the open job when another language is asked for, since both write the same transcript", async () => {
+    const fixture = await createToolFixture(server);
+    const release = Promise.withResolvers<void>();
+    try {
+      const first = await waitingTranscribe(fixture, release.promise);
+      const second = jobIdOf(await callTool(fixture, "transcribe", { language: "tl" }));
+      expect(second).not.toBe(first);
+      expect(["cancelled", "interrupted"]).toContain(await jobStatus(first)); // queued or already waiting on the lane
+    } finally {
+      ingestGate = undefined;
+      release.resolve();
+    }
+  });
+
+  it("returns a finished transcription of the current ingest, and transcribes again after a new ingest", async () => {
+    const fixture = await createToolFixture(server);
+    const asset = await insertCameraAsset(fixture);
+    const firstIngest = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id }] }));
+    await callTool(fixture, "job_wait", { jobId: firstIngest, timeoutS: 10 });
+    const done = jobIdOf(await callTool(fixture, "transcribe", {}));
+    await callTool(fixture, "job_wait", { jobId: done, timeoutS: 10 });
+
+    expect(jobIdOf(await callTool(fixture, "transcribe", {}))).toBe(done);
+    const newIngest = jobIdOf(await callTool(fixture, "ingest", { clips: [{ assetId: asset.id, zoom: 1.2 }] }));
+    await callTool(fixture, "job_wait", { jobId: newIngest, timeoutS: 10 });
+    expect(jobIdOf(await callTool(fixture, "transcribe", {}))).not.toBe(done);
+  });
+});
+
+/** The pct the follower mirrors into this project's transcribe row; other tests' auto-started jobs are not this one. */
+async function waitForMirroredPct(workDir: string): Promise<number | undefined> {
+  const slug = basename(dirname(workDir));
+  const [project] = await server.database.db.select({ id: projects.id }).from(projects).where(eq(projects.slug, slug));
+  for (let attempt = 0; attempt < MIRROR_POLLS; attempt++) {
+    const [running] = await server.database.db
+      .select({ pct: jobs.pct })
+      .from(jobs)
+      .where(and(eq(jobs.kind, "transcribe"), eq(jobs.projectId, project?.id ?? "")))
+      .orderBy(desc(jobs.queuedAt));
+    if (running?.pct !== null && running?.pct !== undefined && running.pct > 0) return running.pct;
+    await delay(MIRROR_POLL_MS);
+  }
+  return undefined;
+}
 
 describe("transcribe progress", () => {
   it("shows the engine's finished chunks while whisper runs", async () => {

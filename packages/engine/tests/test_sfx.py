@@ -42,6 +42,17 @@ class RecipeTests(unittest.TestCase):
         start, _ = sfx.render_event({"time": 1.0, "sound": "thud"})
         self.assertAlmostEqual(start, 0.82)
 
+    def test_riser_swells_into_its_moment(self):
+        # The learning-vlog riser lands on the picture: it starts 0.42 s early and is loudest in its last 80 ms.
+        start, clip = sfx.render_event({"time": 1.0, "sound": "riser"})
+        self.assertAlmostEqual(start, 0.58)
+        self.assertGreaterEqual(np.abs(clip).max(axis=1).argmax(), len(clip) - int(0.08 * 48000))
+        self.assertAlmostEqual(np.abs(clip).max(), level(-27))
+
+    def test_every_sound_the_learning_kinds_emit_has_a_recipe(self):
+        learning = {"riser", "tick", "rule", "scratch", "hook", "check", "type", "count", "nodeGold", "swish", "whipOut", "pencil", "boom"}
+        self.assertEqual(learning - sfx.RECIPES.keys(), set())
+
     def test_span_sounds_follow_dur_and_count_settles_at_the_end(self):
         self.assertGreater(len(self.render("pencil", dur=1.4)), len(self.render("pencil", dur=0.3)) + 48000)
         layers = sfx.count(0.8)
@@ -219,6 +230,62 @@ class MixTests(unittest.TestCase):
         self.write_events({"frames": 90, "events": []})
         sfx.main("t")
         self.assertFalse(path.exists())
+
+
+class BedTests(unittest.TestCase):
+    """audio/<v>_bed.wav under the voice: BED_UNDER dB below his speech, BED_DUCK more while he talks, faded at the end."""
+
+    RATE = pipeline.AUDIO_RATE
+
+    def signals(self, seconds=6, talking=1.0):  # long enough that the pause measured is clear of the fade
+        t = np.arange(int(self.RATE * seconds)) / self.RATE
+        speech = np.zeros(len(t))
+        speech[: int(self.RATE * talking)] = np.random.default_rng(0).normal(0, level(-20), int(self.RATE * talking))
+        tone = 0.3 * np.sin(2 * np.pi * 220 * t)
+        return np.stack([speech, speech], axis=1), np.stack([tone, tone], axis=1)
+
+    @staticmethod
+    def db(samples):
+        return 20 * np.log10(np.sqrt(np.mean(samples**2)))
+
+    def test_the_bed_sits_under_speech_and_ducks_while_he_talks(self):
+        voice, bed = self.signals()
+        out = sfx.bed_track(bed, voice)
+        talking = self.db(out[int(0.4 * self.RATE) : int(0.9 * self.RATE), 0])
+        pause = self.db(out[int(1.8 * self.RATE) : int(2.2 * self.RATE), 0])
+        self.assertAlmostEqual(pause - talking, sfx.BED_DUCK, delta=1.5)
+        self.assertAlmostEqual(self.db(voice[: self.RATE, 0]) - pause, sfx.BED_UNDER, delta=2)
+
+    def test_the_cut_spec_sets_the_level_under_speech_and_the_duck(self):
+        voice, bed = self.signals()
+        out = sfx.bed_track(bed, voice, sfx.bed_settings({"bed": {"under": 30, "duck": 4}}))
+        talking = self.db(out[int(0.4 * self.RATE) : int(0.9 * self.RATE), 0])
+        pause = self.db(out[int(1.8 * self.RATE) : int(2.2 * self.RATE), 0])
+        self.assertAlmostEqual(pause - talking, 4, delta=1.5)
+        self.assertAlmostEqual(self.db(voice[: self.RATE, 0]) - pause, 30, delta=2)
+        self.assertEqual(sfx.bed_settings({}), (sfx.BED_UNDER, sfx.BED_DUCK))
+
+    def test_an_edit_that_is_not_a_whole_number_of_windows_mixes(self):
+        voice, bed = self.signals()
+        voice, bed = voice[:-235], bed[:-235]
+        self.assertEqual(len(sfx.bed_track(bed, voice)), len(voice))
+
+    def test_the_bed_fades_out_over_its_tail(self):
+        voice, bed = self.signals()
+        out = sfx.bed_track(bed, voice)
+        self.assertLess(np.abs(out[-int(0.02 * self.RATE) :]).max(), 1e-3)
+
+    @unittest.skipUnless(has_ffmpeg(), "needs ffmpeg")
+    def test_no_bed_is_none_a_near_length_fits_and_a_wrong_length_is_refused_by_name(self):
+        voice, bed = self.signals()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "v9_bed.wav"
+            self.assertIsNone(sfx.bed_for(path, voice))
+            sfx.write_wav(path, bed[: len(bed) - int(0.04 * self.RATE)])  # within BED_TOLERANCE: rounding, not another cut
+            self.assertEqual(len(sfx.bed_for(path, voice)), len(voice))
+            sfx.write_wav(path, bed[: self.RATE])
+            with self.assertRaisesRegex(SystemExit, "v9_bed.wav"):
+                sfx.bed_for(path, voice)
 
 
 if __name__ == "__main__":

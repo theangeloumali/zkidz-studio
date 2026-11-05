@@ -1,7 +1,8 @@
 # Created by The Angelo Umali.
 # Mixes the overlay's sound effects under the edited voice: edl/<v>.sfx.json (hf/render.js <v> --events)
 # + audio/<v>_edit.wav -> audio/<v>_mix.wav, same sample count, loudness held by an ebur128 gate. An `intro` block
-# (hf/build.js, a brand pre-roll) also writes audio/<v>_intro.wav.
+# (hf/build.js, a brand pre-roll) also writes audio/<v>_intro.wav. A music bed (audio/<v>_bed.wav, music_bed.py) goes
+# under the voice first, ducked while he talks, so the events and the gate see voice + bed.
 # Usage (from the work dir): python -m zks_engine.sfx v1   (exit 1 when the gate still fails after 3 bus cuts)
 import json
 import math
@@ -14,7 +15,7 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from . import ffio, progress
-from .pipeline import AUDIO_RATE, ENERGY_WINDOW, WORK, energy_db, frame_to_sample, intro_track, load_edl, loudness, map_interval, read_wav
+from .pipeline import AUDIO_RATE, ENERGY_WINDOW, WORK, energy_db, frame_to_sample, intro_track, load_cuts, load_edl, loudness, map_interval, read_wav
 
 from . import synth
 
@@ -26,6 +27,10 @@ GAP_TOLERANCE = 1e-6  # events authored exactly MIN_GAP apart can differ by 0.24
 HEADROOM = 10 ** (-1.3 / 20)  # voice + events, sample by sample, stay under this (loudnorm leaves speech at -1.5)
 GATE_LU, GATE_TRUE_PEAK, BUS_CUTS = 0.3, -1.0, 3
 INTRO_LUFS = -16.0  # the pre-roll sits a little under the voice's -14
+# The bed: BED_UNDER dB under his speech, BED_DUCK more while he talks, these attack/release times (s), faded over its
+# last BED_FADE s. A bed more than BED_TOLERANCE s off the edit was rendered for another cut.
+BED_UNDER, BED_DUCK, BED_ATTACK, BED_RELEASE, BED_FADE = 20.0, 8.0, 0.06, 0.3, 1.5
+BED_TOLERANCE = 0.05
 
 # offset: seconds from the event's `at` (may be negative); dbfs: peak after normalising; pan: added to the event's pan.
 Layer = namedtuple("Layer", "offset signal dbfs pan", defaults=(0.0,))
@@ -104,6 +109,8 @@ RECIPES = {
     "whipOut": lambda dur: [Layer(0.0, synth.whoosh(0.3)[::-1], -31, 0.3)],
     "boom": lambda dur: [Layer(-0.3, synth.whoosh(0.3), -30), Layer(0.0, thud(), -17), Layer(0.0, synth.smooth(synth.impact(), 60), -21)],
     "shimmer": lambda dur: sparkle(),
+    # The learning-vlog riser: a 0.42 s swell that peaks on its `at`, the picture landing it leads into.
+    "riser": lambda dur: [Layer(-0.42, synth.whoosh(0.42), -27)],
     # The brand pre-roll (hf/components/intro.js): a swell that lands with a low thump and a C-major chime as the Z's gold
     # node lands. Mixed on its own track and set to INTRO_LUFS, so these levels only balance the layers.
     "intro": lambda dur: [
@@ -175,6 +182,55 @@ def mix_bus(events, voice):
         span = slice(begin, begin + len(clip))
         bus[span] += clip * fitting_gain(voice[span] + bus[span], clip)
     return bus
+
+
+def bed_settings(spec):
+    """(under, duck) in dB from the cut spec's music, the defaults where it leaves one out (films d176181)."""
+    block = spec.get("bed") or {}
+    return block.get("under", BED_UNDER), block.get("duck", BED_DUCK)
+
+
+def bed_track(bed, voice, settings=None):
+    """The bed scaled under the voice's speech level and ducked while he talks: a one-pole envelope over 10 ms windows."""
+    under, duck = settings or (BED_UNDER, BED_DUCK)
+    mono = voice.mean(axis=1)
+    levels = energy_db(mono, AUDIO_RATE)
+    talking = levels > np.percentile(levels, 95) - 25
+    hop = len(mono) // max(len(levels), 1)
+    mask = np.zeros(len(mono), bool)  # the samples past the last whole window count as not talking
+    mask[: len(talking) * hop] = np.repeat(talking, hop)
+    speech = mono[mask] if mask.any() else mono
+    speech_db = 20 * np.log10(np.sqrt(np.mean(speech**2)) + 1e-12)
+    bed_db = 20 * np.log10(np.sqrt(np.mean(bed**2)) + 1e-12)
+    envelope, current = np.zeros(len(levels)), 0.0
+    for index, speaking in enumerate(talking):
+        target = -duck if speaking else 0.0
+        constant = BED_ATTACK if target < current else BED_RELEASE
+        current = target + (current - target) * np.exp(-ENERGY_WINDOW / constant)
+        envelope[index] = current
+    gain_db = np.interp(np.arange(len(mono)), np.arange(len(levels)) * hop + hop / 2, envelope) + speech_db - under - bed_db
+    fade = np.clip((len(mono) - np.arange(len(mono))) / (BED_FADE * AUDIO_RATE), 0, 1)
+    return bed * (10 ** (gain_db / 20) * fade)[:, None]
+
+
+def bed_for(path, voice, settings=None):
+    """The ducked bed for this edit, or None when it has none. A length off by rounding is padded or trimmed; one off by
+    more than BED_TOLERANCE stops the mix by name."""
+    if not path.exists():
+        return None
+    bed = read_wav(path)
+    if abs(len(bed) - len(voice)) > BED_TOLERANCE * AUDIO_RATE:
+        sys.exit(f"{path.name} is {len(bed)} samples, the edit {len(voice)}; regenerate it at the edit's length (music_bed.py)")
+    bed = np.pad(bed, ((0, max(0, len(voice) - len(bed))), (0, 0)))[: len(voice)]
+    return bed_track(bed, voice, settings)
+
+
+def cut_spec_of(video):
+    """The edit's cut spec in the engine's shape, or {} for an edit without one (a fixture mix)."""
+    try:
+        return load_cuts(video)
+    except FileNotFoundError:
+        return {}
 
 
 def write_wav(path, samples):
@@ -268,6 +324,9 @@ def main(video):
     else:
         intro_track(video).unlink(missing_ok=True)
     events = audible(sounds, [span for item in edl["bleeps"] for span in map_interval(item["at"], item["end"], edl)])
+    bed = bed_for(WORK / "audio" / f"{video}_bed.wav", voice, bed_settings(cut_spec_of(video)))
+    if bed is not None:
+        voice = voice + bed  # the events fit against the voice with its bed under it
     bus = mix_bus(events, voice)
     target, _ = loudness(edit_path)
     for cut_db in range(BUS_CUTS + 1):

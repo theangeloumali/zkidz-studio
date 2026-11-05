@@ -16,6 +16,13 @@ def master_frame(edited_frame, intro):
     return edited_frame + intro["frames"] if intro and edited_frame >= intro["at"] else edited_frame
 
 
+def edited_frame(master_frame, intro):
+    """master_frame's inverse: None inside the spliced pre-roll."""
+    if not intro or master_frame < intro["at"]:
+        return master_frame
+    return None if master_frame < intro["at"] + intro["frames"] else master_frame - intro["frames"]
+
+
 def master_seconds(edited_frame, edl, intro):
     return master_frame(edited_frame, intro) / rate(edl)
 

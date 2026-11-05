@@ -38,11 +38,11 @@ function exit(target, duration, { fadeOnly = false } = {}) {
 }
 
 // A plain fade, for pieces that should not travel (a struck title stepping back to muted).
-const fade = (target, at, { from = 0, to = 1, duration = 0.25, ease = "power2.out" } = {}) => ({
+const fade = (target, at, { from = 0, to = 1, duration = 0.25, ease = "power2.out", later = false } = {}) => ({
   target,
   at,
   from: { opacity: from },
-  to: { opacity: to, duration, ease },
+  to: { opacity: to, duration, ease, ...(later ? { immediateRender: false } : {}) },
 });
 
 // Grows from `from` about its origin on a spring (a balloon, a node, a badge).

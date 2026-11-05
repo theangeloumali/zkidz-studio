@@ -4,7 +4,7 @@ import type { TimeSpan } from "./edl.ts";
 
 export const TRACK_IDS = ["video", "captions", "cues", "audio"] as const;
 export type TrackId = (typeof TRACK_IDS)[number];
-type BlockVariant = "seg" | "cut" | "punch" | "blur" | "cap" | "cue" | "sfx";
+type BlockVariant = "seg" | "cut" | "punch" | "blur" | "frame" | "cap" | "cue" | "sfx" | "music";
 
 /** One block on a lane, in source seconds: cuts stay visible as hatched gaps. */
 export interface TimelineBlock extends TimeSpan {
@@ -51,6 +51,15 @@ export function buildTimelineTracks(cuts: CutSpec | null, cueSheet: readonly Cue
     ...blocksFrom(cuts.removals, "cut", (removal) => removal.reason),
     ...blocksFrom(cuts.zooms ?? [], "punch", () => "1.08×"),
     ...blocksFrom(cuts.blurBoxes ?? [], "blur", () => ""),
+    ...blocksFrom(cuts.reframes ?? [], "frame", () => "Reframe"),
+    ...blocksFrom(cuts.focus ?? [], "frame", () => "Focus"),
   ];
-  return { video, captions, cues, audio: blocksFrom(cuts.bleeps ?? [], "sfx", () => "Bleep") };
+  const audio = [...blocksFrom(cuts.bleeps ?? [], "sfx", () => "Bleep"), ...blocksFrom(musicSpans(cuts), "music", (span) => `Music · ${span.kind}`)];
+  return { video, captions, cues, audio };
+}
+
+/** Each bed section runs until the next one starts, the last to the end of the source. */
+function musicSpans(cuts: CutSpec): (TimeSpan & { readonly kind: string })[] {
+  const sections = cuts.music?.sections ?? [];
+  return sections.map((section, index) => ({ at: section.at, end: sections[index + 1]?.at ?? cuts.durationS, kind: section.kind }));
 }

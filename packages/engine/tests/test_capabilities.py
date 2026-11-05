@@ -13,12 +13,12 @@ from unittest import mock
 
 from support import has_ffmpeg  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import backends, capabilities, cli
+from zks_engine import backends, capabilities, cli, matte
 
 # getCapabilities.output in packages/shared/src/tools/media.ts is a strictObject: exactly these keys.
 SCHEMA_KEYS = {"profile", "features", "transcribe"}
 FEATURE_KEYS = {"uhd", "intro", "zoomExpr", "matte"}
-ALL_READY = {"opencl": True, "hyperframes": True, "torch": True}
+ALL_READY = {"hyperframes": True, "torch": True}
 
 
 def summary(name, libplacebo=False, **ready):
@@ -38,16 +38,19 @@ class SummarizeTests(unittest.TestCase):
         self.assertEqual({name: summary(name, libplacebo=True)["features"]["uhd"] for name in backends.PROBE_ORDER},
                          {name: name == "nvidia" for name in backends.PROBE_ORDER})
 
-    def test_zooms_need_the_nvidia_composite_with_opencl_and_libplacebo(self):
+    def test_zooms_need_nvidia_with_or_without_libplacebo(self):
         self.assertTrue(summary("nvidia", libplacebo=True)["features"]["zoomExpr"])
-        self.assertFalse(summary("nvidia", libplacebo=False)["features"]["zoomExpr"])
-        self.assertFalse(summary("nvidia", libplacebo=True, opencl=False)["features"]["zoomExpr"])
+        self.assertTrue(summary("nvidia", libplacebo=False)["features"]["zoomExpr"])
         self.assertFalse(summary("cpu", libplacebo=True)["features"]["zoomExpr"])
 
-    def test_the_matte_also_needs_torch(self):
-        self.assertTrue(summary("nvidia", libplacebo=True)["features"]["matte"])
-        self.assertFalse(summary("nvidia", libplacebo=True, torch=False)["features"]["matte"])
-        self.assertFalse(summary("nvidia", libplacebo=False)["features"]["matte"])
+    def test_the_matte_also_needs_torch_on_cuda(self):
+        self.assertTrue(summary("nvidia")["features"]["matte"])
+        self.assertFalse(summary("nvidia", torch=False)["features"]["matte"])
+        self.assertFalse(summary("vaapi")["features"]["matte"])
+
+    def test_torch_counts_only_when_it_imports_with_cuda(self):
+        with mock.patch.dict(sys.modules, {"torch": None}):
+            self.assertFalse(matte.torch_cuda())
 
     def test_the_intro_renders_on_any_backend_once_hyperframes_is_ready(self):
         self.assertTrue(summary("cpu")["features"]["intro"])

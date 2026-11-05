@@ -84,6 +84,15 @@ export function registerMediaRoutes(app: Hono, deps: MediaRouteDeps): void {
     return c.json(created, 201);
   });
 
+  app.post(API_ROUTES.addMediaInPlace.path, async (c) => {
+    assertLoopbackPeer(c);
+    const project = await findProjectOrThrow(deps.database, c.req.param("projectId"));
+    const { path } = parseOrBadRequest(API_ROUTES.addMediaInPlace.body, await readJsonBody(c));
+    const file = await inspectInPlaceFile(deps, path);
+    const asset = await autoIngest.track(project.id, () => insertInPlaceAsset(deps.database, project.id, file));
+    return c.json(asset, 201);
+  });
+
   /** The file's checks and probe run before the project exists, so a rejected file creates nothing. */
   app.post(API_ROUTES.createProjectInPlace.path, async (c) => {
     assertLoopbackPeer(c);

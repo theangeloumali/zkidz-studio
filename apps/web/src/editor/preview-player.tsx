@@ -24,9 +24,9 @@ interface PreviewPlayerProps {
   readonly spans: readonly TimeSpan[];
   readonly composition: PreviewComposition | null;
   readonly clock: PlaybackClock;
-  /** The video's 1080 H.264 proxy; the original may be HEVC, which Chrome cannot decode (plan §8.4). */
+  /** The video's 1080 H.264 proxy, or before it exists an H.264 8-bit SDR raw; HEVC raws wait, Chrome cannot decode them (plan §8.4). */
   readonly footageUrl: string | undefined;
-  /** The clip is in the project but its proxy is not ready yet. */
+  /** The clip is in the project but nothing it can play is ready yet. */
   readonly preparing?: boolean;
 }
 
@@ -201,7 +201,7 @@ export function PreviewPlayer({ cuts, spans, composition, clock, footageUrl, pre
         {!hasMedia && (
           <div className="player-empty">
             {preparing ? <Skeleton className="absolute inset-0 rounded-none motion-reduce:animate-none" aria-hidden="true" /> : null}
-            <p className="relative">{preparing ? "Preparing your video…" : "Add a clip to see it here."}</p>
+            <p className="relative">{preparing ? "Preparing the full-quality copy…" : "Add a clip to see it here."}</p>
           </div>
         )}
       </div>

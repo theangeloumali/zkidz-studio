@@ -49,6 +49,8 @@ export const MediaAssetSchema = z.strictObject({
   height: z.int().positive().nullable(),
   fps: FrameRateSchema.nullable(),
   isHdr: z.boolean(),
+  /** H.264, 8-bit and SDR: the editor can play the raw before ingest has made the proxy. */
+  isBrowserPlayable: z.boolean(),
   createdAt: IsoTimestampSchema,
 });
 

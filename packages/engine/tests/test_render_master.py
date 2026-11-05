@@ -105,17 +105,24 @@ class MasterPlanTests(unittest.TestCase):
 
 
 class PreflightTests(unittest.TestCase):
-    def preflight(self, edl, on_gpu):
-        route = render_final.Route(Backend("nvidia"), on_gpu, "", (2160, 3840))
+    def preflight(self, edl, on_gpu, backend="nvidia"):
+        route = render_final.Route(Backend(backend), on_gpu, "", (2160, 3840))
         with mock.patch.object(render_final, "load_edl", return_value=edl), mock.patch.object(render_final, "load_cuts", return_value={}), \
                 mock.patch.object(render_final, "source_path", return_value=Path("s.mkv")), \
                 mock.patch.object(render_final, "route_for", return_value=route) as route_for:
             render_final.preflight("v1")
         return route_for
 
-    def test_zooms_off_the_gpu_composite_are_refused_up_front(self):
-        with self.assertRaisesRegex(SystemExit, "animated zooms"):
-            self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=False)
+    def test_zooms_off_nvidia_are_refused_up_front(self):
+        with self.assertRaisesRegex(SystemExit, "only on NVIDIA"):
+            self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=False, backend="vaapi")
+
+    def test_zooms_on_nvidia_without_opencl_take_the_cpu_filters(self):
+        self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=False)
+
+    def test_a_bystander_blur_without_its_mask_is_refused_up_front(self):
+        with mock.patch.object(render_final, "WORK", Path(tempfile.mkdtemp())), self.assertRaisesRegex(SystemExit, "faces.mkv is missing"):
+            self.preflight({"faces": "mask/v1.faces.mkv"}, on_gpu=True)
 
     def test_zooms_on_the_gpu_composite_pass(self):
         self.preflight({"zooms": [{"start": 0, "end": 30, "preset": "snap"}]}, on_gpu=True)

@@ -14,9 +14,9 @@ import numpy as np
 
 from support import has_ffmpeg, make_edl  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import ffio, qc
+from zks_engine import ffio, progress_store, qc
 from zks_engine.pipeline import frame_to_sample
-from zks_engine.qc import contrast, mouth
+from zks_engine.qc import contrast, mouth, timeline
 from zks_engine.specs.gates import GateFailed
 
 FPS = "30000/1001"
@@ -124,7 +124,7 @@ class QcMasterTests(unittest.TestCase):
         return qc.qc_master("v1", self.masters[master], self.source, words, fake_transcriber(heard))
 
     def failed(self, report):
-        return {check["name"] for check in report["checks"] if not check["ok"]}
+        return {check["name"] for check in report["checks"] if not check["ok"] and not check["detail"].startswith(qc.NOT_RUN)}
 
     def test_the_clean_master_passes_every_gate(self):
         report = self.run_qc()
@@ -132,6 +132,24 @@ class QcMasterTests(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual({check["name"] for check in report["checks"]},
                          {"format", "frames", "loudness", "motion", "cutWords", "captionContrast", "hookMouth", "lipSync", "renderSource", "master"})
+
+    def test_the_run_leaves_a_finished_qc_record_counting_every_gate_and_cut(self):
+        # A 5:30 edit's QC re-heard 52 cuts for over an hour with nothing to show how far it was.
+        with mock.patch("zks_engine.progress_store.WORK", self.work):
+            report = self.run_qc()
+            record = progress_store.read_record(progress_store.record_path("v1"))
+        cuts = len(timeline.cut_frames(json.loads((self.work / "edl" / "v1.json").read_text(encoding="utf-8"))))
+        self.assertEqual((record["stage"], record["state"], record["unit"]), ("qc", "done", "checks"))
+        self.assertEqual(record["done"], len(report["checks"]) - 1 + cuts)
+
+    def test_a_check_with_hundreds_of_problems_names_the_first_and_counts_the_rest(self):
+        # 964 caption problems made a report Claude Code could not show, so the agent could not see why QC failed.
+        many = [f"caption {index} is faint" for index in range(100)]
+        with mock.patch("zks_engine.qc.master_gates.caption_problems", return_value=many):
+            check = next(check for check in self.run_qc()["checks"] if check["name"] == "captionContrast")
+        self.assertFalse(check["ok"])
+        self.assertTrue(check["detail"].startswith("caption 0 is faint; caption 1 is faint"))
+        self.assertTrue(check["detail"].endswith(f"; and {100 - qc.MAX_DETAIL_PROBLEMS} more"), check["detail"][-80:])
 
     def test_a_word_clipped_at_a_cut_fails(self):
         clipped = [*WORDS[:2], {"at": 1.9, "end": 3.1, "text": " clipped"}]
@@ -144,11 +162,33 @@ class QcMasterTests(unittest.TestCase):
     def test_a_white_caption_on_a_white_wall_fails(self):
         self.assertEqual(self.failed(self.run_qc("wall")), {"captionContrast"})
 
+    def test_a_learning_edit_reports_low_caption_contrast_without_blocking_export(self):
+        # The approved v2 caption is plain white with a shadow and no plate (v2 rule 2), so the house fix cannot apply.
+        with mock.patch("zks_engine.qc.learning.is_learning", return_value=True), mock.patch("zks_engine.qc.learning.gates", return_value={}):
+            self.deliver("wall")
+            report = json.loads((self.work / "qc" / "v1.json").read_text(encoding="utf-8"))
+            self.assertEqual(self.failed(report), {"captionContrast"})
+            self.assertTrue(report["ok"])
+            qc.assert_exportable("v1")
+
     def test_a_cue_over_the_mouth_at_one_second_fails(self):
         make_overlay(self.work / "frames" / "v1", 75, cover_mouth_from=30)
         report = self.run_qc()
         self.assertEqual(self.failed(report), {"hookMouth"})
         self.assertIn("1.00 s", next(check["detail"] for check in report["checks"] if check["name"] == "hookMouth"))
+
+    def test_a_failed_gate_skips_the_word_check_and_says_why(self):
+        # cutWords re-hears every cut with whisper (2 h on CPU for a 7-min edit); a master another gate already failed
+        # is rendered again anyway, so its hearing would be thrown away (Phase 6).
+        report = self.run_qc("slip")
+        words = next(check for check in report["checks"] if check["name"] == "cutWords")
+        self.assertEqual((words["ok"], words["detail"].startswith(qc.NOT_RUN)), (False, True))
+        self.assertIn("lipSync", words["detail"])
+        self.assertFalse(report["ok"])
+
+    def test_the_word_check_runs_last_of_the_gates(self):
+        names = [check["name"] for check in self.run_qc()["checks"]]
+        self.assertEqual(names[-2:], ["cutWords", "master"])
 
     def test_a_one_frame_audio_slip_fails(self):
         self.assertEqual(self.failed(self.run_qc("slip")), {"lipSync"})

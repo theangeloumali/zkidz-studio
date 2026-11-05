@@ -255,4 +255,4 @@ const brandSplit = {
   },
 };
 
-module.exports = { INTRO, LAYOUTS, introFrames, brandIntro, brandSplit };
+module.exports = { INTRO, LAYOUTS, introFrames, brandIntro, brandSplit, nodePop, vectorZ };

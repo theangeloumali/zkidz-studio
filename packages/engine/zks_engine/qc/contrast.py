@@ -7,6 +7,13 @@ DEFAULT_BOTTOM = 1430  # the caption component's default bottom on the 1080x1920
 PLATE_WIDTH, PLATE_HEIGHT = 893, 150  # 813 px of text plus padding, two lines at most
 CANVAS_WIDTH = 1080
 CAPTION_TEXT = (255, 255, 255)
+LEARNING_INK = (0x17, 0x22, 0x30)  # hf/learning/tokens.js ink: a word caption on paper is drawn in it
+
+
+def caption_text_rgb(cue, edited_s, covers):
+    """The colour the caption is drawn in at that moment: a learning word caption turns to ink while a cover is up."""
+    on_paper = cue.get("style") == "words" and any(at <= edited_s < end for at, end in covers)
+    return LEARNING_INK if on_paper else CAPTION_TEXT
 
 
 def relative_luminance(rgb):

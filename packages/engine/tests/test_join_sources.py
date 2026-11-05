@@ -2,6 +2,7 @@
 # join_sources pieces: hwdownload cannot convert NVDEC surfaces, so each clip downloads in its own bit depth; every other
 # backend (and a quarter-turned clip without transpose_cuda) decodes to system frames that autorotate turns.
 import dataclasses
+import json
 import subprocess
 import tempfile
 import unittest
@@ -100,7 +101,7 @@ class LetterboxTests(unittest.TestCase):
     def test_a_wide_frame_fits_the_width_on_every_backend(self):
         wide = clip(frame=(1920, 1080))
         self.assertEqual(join_sources.fitted(wide), (2160, 1216))
-        self.assertIn(f"libplacebo=w=2160:h=1216:", piece_filter(wide))
+        self.assertIn("libplacebo=w=2160:h=1216:", piece_filter(wide))
         self.assertTrue(piece_filter(wide).endswith(f",{self.PAD},{TAIL}"))
         cpu = piece_filter(wide, CPU)
         self.assertIn(f"{join_sources.CPU_SCALE_TO.format(2160, 1216)},{self.PAD},", cpu)
@@ -287,6 +288,25 @@ class FrameExactTests(unittest.TestCase):
         decode = subprocess.run([ffio.ffmpeg_bin(), "-v", "error", "-noautorotate", "-i", str(path), "-vf", graph, "-frames:v", "1", "-f", "framecrc", "-"],
                                 capture_output=True, text=True, check=True)
         return next(line for line in decode.stdout.splitlines() if line and not line.startswith("#")).split(",")[-1]
+
+
+class PictureBandTests(unittest.TestCase):
+    """Where each clip's picture sits on the canvas, by source frame range: render_final reframes inside it."""
+
+    def test_a_square_clip_is_a_centred_band_and_a_portrait_clip_fills_the_canvas(self):
+        square, portrait = clip(frame=(2160, 2160))._replace(frames=600), clip()._replace(frames=300)
+        bands = join_sources.picture_bands([square, portrait])
+        # Each band names its clip: the map gate reads GPS from the raw clip, which the joined source no longer carries.
+        self.assertEqual(bands, [{"at": 0, "end": 600 * 1001 / 30000, "band": [0, 840, 2160, 2160], "clip": str(square.path)},
+                                 {"at": 600 * 1001 / 30000, "end": 900 * 1001 / 30000, "band": [0, 0, 2160, 3840], "clip": str(portrait.path)}])
+
+    def test_the_bands_are_written_beside_the_joined_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "v1.mkv"
+            landscape = clip(frame=(3840, 2160))
+            join_sources.write_bands(target, [landscape])
+            written = json.loads(target.with_suffix(".bands.json").read_text(encoding="utf-8"))
+        self.assertEqual(written, [{"at": 0, "end": 30 * 1001 / 30000, "band": [0, 1312, 2160, 1216], "clip": str(landscape.path)}])
 
 
 if __name__ == "__main__":

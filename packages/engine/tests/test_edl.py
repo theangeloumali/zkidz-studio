@@ -45,6 +45,39 @@ class EdlTests(unittest.TestCase):
         self.assertEqual(snapped[1]["in"], round(5.08 * pipeline.FPS))
         self.assertEqual(pinned[1]["in"], round(5.1 * pipeline.FPS))
 
+    def test_a_snapped_edge_never_lands_inside_a_word(self):
+        # The quietest dip sits inside 'oo' (5.00-5.20): the snap used to cut it in half, and QC failed it as clipped.
+        energy = np.full(2000, -20.0)
+        energy[508] = -80.0
+        segments, _ = edl.build(self.spec([[3.0, 5.1, "snaps"]]), energy, words=[(5.0, 5.2)])
+        self.assertEqual(segments[1]["in"], round((5.0 - edl.WORD_PAD) * pipeline.FPS))  # nearer edge from 5.08, a pad before it
+
+    def test_a_pinned_edge_inside_a_word_moves_off_it_too(self):
+        # 'pagaraw' 1095.76-1096.2 against a removal pinned at 1096.0: the pin keeps its place, never half a word.
+        segments, _ = edl.build(self.spec([[5.9, 9.0, "held", "pin"]]), np.full(2000, -20.0), words=[(5.76, 6.2)])
+        self.assertEqual(segments[0]["out"], round((5.76 - edl.WORD_PAD) * pipeline.FPS))
+
+    def test_an_edge_on_a_words_first_frame_moves_a_pad_before_it(self):
+        # 'kasi' at 1342.10 against a cut at 1342.11: within the clip tolerance, yet whisper's late start lost its onset.
+        segments, _ = edl.build(self.spec([[3.0, 6.01, "held", "pin"]]), np.full(2000, -20.0), words=[(6.0, 6.24)])
+        self.assertEqual(segments[1]["in"], round((6.0 - edl.WORD_PAD) * pipeline.FPS))
+
+    def test_a_pad_never_joins_words_so_an_edge_moves_at_most_to_the_gap(self):
+        # Joined pads turned a sentence into one span: an edge inside it jumped to the sentence's end, 28 s on OnePuhunan.
+        words = [(4.0 + 0.3 * index, 4.25 + 0.3 * index) for index in range(10)]  # 0.05 s gaps, 4.0-7.95
+        segments, _ = edl.build(self.spec([[3.0, 5.27, "held", "pin"]]), np.full(2000, -20.0), words=words)
+        self.assertAlmostEqual(segments[1]["in"] / pipeline.FPS, 5.175, delta=1 / pipeline.FPS)  # 5.27 is in 5.20-5.45: mid-gap 5.15-5.20
+
+    def test_a_pause_trim_keeps_a_soft_word_inside_the_quiet(self):
+        # 'ah' at 6.0-6.3 is quieter than the threshold: the trim now takes the word-free stretches either side only.
+        energy = np.full(2000, -20.0)
+        energy[400:900] = -80.0  # quiet 4.0-9.0
+        spec = self.spec([], trim_pauses={"threshold_db": -60, "min": 1.0, "keep": 0.2, "exclude": []})
+        segments, _ = edl.build(spec, energy, words=[(6.0, 6.3)])
+        kept = [(segment["in"] / pipeline.FPS, segment["out"] / pipeline.FPS) for segment in segments]
+        self.assertTrue(any(start <= 6.0 and 6.3 <= end for start, end in kept), kept)
+        self.assertGreater(len(segments), 2)  # both word-free stretches were still trimmed
+
     def test_slivers_dropped(self):
         segments, _ = edl.build(self.spec([[3.0, 4.0, "a"], [4.1, 6.0, "b"]]), np.full(2000, -20.0))
         for segment in segments:
@@ -130,6 +163,24 @@ class ZoomTests(unittest.TestCase):
 
     def test_no_zooms_writes_an_empty_list(self):
         self.assertEqual(self.written(self.spec([]))["zooms"], [])
+
+    def test_lean_is_a_known_preset(self):
+        self.assertEqual(self.written(self.spec([[5.0, 6.0, "lean"]]))["zooms"][0]["preset"], "lean")
+
+    def test_focus_windows_map_to_edited_frames_with_their_blur(self):
+        payload = self.written({**self.spec([]), "focus": [[5.0, 6.0, 12]]})
+        self.assertEqual(payload["focus"], [{"start": round(5.0 * pipeline.FPS), "end": round(6.0 * pipeline.FPS), "blur": 12}])
+
+    def test_the_grade_is_carried_and_defaults_to_house(self):
+        self.assertEqual(self.written(self.spec([]))["grade"], "house")
+        self.assertEqual(self.written({**self.spec([]), "grade": "learning"})["grade"], "learning")
+
+    def test_reframes_map_to_edited_frames_with_their_window(self):
+        payload = self.written({**self.spec([], remove=[(3.0, 4.0, "a", "pin")]), "reframes": [[2.0, 5.0, 0.3, 0.5, 1.2]]})
+        reframe = payload["reframes"][0]
+        self.assertEqual((reframe["cx"], reframe["cy"], reframe["scale"]), (0.3, 0.5, 1.2))
+        self.assertEqual(reframe["start"], round(2.0 * pipeline.FPS))
+        self.assertAlmostEqual(reframe["end"], round(5.0 * pipeline.FPS) - round(1.0 * pipeline.FPS), delta=1)
 
 
 class PortalTests(unittest.TestCase):

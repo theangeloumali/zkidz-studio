@@ -22,10 +22,10 @@ describe("tools.lock.json", () => {
     for (const model of Object.values(lock.models)) expect(model.url).toMatch(/\/resolve\/[0-9a-f]{40}\//);
   });
 
-  // Plan §7.4: CPU transcription and QC run on turbo-q5_0, so setup fetches it beside tiny and base.
-  it("fetches tiny, base and the CPU turbo model on setup", () => {
+  // Plan §7.4: CPU transcription and QC run on turbo-q5_0, so setup fetches it beside tiny and base; the learning face gates need YuNet, and the bystander blur tells faces apart with SFace (#44).
+  it("fetches tiny, base, the CPU turbo model, YuNet and SFace on setup", () => {
     const setupModels = Object.entries(lock.models).filter(([, model]) => model.fetchOnSetup);
-    expect(setupModels.map(([name]) => name).sort()).toEqual(["base", "large-v3-turbo-q5_0", "tiny"]);
+    expect(setupModels.map(([name]) => name).sort()).toEqual(["base", "large-v3-turbo-q5_0", "sface", "tiny", "yunet"]);
   });
 
   it("rejects a malformed hash", () => {

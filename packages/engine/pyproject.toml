@@ -9,8 +9,14 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
     "jsonschema==4.25.1",
     "numpy>=2.1,<3",
+    "opencv-python-headless>=4.10,<5",
+    "pillow>=11,<13",
     "psutil>=7,<8",
 ]
+
+[project.optional-dependencies]
+# His matte for depth "behind" cues and rack focus; CUDA 12.8 wheels cover the RTX 50 series (sm_120).
+matte = ["torch>=2.7,<3", "torchvision>=0.22,<1"]
 
 [project.scripts]
 zks-engine = "zks_engine.cli:main"
@@ -21,3 +27,12 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

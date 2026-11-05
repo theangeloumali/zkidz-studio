@@ -8,6 +8,7 @@ import { findCue, readCueSheet, withCueSheetLock, writeCueSheet } from "../cue-s
 import { implementTool } from "../define-tool.ts";
 import { projectThemeId } from "../../projects/project-style.ts";
 import { loadProject } from "../project-files.ts";
+import { assertBeatMapWritten } from "./learning-tools.ts";
 import { ToolError } from "../result.ts";
 
 // Speech or the cut spec times these, so they never count as a card overlapping another.
@@ -37,6 +38,7 @@ const addCue = implementTool("add_cue", {
     withCueSheetLock(context.projectId, async () => {
       const project = await loadProject(context);
       const { videoId } = project;
+      if (projectThemeId(project) === "learning") await assertBeatMapWritten(context);
       const cueId = input.cue.id ?? `cue-${randomUUID().slice(0, CUE_ID_HEX_CHARS)}`;
       if ((await findCue(context, videoId, cueId)) !== undefined) throw new ToolError(`Cue ${cueId} already exists; use update_cue`);
       const cue = await validateCueWithEngine(context, { theme: projectThemeId(project), cue: { ...input.cue, id: cueId } });

@@ -100,3 +100,20 @@ class PidProbeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LearningCoverTests(unittest.TestCase):
+    def test_the_hook_mouth_check_skips_frames_a_full_frame_cover_hides(self):
+        from support import make_edl
+        from zks_engine.qc import mouth
+
+        edl = make_edl([(0, 90)])
+        frames = mouth.hook_frames(edl, None, [], covers=[(0.0, 1.0)])
+        self.assertEqual(frames[0], 30)
+
+    def test_a_word_caption_on_paper_is_measured_as_the_ink_it_is_drawn_in(self):
+        from zks_engine.qc import contrast
+
+        self.assertEqual(contrast.caption_text_rgb({"style": "words"}, 1.0, [(0.5, 2.0)]), contrast.LEARNING_INK)
+        self.assertEqual(contrast.caption_text_rgb({"style": "words"}, 3.0, [(0.5, 2.0)]), contrast.CAPTION_TEXT)
+        self.assertEqual(contrast.caption_text_rgb({}, 1.0, [(0.5, 2.0)]), contrast.CAPTION_TEXT)  # a house plate stays white

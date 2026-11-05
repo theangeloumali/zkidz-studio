@@ -1,12 +1,12 @@
 // Created by The Angelo Umali.
 // render_master, qc_master, check_motion, make_covers and export_deliverable (plan §6.8, §7.6), each run as a job on its lane.
-// render_master answers with the jobId; the others wait for their job and return its report.
+// render_master and qc_master answer with the jobId; the others wait for their job and return its report.
 import { constants } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { jobs } from "@zks/db/schema";
-import { CutSpecSchema, IdSchema, MasterRenderResultSchema, Sha256Schema, SpecsSnapshotRefSchema, STUDIO_TOOLS } from "@zks/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { CutSpecSchema, IdSchema, MasterRenderResultSchema, QcMasterReportSchema, Sha256Schema, SpecsSnapshotRefSchema, STUDIO_TOOLS } from "@zks/shared";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { JobRow } from "../dto.ts";
 import { EXPORT_JOB_KIND } from "../jobs/deliverables.ts";
@@ -62,7 +62,7 @@ const EngineMasterReportSchema = MasterRenderResultSchema.pick({ frames: true, l
   master: EngineMasterDigestSchema,
 });
 // The engine's report also carries the inputs it judged, which qc-status hands to export.
-const EngineQcReportSchema = z.object({ ok: z.boolean(), checks: STUDIO_TOOLS.qc_master.output.shape.checks, master: EngineMasterDigestSchema });
+const EngineQcReportSchema = z.object({ ok: z.boolean(), checks: QcMasterReportSchema.shape.checks, master: EngineMasterDigestSchema });
 const EngineCoversReportSchema = z.object({ covers: z.array(z.object({ path: z.string().min(1) })), postCaption: z.string().min(1).optional() });
 const IngestResultSchema = z.object({ joins: z.array(ClipJoinSchema) });
 
@@ -89,8 +89,8 @@ const renderMaster = implementTool("render_master", {
 
 const qcMaster = implementTool("qc_master", {
   description:
-    "QC the latest master: format, frames vs the EDL, loudness, frozen footage, words clipped or repeated at each cut (re-transcribed), caption contrast, nothing over the mouth in the first 2.5 s, and lip sync at each cut. Export stays blocked until every check passes.",
-  handler: async (input, context, signal) => {
+    "QC the latest master: format, frames vs the EDL, loudness, frozen footage, words clipped or repeated at each cut (re-transcribed), caption contrast, nothing over the mouth in the first 2.5 s, and lip sync at each cut. Returns a jobId; follow it with job_wait, whose result is the report. QC of the same master already running returns that job. Export stays blocked until every check passes.",
+  handler: async (input, context) => {
     const project = await loadProject(context);
     const projectRoot = projectRootOf(context, project);
     const video = { projectId: context.projectId, videoId: project.videoId };
@@ -109,8 +109,14 @@ const qcMaster = implementTool("qc_master", {
       wordsRelPath,
       transcript: await readLatestTranscriptSettings(context, render.source.assetId),
     };
-    const result = await runJobForResult(context, { kind: "qc_master", lane: "whisper", params }, signal);
-    return { output: STUDIO_TOOLS.qc_master.output.parse(result) };
+    const [open] = await context.db
+      .select({ id: jobs.id, params: jobs.params })
+      .from(jobs)
+      .where(and(eq(jobs.projectId, context.projectId), eq(jobs.kind, "qc_master"), inArray(jobs.status, ["queued", "running"])))
+      .then((rows) => rows.filter((job) => job.params.target === input.target && job.params.masterSha256 === render.sha256));
+    if (open !== undefined) return { output: { jobId: open.id } };
+    const job = await context.jobs.enqueue({ projectId: context.projectId, videoId: project.videoId, kind: "qc_master", lane: "whisper", params });
+    return { output: { jobId: job.id } };
   },
 });
 
@@ -244,7 +250,9 @@ async function runJobForResult(context: ToolContext, reportJob: ReportJob, signa
 // "checks" and "covers" match the Render screen's stage ids; those engine commands write no progress record.
 export function registerRenderJobHandlers(jobRunner: JobRunner, deps: EngineJobDeps): void {
   jobRunner.registerHandler("render_master", (job, reportProgress, signal) => runRenderMaster(deps, job, reportProgress, signal));
-  jobRunner.registerHandler("qc_master", (job, reportProgress, signal) => reportStage(reportProgress, "checks", () => runQcMaster(deps, job, signal)));
+  jobRunner.registerHandler("qc_master", (job, reportProgress, signal) =>
+    reportStage(reportProgress, "checks", () => runQcMaster(deps, job, reportProgress, signal)),
+  );
   jobRunner.registerHandler("check_motion", (job, reportProgress, signal) => reportStage(reportProgress, "checks", () => runCheckMotion(deps, job, signal)));
   jobRunner.registerHandler("make_covers", (job, reportProgress, signal) => reportStage(reportProgress, "covers", () => runMakeCovers(deps, job, signal)));
 }
@@ -284,18 +292,20 @@ async function runRenderMaster(deps: EngineJobDeps, job: JobRow, reportProgress:
   await writeJobResult(projectRoot, job.id, result);
 }
 
-async function runQcMaster(deps: EngineJobDeps, job: JobRow, signal: AbortSignal): Promise<void> {
+async function runQcMaster(deps: EngineJobDeps, job: JobRow, reportProgress: ReportProgress, signal: AbortSignal): Promise<void> {
   const params = QcParamsSchema.parse(job.params);
   await assertNoRenderInFlight(deps.db, job, "run qc_master");
   const projectRoot = await projectRootOfJob(deps, job);
   const workDir = await prepareWorkDir(projectRoot, "qc");
   const source = await assetInput(deps, job, params.sourceAssetId);
   const master = params.masterRelPath.slice("work/".length);
-  const args = ["--video", targetVideoId(job.videoId, params.target), "--master", master, "--source", source.path];
+  const videoId = targetVideoId(job.videoId, params.target);
+  const args = ["--video", videoId, "--master", master, "--source", source.path];
   args.push("--specs", params.specsSnapshot, "--words", join(projectRoot, params.wordsRelPath), "--render-inputs", JSON.stringify(params.renderInputs));
   // Re-heard in the transcript's language and model: auto-detect on 3 s of Taglish turns kept words into "missing" ones.
   if (params.transcript !== undefined) args.push("--language", params.transcript.language, "--model", params.transcript.model);
-  const report = EngineQcReportSchema.parse(await deps.engine.run({ command: "qc-master", args, workDir, inPlacePaths: source.inPlacePaths, signal }));
+  const run = () => deps.engine.run({ command: "qc-master", args, workDir, inPlacePaths: source.inPlacePaths, signal });
+  const report = EngineQcReportSchema.parse(await followEngineProgress({ studioHome: deps.studioHome, workDir, videoId }, reportProgress, run));
   if (report.master.relPath !== master) throw new Error(`qc-master judged ${report.master.relPath}, not ${master}`);
   assertRenderedBytes(params.masterRelPath, { sha256: params.masterSha256 }, report.master.sha256);
   await writeJobResult(projectRoot, job.id, { ok: report.ok, checks: report.checks });

@@ -11,7 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import backends, ffio
+from . import backends, ffio, render_final
 from .pipeline import HF_DIR
 from .transcribe import whispercpp
 
@@ -82,11 +82,18 @@ def check_models():
         return False, str(missing)
 
 
+def motion_filters(backend):
+    """Where an NVIDIA render's zooms, reframes, focus and matte run: render_final's fast path needs OpenCL + libplacebo."""
+    if backend.name != "nvidia":
+        return ""
+    return ", motion on fast GPU filters" if backend.libplacebo and render_final.has_opencl() else ", motion on CPU filters (no OpenCL or libplacebo)"
+
+
 def check_gpu():
     """The probed render backend; every profile renders, so the check passes and only names the path."""
     backend = backends.active()
     proof = "" if backend.hardware_tested else ", untested on hardware"
-    return True, f"{backend.name} ({backend.probe_encoder}), {backends.render_jobs(backend)} render jobs{proof}"
+    return True, f"{backend.name} ({backend.probe_encoder}), {backends.render_jobs(backend)} render jobs{motion_filters(backend)}{proof}"
 
 
 def main(render_only):

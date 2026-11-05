@@ -19,6 +19,11 @@ export function toProjectDto(row: ProjectRow): Project {
   };
 }
 
+/** Chrome decodes 8-bit 4:2:0 H.264 everywhere; a probe without a pixel format predates the check and waits for the proxy. */
+const BROWSER_PIXEL_FORMATS: ReadonlySet<unknown> = new Set(["yuv420p", "yuvj420p"]);
+
+const isBrowserPlayable = (row: MediaAssetRow) => !row.isHdr && row.probe?.["videoCodec"] === "h264" && BROWSER_PIXEL_FORMATS.has(row.probe["pixelFormat"]);
+
 export function toMediaAssetDto(row: MediaAssetRow): MediaAsset {
   return {
     id: row.id,
@@ -32,6 +37,7 @@ export function toMediaAssetDto(row: MediaAssetRow): MediaAsset {
     height: row.height,
     fps: row.fpsNum !== null && row.fpsDen !== null ? { num: row.fpsNum, den: row.fpsDen } : null,
     isHdr: row.isHdr,
+    isBrowserPlayable: isBrowserPlayable(row),
     createdAt: row.createdAt.toISOString(),
   };
 }

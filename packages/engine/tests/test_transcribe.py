@@ -10,7 +10,7 @@ from unittest import mock
 
 from support import ENGINE  # first: it sets a scratch ZKS_HOME
 
-from zks_engine import transcribe
+from zks_engine import pipeline, transcribe
 
 JFK_WAV = ENGINE / "tests" / "fixture" / "whisper" / "jfk-3s.wav"
 
@@ -60,6 +60,37 @@ class TranscribeMainTests(unittest.TestCase):
     def test_chunk_wavs_are_cleaned_up(self):
         self.run_main(2, [0.0, 1.25, 3.0])
         self.assertEqual(sorted(path.name for path in (self.work / "transcripts").iterdir()), ["v1_words.json"])
+
+    def test_no_chunk_count_takes_one_chunk_per_90_seconds_of_audio(self):
+        self.calls = []
+        energy = [0.0] * round(1800 / transcribe.ENERGY_WINDOW)  # a half-hour talk
+        with (
+            mock.patch.object(transcribe.whispercpp, "transcribe_file", side_effect=self.fake_whisper),
+            mock.patch.object(transcribe.whispercpp, "model_path", return_value=Path("m.bin")),
+            mock.patch.object(transcribe, "load_energy", return_value=energy),
+            mock.patch.object(transcribe, "split_points", return_value=[0.0, 1.25, 3.0]) as split,
+        ):
+            transcribe.main("audio/v1.wav", "transcripts/v1_words.json", language="tl", model="tiny")
+        self.assertEqual(split.call_args.args[1], 20)
+
+
+class ChunkCountTests(unittest.TestCase):
+    def test_no_chunk_is_longer_than_90_seconds(self):
+        self.assertEqual([transcribe.chunk_count(seconds) for seconds in (0, 30, 90, 91, 468, 1800)], [1, 1, 1, 2, 6, 20])
+
+
+class WorkerCountTests(unittest.TestCase):
+    def test_a_24_core_box_runs_four_whisper_processes(self):
+        self.assertEqual(pipeline.default_jobs(24), 4)
+
+    def test_a_small_or_unknown_box_still_runs_two(self):
+        self.assertEqual([pipeline.default_jobs(cores) for cores in (4, 8, None)], [2, 2, 2])
+
+    def test_zks_jobs_overrides_the_default(self):
+        with mock.patch.dict("os.environ", {"ZKS_JOBS": "3"}):
+            self.assertEqual(pipeline.max_jobs(), 3)
+        with mock.patch.dict("os.environ", {"ZKS_JOBS": ""}), mock.patch("os.cpu_count", return_value=24):
+            self.assertEqual(pipeline.max_jobs(), 4)
 
 
 if __name__ == "__main__":

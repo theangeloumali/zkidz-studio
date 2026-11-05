@@ -1,20 +1,22 @@
 // Created by The Angelo Umali.
 // The `studio` MCP server's catalog; both the SDK server and the stdio twin register from this one object.
 import type { StudioToolContract } from "./define.ts";
-import { addCue, listCueKinds, makeCaptionPhrases, proposeCuts, removeCue, setCaptions, setCuts, setReel, updateCue, validateSpec } from "./edit.ts";
+import { addCue, listCueKinds, makeCaptionPhrases, proposeCuts, readSpec, removeCue, setCaptions, setCuts, setReel, updateCue, validateSpec } from "./edit.ts";
 import { approve, jobCancel, jobResume, jobStatus, jobWait } from "./jobs.ts";
 import { readSkill, suggestLessons } from "./knowledge.ts";
+import { frameFaces, setBeatMap } from "./learning.ts";
 import { checkWindow, energyProfile, getCapabilities, ingest, probeMedia, projectInfo, readTranscript, transcribe } from "./media.ts";
 import { checkMotion, deleteAsset, exportDeliverable, makeCovers, qcMaster, renderMaster, renderPreview } from "./render.ts";
 import { sampleReference, setProjectStyle } from "./style.ts";
 
 export * from "./define.ts";
 export { readSkill, suggestLessons } from "./knowledge.ts";
+export { BEAT_GROUNDS, FaceSampleSchema, MAX_FACE_SAMPLES_PER_SECOND } from "./learning.ts";
 export { MAX_REFERENCE_FRAMES, sampleReference, setProjectStyle } from "./style.ts";
 export { CUE_SHEETS, CUE_TIERS } from "./edit.ts";
 export { JobSnapshotSchema, MAX_JOB_WAIT_S } from "./jobs.ts";
 export { IngestResultSchema, RENDER_PROFILES, TranscribeResultSchema, WHISPER_MODELS } from "./media.ts";
-export { MasterRenderResultSchema, RENDER_QUALITIES, RENDER_TARGETS, Sha256Schema, SpecsSnapshotRefSchema } from "./render.ts";
+export { MasterRenderResultSchema, QcMasterReportSchema, RENDER_QUALITIES, RENDER_TARGETS, Sha256Schema, SpecsSnapshotRefSchema } from "./render.ts";
 
 export const STUDIO_TOOLS = {
   project_info: projectInfo,
@@ -35,6 +37,7 @@ export const STUDIO_TOOLS = {
   make_caption_phrases: makeCaptionPhrases,
   set_captions: setCaptions,
   validate_spec: validateSpec,
+  read_spec: readSpec,
   render_preview: renderPreview,
   check_motion: checkMotion,
   make_covers: makeCovers,
@@ -51,6 +54,8 @@ export const STUDIO_TOOLS = {
   sample_reference: sampleReference,
   set_project_style: setProjectStyle,
   read_skill: readSkill,
+  set_beat_map: setBeatMap,
+  frame_faces: frameFaces,
 } as const satisfies Record<string, StudioToolContract>;
 
 export type StudioToolName = keyof typeof STUDIO_TOOLS;

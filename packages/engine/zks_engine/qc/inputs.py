@@ -39,6 +39,22 @@ def caption_cues(video):
     return [cue for sheet in sheets for cue in sheet if isinstance(cue, dict) and cue.get("kind") == "caption"]
 
 
+# Full-frame covers (hf/learning/cover.js COVER_KINDS, and a full: true routeMap): the footage, and so the presenter, is off
+# screen under them.
+COVER_KINDS = ("paperScene", "cutaway")
+
+
+def cover_spans(cues, edl):
+    """Edited seconds a full-frame cover hides the footage, from a cue sheet in source seconds."""
+    return [span for cue in cues if isinstance(cue, dict) and (cue.get("kind") in COVER_KINDS or (cue.get("kind") == "routeMap" and cue.get("full")))
+            for span in pipeline.cue_spans(cue["at"], cue["end"], edl)]
+
+
+def main_sheet(video):
+    base = (load_edl(video) or {}).get("base", video)
+    return read_json(pipeline.spec_file(work(), f"cues/{base}.json"), [])
+
+
 def file_sha256(path):
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
@@ -55,10 +71,11 @@ def render_inputs(video, work_dir=None):
     names = [f"edl/{video}.json", f"edl/{video}.sfx.json", f"edl/{base}.source.json", f"{pipeline.DERIVED}/cuts/{video}.json",
              f"{pipeline.DERIVED}/cues/{base}.json", f"{pipeline.DERIVED}/cues/{base}-cc.json"]
     found = {name: file_sha256(folder / name) for name in names if (folder / name).is_file()}
-    frames = folder / "frames" / video
-    if frames.is_dir():  # the mouth gate reads these; their listing stands in for hashing every PNG
-        listing = sorted((entry.name, entry.stat().st_size, entry.stat().st_mtime_ns) for entry in frames.iterdir())
-        found[f"frames/{video}/"] = hashlib.sha256(json.dumps(listing).encode("utf-8")).hexdigest()
+    for layer in (video, f"{video}.cc"):  # the mouth and face gates read these; a listing stands in for hashing every PNG
+        frames = folder / "frames" / layer
+        if frames.is_dir():
+            listing = sorted((entry.name, entry.stat().st_size, entry.stat().st_mtime_ns) for entry in frames.iterdir())
+            found[f"frames/{layer}/"] = hashlib.sha256(json.dumps(listing).encode("utf-8")).hexdigest()
     return found
 
 

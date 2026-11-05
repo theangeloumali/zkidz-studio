@@ -47,6 +47,7 @@ const ProbeStreamSchema = z.looseObject({
   r_frame_rate: z.string().optional(),
   avg_frame_rate: z.string().optional(),
   color_transfer: z.string().optional(),
+  pix_fmt: z.string().optional(),
   disposition: z.looseObject({ attached_pic: z.int().optional() }).optional(),
   side_data_list: z.array(z.looseObject({ rotation: z.number().optional() })).optional(),
   tags: z.looseObject({ rotate: z.string().optional() }).optional(),
@@ -67,6 +68,7 @@ export interface ProbeResult {
   readonly rotation: number;
   readonly isHdr: boolean;
   readonly colorTransfer: string | null;
+  readonly pixelFormat: string | null;
   readonly videoCodec: string | null;
   readonly audioCodec: string | null;
 }
@@ -93,6 +95,7 @@ export async function probeMedia(ffprobePath: string, filePath: string): Promise
     rotation: video === undefined ? 0 : readRotation(video),
     isHdr: HDR_TRANSFERS.has(video?.color_transfer ?? ""),
     colorTransfer: video?.color_transfer ?? null,
+    pixelFormat: video?.pix_fmt ?? null,
     videoCodec: video?.codec_name ?? null,
     audioCodec: audio?.codec_name ?? null,
   };

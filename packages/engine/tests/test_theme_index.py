@@ -83,7 +83,7 @@ class ThemeIndexTests(unittest.TestCase):
 
     def test_index_all_skips_the_blueprint(self):
         written = theme_index.write_all(self.root)
-        self.assertEqual(sorted(path.parent.name for path in written), ["minimal", "zkidz"])
+        self.assertEqual(sorted(path.parent.name for path in written), ["learning", "minimal", "zkidz"])
         self.assertFalse((self.root / "_blueprint" / "index.json").exists())
 
 
@@ -103,7 +103,7 @@ class ThemeIndexCliTests(unittest.TestCase):
         with contextlib.redirect_stdout(out), unittest.mock.patch.object(theme_index, "THEMES_DIR", root):
             code = cli.main(["theme-index", "--json"])
         self.assertEqual(code, 0)
-        self.assertEqual(sorted(json.loads(out.getvalue())["themes"]), ["minimal", "zkidz"])
+        self.assertEqual(sorted(json.loads(out.getvalue())["themes"]), ["learning", "minimal", "zkidz"])
         self.assertTrue((root / "zkidz" / "index.json").exists())
 
 

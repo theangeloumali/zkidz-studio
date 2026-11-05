@@ -77,9 +77,16 @@ export const renderMaster = defineTool({
   isReadOnly: false,
 });
 
+/** What a finished qc_master job reports (job_wait's result). */
+export const QcMasterReportSchema = z.strictObject({
+  ok: z.boolean(),
+  checks: z.array(z.strictObject({ name: z.string().min(1), ok: z.boolean(), detail: z.string() })),
+});
+
+// A long master's QC re-hears every cut, so it answers with the job like render_master instead of holding the call open.
 export const qcMaster = defineTool({
   input: z.strictObject({ target: RenderTargetSchema }),
-  output: z.strictObject({ ok: z.boolean(), checks: z.array(z.strictObject({ name: z.string().min(1), ok: z.boolean(), detail: z.string() })) }),
+  output: JobHandleSchema,
   approval: "auto",
   isReadOnly: true,
 });

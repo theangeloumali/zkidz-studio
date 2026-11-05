@@ -38,7 +38,7 @@ def loudness_problems(master):
 
 
 def caption_problems(video, master, edl, intro):
-    problems = []
+    problems, covers = [], inputs.cover_spans(inputs.main_sheet(video), edl)
     for cue in inputs.caption_cues(video):
         try:
             edited_s = source_to_edited((cue["at"] + cue["end"]) / 2, edl)
@@ -46,14 +46,15 @@ def caption_problems(video, master, edl, intro):
             continue  # the caption's middle was cut, so the edit drops it
         frame = timeline.master_frame(round(edited_s * timeline.rate(edl)), intro)
         box = contrast.caption_box(cue.get("bottom", contrast.DEFAULT_BOTTOM))
-        ratio = contrast.caption_contrast(media.rgb_frame(master, frame, inputs.fps_of(edl)), box, contrast.CAPTION_TEXT)
+        text = contrast.caption_text_rgb(cue, edited_s, covers)
+        ratio = contrast.caption_contrast(media.rgb_frame(master, frame, inputs.fps_of(edl)), box, text)
         if ratio < contrast.MIN_CONTRAST:
             problems.append(f"caption '{cue['text']}' at {edited_s:.2f} s has {ratio:.1f}:1 contrast; it needs {contrast.MIN_CONTRAST}:1 (add a plate or move it)")
     return problems
 
 
 def mouth_problems(video, edl, intro, spec):
-    frames = mouth.hook_frames(edl, intro, inputs.facecam_spans(spec))
+    frames = mouth.hook_frames(edl, intro, inputs.facecam_spans(spec), inputs.cover_spans(inputs.main_sheet(video), edl))
     if not frames:
         return []
     alpha = media.overlay_alpha(inputs.work() / "frames" / video, max(frames) + 1, inputs.fps_of(edl))

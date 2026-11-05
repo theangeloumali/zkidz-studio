@@ -6,16 +6,24 @@ import os
 import tempfile
 from pathlib import Path
 
-from .. import check_windows
+from .. import check_windows, progress
 from ..specs.gates import GateFailed
 from ..transcribe import whispercpp
-from . import inputs, master_gates, media, words
+from . import inputs, learning, master_gates, media, timeline, words
 from .motion_check import check_motion_master, check_motion_source, motion_problems
 
 __all__ = ["assert_exportable", "check_motion_master", "check_motion_source", "latest_master", "qc_master", "whisper_transcriber"]
 
 MASTER_SUFFIXES = ("-4k", "", "-draft")
 MASTER_CHANGED = "master changed during QC"
+NOT_RUN = "not run"  # a check skipped because an earlier gate failed; no new field, so every report reader still parses it
+MAX_DETAIL_PROBLEMS = 25  # a report the agent's tool output can still show; the count says how many more
+REPORTED_ONLY = {"faceWidth"}  # footage framing is the owner's call: reported, never blocking the export
+
+
+def reported_only():
+    """The v2 caption is plain white with a shadow and no plate (v2 rule 2), so a learning edit's contrast is reported."""
+    return REPORTED_ONLY | {"captionContrast"} if learning.is_learning() else REPORTED_ONLY
 
 
 def latest_master(video):
@@ -82,35 +90,57 @@ def qc_master(video, master, source, transcript_words, transcribe, specs_snapsho
     judged = master_record(master)
     live_inputs = inputs.render_inputs(video)
     edl, spec, intro = inputs.load_edl(video), inputs.load_spec(video), inputs.intro_of(video)
+    done = []  # one entry per finished gate or judged cut: the progress record's count
+    advance = lambda: (done.append(1), stage.update(len(done)))  # noqa: E731
     gates_to_run = {
         "format": lambda: master_gates.format_problems(master),
         "frames": lambda: master_gates.frame_problems(master, edl, intro),
         "loudness": lambda: master_gates.loudness_problems(master),
         "motion": lambda: motion_problems(video, master, source),
-        "cutWords": lambda: words.cut_word_problems(
-            transcript_words, edl, intro, lambda start_s, end_s: transcribe(master, start_s, end_s),
-            hear_source and (lambda start_s, end_s: hear_source(f"audio/{edl['base']}.wav", start_s, end_s))),
         "captionContrast": lambda: master_gates.caption_problems(video, master, edl, intro),
         "hookMouth": lambda: master_gates.mouth_problems(video, edl, intro, spec),
         "lipSync": lambda: master_gates.lip_sync_problems(master, source, edl, intro),
         "renderSource": lambda: render_source_problems(video, source),
+        **(learning.gates(video, master, edl, intro) if learning.is_learning() else {}),
+        # Whisper re-hears every cut (hours on CPU), so it runs after the quick gates and only if they passed.
+        "cutWords": lambda: words.cut_word_problems(
+            transcript_words, edl, intro, lambda start_s, end_s: transcribe(master, start_s, end_s),
+            hear_source and (lambda start_s, end_s: hear_source(f"audio/{edl['base']}.wav", start_s, end_s)), advance),
         # Last, so it also sees a rewrite while the gates above read those files.
         **({} if recorded_inputs is None else {
             "renderInputs": lambda: inputs.render_input_problems(recorded_inputs, live_inputs) or
             inputs.render_input_problems(recorded_inputs, inputs.render_inputs(video))}),
     }
     checks = []
-    for name, run_gate in gates_to_run.items():
-        problems = run_gate()
-        checks.append({"name": name, "ok": not problems, "detail": "; ".join(problems) or "pass"})
+    # Re-hearing every cut dominates a long edit's QC, so each cut counts as a unit beside each gate.
+    with progress.job(video, "qc", total=len(gates_to_run) + len(timeline.cut_frames(edl)), unit="checks") as stage:
+        for name, run_gate in gates_to_run.items():
+            blocking = [check["name"] for check in checks if not check["ok"] and check["name"] not in reported_only()]
+            if name == "cutWords" and blocking:
+                checks.append({"name": name, "ok": False, "detail": f"{NOT_RUN}: {', '.join(blocking)} failed first; fix those, render again and run qc_master"})
+                advance()
+                continue
+            try:
+                result = run_gate()
+            except GateFailed as error:
+                result = [str(error)]
+            problems, summary = result if isinstance(result, tuple) else (result, "pass")
+            checks.append({"name": name, "ok": not problems, "detail": detail_of(problems) or summary})
+            advance()
     unchanged = Path(master).exists() and master_record(master) == judged
     checks.append({"name": "master", "ok": unchanged, "detail": "pass" if unchanged else MASTER_CHANGED})
-    report = {"ok": all(check["ok"] for check in checks), **({} if unchanged else {"reason": MASTER_CHANGED}), "checks": checks,
+    report = {"ok": all(check["ok"] for check in checks if check["name"] not in reported_only()), **({} if unchanged else {"reason": MASTER_CHANGED}), "checks": checks,
               "master": judged, "source": {"relPath": project_relative(source)}, "specsSnapshot": specs_snapshot,
               **({} if recorded_inputs is None else {"renderInputs": live_inputs})}
     (inputs.work() / "qc").mkdir(exist_ok=True)
     (inputs.work() / "qc" / f"{video}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
+
+
+def detail_of(problems):
+    shown = problems[:MAX_DETAIL_PROBLEMS]
+    more = len(problems) - len(shown)
+    return "; ".join(shown) + (f"; and {more} more" if more else "")
 
 
 def assert_exportable(video):
@@ -119,7 +149,7 @@ def assert_exportable(video):
     report = inputs.read_json(inputs.work() / "qc" / f"{video}.json")
     if report is None:
         raise GateFailed(f"{video} has no QC report; run qc_master before export")
-    if failed := [check["name"] for check in report["checks"] if not check["ok"]]:
+    if failed := [check["name"] for check in report["checks"] if not check["ok"] and check["name"] not in reported_only()]:
         raise GateFailed(f"{video} failed QC ({', '.join(failed)}); fix it and re-render before export")
     judged = report.get("master")
     master = inputs.work() / judged["relPath"] if isinstance(judged, dict) else None

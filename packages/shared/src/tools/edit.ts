@@ -2,6 +2,7 @@
 // Spec-writing tools: the agent's only write path (plan D4, §6.8).
 import { z } from "zod";
 import { CutCandidateSchema } from "../events.ts";
+import { SpecKindSchema } from "../enums.ts";
 import { VideoIdSchema } from "../primitives.ts";
 import { CaptionEntrySchema, CaptionPhraseSchema } from "../specs/captions.ts";
 import { CueSchema } from "../specs/cues.ts";
@@ -15,7 +16,16 @@ const CueIdSchema = z.string().min(1);
 const CueWriteResultSchema = SpecWriteResultSchema.extend({ id: CueIdSchema });
 
 export const proposeCuts = defineTool({
-  input: z.strictObject({ targetS: z.number().positive().optional(), removeFillers: z.boolean().optional(), trimPauses: z.boolean().optional() }),
+  input: z.strictObject({
+    targetS: z.number().positive().optional(),
+    removeFillers: z.boolean().optional(),
+    trimPauses: z.boolean().optional(),
+    /** Source spans the edit keeps: candidates outside them are not proposed (a long session has too many to review). */
+    within: z
+      .array(z.strictObject({ at: z.number().nonnegative(), end: z.number().positive() }))
+      .min(1)
+      .optional(),
+  }),
   output: z.strictObject({ candidates: z.array(CutCandidateSchema), approved: z.array(z.string()), rejected: z.array(z.string()) }),
   approval: "review",
   isReadOnly: false,
@@ -98,6 +108,14 @@ export const setCaptions = defineTool({
   output: SpecWriteResultSchema.extend({ cues: z.int().nonnegative() }),
   approval: "auto",
   isReadOnly: false,
+});
+
+// set_cuts replaces the whole spec, so changing one field starts from the stored one.
+export const readSpec = defineTool({
+  input: z.strictObject({ videoId: VideoIdSchema, kind: SpecKindSchema }),
+  output: z.strictObject({ spec: z.unknown() }),
+  approval: "auto",
+  isReadOnly: true,
 });
 
 export const validateSpec = defineTool({

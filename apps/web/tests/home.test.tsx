@@ -173,6 +173,32 @@ describe("Home", () => {
     expect(projectCreates(fetchMock)).toHaveLength(0);
   });
 
+  it("uses every video in a folder in place as one project, the first creating it (#42)", async () => {
+    const addKey = `POST ${API_ROUTES.addMediaInPlace.path.replace(":projectId", PROJECT_ID)}`;
+    const fetchMock = stubFetch({
+      [PROJECTS_KEY]: () => jsonResponse({ projects: [] }),
+      [LISTING_KEY]: () =>
+        jsonResponse({
+          path: "/media/session",
+          entries: [
+            { name: "part-1.mp4", isDirectory: false, bytes: 2048 },
+            { name: "part-2.mp4", isDirectory: false, bytes: 2048 },
+            { name: "notes", isDirectory: true },
+          ],
+        }),
+      [IN_PLACE_KEY]: () => jsonResponse({ project: makeProject({ title: "part-1" }), asset: makeAsset() }, 201),
+      [addKey]: () => jsonResponse(makeAsset(), 201),
+    });
+    renderWithProviders(<HomeRoute />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Use a file in place" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Use all 2 videos in this folder" }));
+
+    expect(await screen.findByText("2 files added to the project.")).toBeInTheDocument();
+    expect(requestBody(fetchMock, API_ROUTES.createProjectInPlace.path)).toEqual({ path: "/media/session/part-1.mp4", title: "part-1" });
+    expect(requestBody(fetchMock, API_ROUTES.addMediaInPlace.path.replace(":projectId", PROJECT_ID))).toEqual({ path: "/media/session/part-2.mp4" });
+  });
+
   it("creates no project when the in-place file is rejected", async () => {
     const fetchMock = stubFetch({
       [PROJECTS_KEY]: () => jsonResponse({ projects: [] }),

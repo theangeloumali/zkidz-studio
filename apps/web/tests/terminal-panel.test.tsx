@@ -27,10 +27,11 @@ describe("TerminalPanel", () => {
       </QueryClientProvider>
     );
     const { rerender } = render(panel("terminal"));
-    expect(await screen.findByText(`Claude Code terminal ${sessionIds[0]}`)).toBeInTheDocument();
+    // The terminal mounts lazily; under ci:local's parallel lanes its first mount ran past the 1 s default.
+    expect(await screen.findByText(`Claude Code terminal ${sessionIds[0]}`, {}, { timeout: 5000 })).toBeInTheDocument();
 
     rerender(panel("codex_terminal"));
 
-    expect(await screen.findByText(`Codex terminal ${sessionIds[1]}`)).toBeInTheDocument();
+    expect(await screen.findByText(`Codex terminal ${sessionIds[1]}`, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,8 @@
 // Created by The Angelo Umali.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { projects } from "@zks/db/schema";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { writeAgentSpec } from "../../src/tools/spec-store.ts";
 import { createTestServer, type TestServer } from "../support/test-server.ts";
@@ -72,6 +74,37 @@ describe("set_captions", () => {
     });
     expect(result.isError).toBe(true);
     expect(messageOf(result)).toMatch(/wrap to 3 lines/);
+  });
+
+  it("lets a learning project's word captions run past two lines but checks its pills are its words (#38)", async () => {
+    const fixture = await fixtureWithPhrases();
+    await fixture.context.db
+      .update(projects)
+      .set({ style: { theme: "learning" } })
+      .where(eq(projects.id, fixture.context.projectId));
+    const longLine = "This translation keeps going well past what two lines of the caption plate can hold";
+    const accepted = await callTool(fixture, "set_captions", {
+      entries: [
+        { ids: [0, 1], en: longLine, pills: ["translation"], scale: 1.2 },
+        { ids: [2], en: "Today" },
+      ],
+    });
+    expect(accepted.isError, messageOf(accepted)).toBeUndefined();
+    const punctuated = await callTool(fixture, "set_captions", {
+      entries: [
+        { ids: [0, 1], en: "Let's git clone. Git clone.", pills: ["clone", "Git"] },
+        { ids: [2], en: "Today" },
+      ],
+    });
+    expect(punctuated.isError, messageOf(punctuated)).toBeUndefined();
+    const refused = await callTool(fixture, "set_captions", {
+      entries: [
+        { ids: [0, 1], en: "Hello friends", pills: ["money"] },
+        { ids: [2], en: "Today" },
+      ],
+    });
+    expect(refused.isError).toBe(true);
+    expect(messageOf(refused)).toMatch(/pill \\?"money\\?" is not a word of/);
   });
 
   it("fails unknown, non-consecutive, missing and doubled phrase ids", async () => {

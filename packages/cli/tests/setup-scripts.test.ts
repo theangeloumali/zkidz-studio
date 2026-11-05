@@ -20,6 +20,11 @@ describe("setup bootstrap scripts", () => {
     for (const script of [setupSh, setupPs1]) expect(script).toContain("uv sync --locked --project packages/engine");
   });
 
+  it("add the matte extra (torch with CUDA) only on a machine with an NVIDIA driver (#38)", () => {
+    expect(setupSh).toMatch(/command -v nvidia-smi[\s\S]*uv sync --locked --project packages\/engine --extra matte/);
+    expect(setupPs1).toMatch(/nvidia-smi[\s\S]*uv sync --locked --project packages\/engine --extra matte/);
+  });
+
   it("keep uv's managed Python and cache under ZKS_HOME", () => {
     expect(setupSh).toMatch(/export UV_PYTHON_INSTALL_DIR="\$\{UV_PYTHON_INSTALL_DIR:-\$ZKS_HOME\/tools\/python\}"/);
     expect(setupSh).toMatch(/export UV_CACHE_DIR="\$\{UV_CACHE_DIR:-\$ZKS_HOME\/cache\/uv\}"/);

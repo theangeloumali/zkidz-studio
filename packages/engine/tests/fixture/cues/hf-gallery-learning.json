@@ -1,0 +1,484 @@
+[
+  {
+    "kind": "paperScene",
+    "at": 0.6,
+    "end": 3.6,
+    "label": "— INPUT"
+  },
+  {
+    "kind": "bigWord",
+    "at": 3.7,
+    "end": 6.7,
+    "count": {
+      "from": 99,
+      "to": 100,
+      "suffix": "%"
+    },
+    "countAt": 0.4,
+    "kicker": "effects applied",
+    "size": 200
+  },
+  {
+    "kind": "chipRail",
+    "at": 6.8,
+    "end": 9.8,
+    "y": 300,
+    "chips": [
+      {
+        "text": "Final edit",
+        "at": 0.2,
+        "tone": "accent"
+      },
+      {
+        "text": "Graded",
+        "at": 0.5,
+        "tone": "ink"
+      },
+      {
+        "text": "9:16",
+        "at": 0.8,
+        "tone": "ghost"
+      }
+    ]
+  },
+  {
+    "kind": "typedPrompt",
+    "at": 9.9,
+    "end": 13.9,
+    "text": "Edit a 9:16 short-form video for Instagram and TikTok using HyperFrames",
+    "typeAt": 0.4,
+    "output": ["[Thing] The video is about its own edit", "STEP 1: read my raw clips", "Cut the bad takes and pauses", "Grade, caption, 9:16"]
+  },
+  {
+    "kind": "askField",
+    "at": 14,
+    "end": 18,
+    "label": "— One message",
+    "text": "Make the captions bigger",
+    "typeAt": 0.3,
+    "sendAt": 1.4,
+    "status": [
+      {
+        "at": 1.7,
+        "text": "Claude is editing…"
+      },
+      {
+        "at": 2.5,
+        "text": "Captions · 140% · applied",
+        "ok": true
+      }
+    ]
+  },
+  {
+    "kind": "commentCta",
+    "at": 18.1,
+    "end": 21.1,
+    "lead": "Comment",
+    "word": "CLAUDE",
+    "sub": "Get the prompts + the full setup"
+  },
+  {
+    "kind": "receipt",
+    "at": 21.2,
+    "end": 25.7,
+    "input": {
+      "clips": [
+        {
+          "label": "clip 1",
+          "seconds": 56.8
+        },
+        {
+          "label": "clip 2",
+          "seconds": 12.3
+        },
+        {
+          "label": "clip 3",
+          "seconds": 128.3
+        }
+      ],
+      "seconds": 197.4
+    },
+    "removed": [
+      {
+        "start": 5,
+        "end": 15,
+        "why": "pause"
+      },
+      {
+        "start": 20,
+        "end": 60,
+        "why": "bad"
+      },
+      {
+        "start": 60,
+        "end": 80,
+        "why": "pause"
+      },
+      {
+        "start": 80,
+        "end": 110,
+        "why": "bad"
+      },
+      {
+        "start": 120,
+        "end": 143.8,
+        "why": "pause"
+      },
+      {
+        "start": 150,
+        "end": 190,
+        "why": "bad"
+      }
+    ],
+    "output": 33.6
+  },
+  {
+    "kind": "footageCard",
+    "at": 26,
+    "end": 29,
+    "file": "VID_20261013_112759_175.MP4",
+    "timecode": true,
+    "chips": [
+      {
+        "text": "Raw"
+      },
+      {
+        "text": "Ungraded"
+      }
+    ],
+    "status": "Camera original · no cuts · no grade",
+    "progress": true
+  },
+  {
+    "kind": "gradeWipe",
+    "at": 29.2,
+    "end": 31.5,
+    "wipeAt": 0.6
+  },
+  {
+    "kind": "paperScene",
+    "at": 31.7,
+    "end": 37.3,
+    "label": "— For my kids"
+  },
+  {
+    "kind": "stepBars",
+    "at": 31.8,
+    "end": 34.4,
+    "arrow": true,
+    "bars": [
+      {
+        "label": "Mine",
+        "height": 0.45,
+        "at": 0.3
+      },
+      {
+        "label": "Theirs",
+        "height": 1,
+        "at": 0.9
+      }
+    ]
+  },
+  {
+    "kind": "listRows",
+    "at": 34.5,
+    "end": 37.3,
+    "y": 760,
+    "rows": [
+      {
+        "text": "Finance",
+        "at": 0.2,
+        "mark": "check"
+      },
+      {
+        "text": "Business",
+        "at": 0.6,
+        "mark": "check"
+      },
+      {
+        "text": "Trading",
+        "at": 1.2,
+        "mark": "check",
+        "tone": "accent"
+      }
+    ]
+  },
+  {
+    "kind": "bigWord",
+    "at": 37.4,
+    "end": 39.9,
+    "text": "TOYS",
+    "drop": true,
+    "size": 220,
+    "y": 520,
+    "strikeAt": 1.2
+  },
+  {
+    "kind": "paperScene",
+    "at": 40,
+    "end": 47.9,
+    "enter": "up",
+    "exit": "up"
+  },
+  {
+    "kind": "phoneScreen",
+    "at": 40.1,
+    "end": 42.6,
+    "screen": "savings",
+    "beats": [
+      {
+        "at": 0.4,
+        "fill": 0.62
+      },
+      {
+        "at": 1.2,
+        "pay": true
+      }
+    ]
+  },
+  {
+    "kind": "phoneScreen",
+    "at": 42.7,
+    "end": 45.2,
+    "screen": "allowance",
+    "beats": [
+      {
+        "at": 0.5,
+        "jar": "save"
+      },
+      {
+        "at": 1.1,
+        "jar": "save"
+      },
+      {
+        "at": 1.6,
+        "jar": "spend"
+      }
+    ]
+  },
+  {
+    "kind": "phoneScreen",
+    "at": 45.3,
+    "end": 47.8,
+    "screen": "cart",
+    "tilt": 10,
+    "beats": [
+      {
+        "at": 0.8,
+        "remove": true
+      }
+    ]
+  },
+  {
+    "kind": "meterGauge",
+    "at": 48,
+    "end": 51,
+    "label": "Burnout meter",
+    "tag": "Burnout · rarely",
+    "level": 0.15,
+    "settleAt": 1.2
+  },
+  {
+    "kind": "receiptPrint",
+    "at": 51.1,
+    "end": 54.5,
+    "title": "Toys bought",
+    "lines": [
+      {
+        "text": "Since age",
+        "value": "6",
+        "at": 0.4
+      }
+    ],
+    "total": 0,
+    "totalAt": 1.1
+  },
+  {
+    "kind": "paperScene",
+    "at": 54.6,
+    "end": 62.6,
+    "enter": "up",
+    "exit": "up"
+  },
+  {
+    "kind": "chatThread",
+    "at": 54.7,
+    "end": 58.5,
+    "messages": [
+      {
+        "from": "me",
+        "text": "Can AI replace these careers?",
+        "at": 0.2
+      },
+      {
+        "from": "assistant",
+        "text": "Less likely. They run on people and judgment",
+        "at": 1.9
+      }
+    ]
+  },
+  {
+    "kind": "flowSteps",
+    "at": 58.6,
+    "end": 62.5,
+    "steps": [
+      {
+        "label": "Chores",
+        "kind": "check",
+        "at": 0.1
+      },
+      {
+        "label": "Earn",
+        "kind": "coins",
+        "at": 0.8
+      },
+      {
+        "label": "Unlock",
+        "kind": "unlock",
+        "at": 1.5
+      }
+    ]
+  },
+  {
+    "kind": "tradeScreen",
+    "at": 62.7,
+    "end": 67,
+    "seed": 11
+  },
+  {
+    "kind": "bigWord",
+    "at": 67.1,
+    "end": 70,
+    "size": 138,
+    "y": 440,
+    "slot": {
+      "fixed": "I have",
+      "words": [
+        {
+          "text": "Motivation",
+          "at": 0.2
+        },
+        {
+          "text": "Dedication",
+          "at": 1.2,
+          "color": "#EA580C"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "bigWord",
+    "at": 70.1,
+    "end": 73,
+    "text": "STRUGGLE",
+    "size": 188,
+    "y": 712,
+    "scribbleAt": 0.9
+  },
+  {
+    "kind": "footageCard",
+    "at": 73.1,
+    "end": 75.8,
+    "sourceSecond": 10,
+    "crop": [262, 930, 252, 336],
+    "rect": [690, 236, 336, 448]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 9,
+    "end": 9.4,
+    "text": "Every",
+    "line": "Every edit proves it.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 9.4,
+    "end": 9.8,
+    "text": "Every edit",
+    "line": "Every edit proves it.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 9.8,
+    "end": 10.2,
+    "text": "Every edit proves",
+    "line": "Every edit proves it.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 10.2,
+    "end": 10.6,
+    "text": "Every edit proves it.",
+    "line": "Every edit proves it.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 32.2,
+    "end": 32.6,
+    "text": "Mine",
+    "line": "Mine then theirs.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 32.6,
+    "end": 33,
+    "text": "Mine then",
+    "line": "Mine then theirs.",
+    "pills": [2]
+  },
+  {
+    "kind": "caption",
+    "style": "words",
+    "at": 33,
+    "end": 33.4,
+    "text": "Mine then theirs.",
+    "line": "Mine then theirs.",
+    "pills": [2]
+  },
+  {
+    "kind": "routeMap",
+    "at": 76,
+    "end": 79.3,
+    "region": "japan",
+    "follow": true,
+    "from": {
+      "name": "Naha",
+      "lon": 127.681,
+      "lat": 26.212
+    },
+    "stops": [
+      {
+        "name": "Kyoto",
+        "sub": "Spring 2024",
+        "lon": 135.768,
+        "lat": 35.011,
+        "at": 0.7
+      },
+      {
+        "name": "Tokyo",
+        "sub": "Autumn 2023",
+        "lon": 139.692,
+        "lat": 35.689,
+        "at": 1.5
+      },
+      {
+        "name": "Sapporo",
+        "sub": "Winter 2025",
+        "lon": 141.354,
+        "lat": 43.062,
+        "at": 2.3
+      }
+    ]
+  }
+]

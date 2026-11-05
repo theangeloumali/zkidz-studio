@@ -25,7 +25,7 @@ function saveTheme(theme: Theme): void {
 }
 
 const NAV_LINK =
-  "inline-flex min-h-(--target-min) items-center rounded-control px-3 text-ui text-copy-muted transition-colors duration-(--dur-hover) hover:text-copy aria-[current=page]:text-copy aria-[current=page]:underline aria-[current=page]:decoration-accent aria-[current=page]:decoration-2 aria-[current=page]:underline-offset-8";
+  "inline-flex min-h-(--target-min) shrink-0 items-center rounded-control px-2 text-ui sm:px-3 text-copy-muted transition-colors duration-(--dur-hover) hover:text-copy aria-[current=page]:text-copy aria-[current=page]:underline aria-[current=page]:decoration-accent aria-[current=page]:decoration-2 aria-[current=page]:underline-offset-8";
 
 export function AppShell() {
   const { projectId } = useParams();
@@ -51,7 +51,11 @@ export function AppShell() {
           <NavLink to={ROUTE_PATHS.home} className="font-display text-ui-lg font-extrabold uppercase font-condensed">
             ZKidz <span className="text-accent">Studio</span>
           </NavLink>
-          <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-1">
+          {/* A phone gets the links on their own row, one line, scrolling sideways if a project adds more. */}
+          <nav
+            aria-label="Main"
+            className="order-last -mx-2 flex w-full items-center gap-1 overflow-x-auto pb-1 sm:order-none sm:mx-0 sm:w-auto sm:flex-1 sm:pb-0"
+          >
             <NavLink to={ROUTE_PATHS.home} end className={NAV_LINK}>
               Home
             </NavLink>
@@ -75,7 +79,7 @@ export function AppShell() {
           <button
             type="button"
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            className={buttonClass("quiet", "px-3")}
+            className={buttonClass("quiet", "ml-auto px-3 sm:ml-0")}
             onClick={toggleTheme}
           >
             {theme === "dark" ? <Sun aria-hidden="true" className="size-4" /> : <Moon aria-hidden="true" className="size-4" />}

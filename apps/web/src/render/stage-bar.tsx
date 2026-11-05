@@ -27,7 +27,7 @@ export function StageBar({ stage }: { readonly stage: StageRow }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={roundedPct}
-        className="h-2 overflow-hidden rounded-pill bg-surface"
+        className="h-2 overflow-hidden rounded-pill bg-line"
       >
         <div className={`h-full transition-[width] duration-(--dur-1) ease-linear ${FILL_CLASS[stage.state]}`} style={{ width: `${stage.pct}%` }} />
       </div>

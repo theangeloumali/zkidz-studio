@@ -32,7 +32,7 @@ function CheckRow({ check }: { readonly check: DoctorCheck }) {
         {check.label}
       </th>
       <StatusCell status={check.status} />
-      <td className="py-3 align-top text-ui text-copy-muted">
+      <td className="py-3 align-top text-ui text-copy-muted [overflow-wrap:anywhere]">
         <span className="break-words">{check.detail}</span>
         {check.fix ? <span className="block text-copy">Fix: {check.fix}</span> : null}
       </td>
@@ -55,7 +55,7 @@ function DatabaseRow({ check }: { readonly check: DoctorCheck | undefined }) {
           <Database aria-hidden="true" className="size-4 text-copy-muted" />
         </td>
       )}
-      <td className="py-3 align-top text-ui text-copy-muted">
+      <td className="py-3 align-top text-ui text-copy-muted [overflow-wrap:anywhere]">
         <span className="block text-copy">{check ? `${check.detail} · ` : ""}switch in README (DATABASE_URL)</span>
         {check?.fix ? <span className="block text-copy">Fix: {check.fix}</span> : null}
         Footage and renders always stay as files in your project folder.
@@ -91,7 +91,7 @@ export function DoctorPanel() {
         </p>
       ) : null}
       <div className="overflow-x-auto">
-        <table aria-labelledby={headingId} aria-busy={isRunning} className="w-full min-w-[32rem] border-collapse">
+        <table aria-labelledby={headingId} aria-busy={isRunning} className="w-full border-collapse sm:min-w-[32rem]">
           <thead className="sr-only">
             <tr>
               <th scope="col">Check</th>

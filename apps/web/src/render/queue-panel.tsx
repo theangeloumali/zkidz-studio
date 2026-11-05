@@ -61,7 +61,7 @@ export function QueuePanel({ projectId, jobs, hardware, loadError, children }: Q
 function JobItem({ job, hardware }: { readonly job: Job; readonly hardware: Hardware | undefined }) {
   const title = jobTitle(job);
   return (
-    <li aria-label={title} className="flex flex-col gap-3 rounded-control border border-line bg-surface p-3">
+    <li aria-label={title} className="flex flex-col gap-3 rounded-field border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-ui font-semibold">{title}</span>
         <span className="rounded-pill border border-line-strong px-2 font-mono text-ui-sm text-copy-muted">{backendChipFor(job, hardware)}</span>

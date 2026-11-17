@@ -55,6 +55,35 @@ describe.skipIf(!dockerComposeInstalled)("docker/compose.yml", () => {
   });
 });
 
+describe.skipIf(!dockerComposeInstalled)("docker/compose.remote.yml", () => {
+  const REMOTE_FILE = join(REPO_ROOT, "docker/compose.remote.yml");
+  const remoteEnv = {
+    ...process.env,
+    CLAUDE_CODE_VERSION: "1.2.3",
+    ZKS_PUBLIC_ORIGIN: "https://studio.example.com",
+    ZKS_PREVIEW_PUBLIC_ORIGIN: "https://studio-preview.example.com",
+    ZKS_PROXY_SECRET: "x".repeat(32),
+  };
+
+  function resolvedRemote() {
+    const result = spawnSync("docker", ["compose", "-f", COMPOSE_FILE, "-f", REMOTE_FILE, "config", "--format", "json"], {
+      encoding: "utf8",
+      env: remoteEnv,
+    });
+    if (result.status !== 0) throw new Error(result.stderr);
+    return JSON.parse(result.stdout);
+  }
+
+  // A proxy network is often internal; the default network is the studio's way out to Anthropic.
+  it("keeps its own network beside the proxy's, and still publishes only 127.0.0.1:4317", () => {
+    const { services } = resolvedRemote();
+    expect(Object.keys(services.studio.networks).sort()).toEqual(["default", "proxy-apps"]);
+    /** @type {{ host_ip: string; published: string; target: number }[]} */
+    const mappings = services.studio.ports;
+    expect(mappings.map((port) => `${port.host_ip}:${port.published}:${port.target}`)).toEqual(["127.0.0.1:4317:4317"]);
+  });
+});
+
 describe("docker/Dockerfile", () => {
   const dockerfile = readFileSync(join(REPO_ROOT, "docker/Dockerfile"), "utf8");
 

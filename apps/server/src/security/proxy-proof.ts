@@ -1,6 +1,5 @@
 // Created by The Angelo Umali.
 // Remote mode: the proxy sits on a shared docker network, so a peer must prove it is the proxy (or be loopback).
-import type { Context } from "hono";
 import type { RemoteOrigins } from "./remote-origins.ts";
 import { tokensMatch } from "./token.ts";
 
@@ -12,7 +11,7 @@ interface IncomingBinding {
 }
 
 /** The TCP peer behind this request; undefined (a test, an odd runtime) counts as not loopback. */
-export function peerAddressOf(c: Context): string | undefined {
+export function peerAddressOf(c: { readonly env?: unknown }): string | undefined {
   return (c.env as IncomingBinding | undefined)?.incoming?.socket?.remoteAddress;
 }
 

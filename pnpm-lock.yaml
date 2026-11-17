@@ -163,6 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  node-pty@1.1.0: e83dd7bc9abbc542e29ccad6fd4c49cee5b929db7ec23c619b034a77b1c0219b
   vitest@5.0.5: 0edefc1201fbbcca0b64565c8f60ba5fc7e52d33088efbbac99339f59f0e9867
 
 importers:
@@ -219,7 +220,7 @@ importers:
         version: 4.13.13
       node-pty:
         specifier: 1.1.0
-        version: 1.1.0
+        version: 1.1.0(patch_hash=e83dd7bc9abbc542e29ccad6fd4c49cee5b929db7ec23c619b034a77b1c0219b)
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -6380,7 +6381,7 @@ snapshots:
 
   node-addon-api@7.1.1: {}
 
-  node-pty@1.1.0:
+  node-pty@1.1.0(patch_hash=e83dd7bc9abbc542e29ccad6fd4c49cee5b929db7ec23c619b034a77b1c0219b):
     dependencies:
       node-addon-api: 7.1.1
 

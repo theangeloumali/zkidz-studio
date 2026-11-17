@@ -19,7 +19,12 @@ function schedule(lanes, steps) {
 }
 
 // An empty associative array is unbound under set -u, which once skipped every parallel step and still passed.
-describe("ci-local lanes", () => {
+// lib/ci-lanes.sh uses `local -A` and `wait -n` (bash 4.3+); macOS ships bash 3.2.
+const bashVersion = spawnSync("bash", ["-c", 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"'], { encoding: "utf8" }).stdout.trim();
+const [bashMajor = 0, bashMinor = 0] = bashVersion.split(".").map(Number);
+const bashHasLanes = bashMajor > 4 || (bashMajor === 4 && bashMinor >= 3);
+
+describe.skipIf(!bashHasLanes)("ci-local lanes", () => {
   it.each([1, 2, 6])("runs and reports every step with %i lanes", (lanes) => {
     const outcome = schedule(lanes, ["one", "two", "three", "bad"]);
     expect(outcome.stderr).toBe("");

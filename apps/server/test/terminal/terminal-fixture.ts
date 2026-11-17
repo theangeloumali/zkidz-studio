@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // Real PTY + stub claude + temp ZKS_HOME, shared by the sessions and routes tests.
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildAgentEnv } from "../../src/auth/agent-env.ts";
@@ -34,7 +34,7 @@ export interface TerminalFixtureOptions {
 }
 
 export async function createTerminalFixture(overrides: Partial<TerminalSessionsDeps> = {}, options: TerminalFixtureOptions = {}): Promise<TerminalFixture> {
-  const studioHome = await mkdtemp(join(tmpdir(), "zks-terminal-"));
+  const studioHome = await mkdtemp(join(await realpath(tmpdir()), "zks-terminal-")); // macOS tmpdir() is a /var symlink the PTY cwd resolves
   const projectDir = join(studioHome, "projects", "demo");
   const pluginDir = join(studioHome, "plugin");
   await Promise.all([mkdir(projectDir, { recursive: true }), mkdir(pluginDir)]);

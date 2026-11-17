@@ -189,7 +189,7 @@ describe("proof that the peer is the proxy", () => {
 
 describe("the WebSocket upgrade needs the same proof", () => {
   const headers = { host: TEST_REMOTE_HOST, origin: PUBLIC_ORIGIN, "sec-fetch-site": "same-origin" };
-  const check = (proof: Record<string, string>, peerAddress: string | undefined) => {
+  const check = (proof: Record<string, string | undefined>, peerAddress: string | undefined) => {
     const tickets = createTicketStore();
     const { ticket } = tickets.issue(SESSION_ID);
     const options = { allowedHosts: allowedHostsFor(TEST_APP_PORT, TEST_REMOTE), tickets, sessionId: SESSION_ID, remote: TEST_REMOTE, peerAddress };

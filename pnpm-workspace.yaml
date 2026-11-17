@@ -31,4 +31,5 @@ minimumReleaseAgeExclude:
 # vitest reused a fork whose start had failed and crashed on its SIGTERM; its fixed 60 s start limit also undercut jsdom's
 # measured 61 s cold load under ci:local. tests/vitest-worker-reuse.test.ts in apps/web guards the reuse fix.
 patchedDependencies:
+  node-pty@1.1.0: patches/node-pty@1.1.0.patch
   vitest@5.0.5: patches/vitest@5.0.5.patch

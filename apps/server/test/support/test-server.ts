@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 // One migrated PGlite + ZKS_HOME per test file, and the app built exactly as main.ts builds it.
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, type StudioDatabaseHandle } from "@zks/db";
@@ -36,7 +36,8 @@ export type TestServerBase = Pick<TestServer, "eventBus" | "jobRunner" | "studio
 };
 
 export async function createTestServer(overrides: Partial<AppDependencies> | ((base: TestServerBase) => Partial<AppDependencies>) = {}): Promise<TestServer> {
-  const scratchDir = await mkdtemp(join(tmpdir(), "zks-server-"));
+  // realpath: the server resolves symlinks, and macOS tmpdir() sits behind /var -> /private/var.
+  const scratchDir = await mkdtemp(join(await realpath(tmpdir()), "zks-server-"));
   const studioHome = join(scratchDir, "home");
   await ensureStudioHome(studioHome);
   const database = await openDatabase({ dataDir: join(studioHome, "db") });

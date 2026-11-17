@@ -1,6 +1,6 @@
 // Created by The Angelo Umali.
 import { loadToolsLock, pinnedExecutablePath, platformKey } from "@zks/shared/node";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ const KILL_DEADLINE_MS = 3000;
 
 let scratchDir: string;
 beforeAll(async () => {
-  scratchDir = await mkdtemp(join(tmpdir(), "zks-engine-process-"));
+  scratchDir = await mkdtemp(join(await realpath(tmpdir()), "zks-engine-process-"));
 });
 afterAll(async () => {
   await rm(scratchDir, { recursive: true, force: true });

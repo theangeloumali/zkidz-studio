@@ -69,7 +69,8 @@ describe("zks CLI", { timeout: SUBPROCESS_TIMEOUT_MS }, () => {
   });
 
   // CI and the render recipe export ZKS_FFMPEG from this command, so echoing an exported value back would keep a stale one.
-  it("prints the pinned ffmpeg even when ZKS_FFMPEG points somewhere else", () => {
+  // tools.lock.json pins ffmpeg on macOS to Homebrew (a PATH lookup), so there is no home-relative pinned path to print.
+  it.skipIf(process.platform === "darwin")("prints the pinned ffmpeg even when ZKS_FFMPEG points somewhere else", () => {
     const home = mkdtempSync(path.join(tmpdir(), "zks-cli-"));
     const missing = runCli(["tools", "path", "ffmpeg"], home, { ZKS_FFMPEG: undefined });
     const pinned = missing.stderr.match(/not installed at (.+)\. Run/)?.[1] ?? "";

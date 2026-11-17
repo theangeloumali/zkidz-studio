@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { confinePath, openConfined, type ConfinedFile } from "./confine-path.ts";
 import { assertLoopbackHost, CONTAINER_MARKER_PATHS, hasContainerMarker } from "./loopback-bind.ts";
+import type { RemoteOrigins } from "./remote-origins.ts";
 import { createRequestGuard } from "./request-guards.ts";
 
 export { PathEscapeError, type PathEscapeReason } from "./confine-path.ts";
@@ -14,6 +15,8 @@ export interface SecurityConfig {
   readonly previewPort: number;
   /** True only inside the Docker image (ZKS_CONTAINER=1), where the port mapping stands in for the loopback bind. */
   readonly container: boolean;
+  /** Remote mode: the public https origins behind the TLS proxy; the bind rule does not change. */
+  readonly remote?: RemoteOrigins;
   /** Injectable for tests; defaults to checking CONTAINER_MARKER_PATHS on disk. */
   readonly containerMarkerPresent?: () => boolean;
 }
@@ -36,7 +39,7 @@ export function createSecurity(config: SecurityConfig): Security {
   const csrfToken = randomBytes(CSRF_TOKEN_BYTES).toString("base64url");
   const containerMarkerPresent = config.containerMarkerPresent ?? (() => hasContainerMarker());
   return {
-    middleware: createRequestGuard({ appPort: config.appPort, previewPort: config.previewPort, csrfToken }),
+    middleware: createRequestGuard({ appPort: config.appPort, previewPort: config.previewPort, csrfToken, remote: config.remote }),
     csrfToken,
     // The env var alone never opens a wildcard bind: a runtime marker must confirm we are in a container.
     assertLoopbackBind: (host) => {

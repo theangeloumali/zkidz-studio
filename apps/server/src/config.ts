@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { APP_PORT, ENV, PREVIEW_PORT } from "@zks/shared";
 import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS, type ToolName } from "@zks/shared/node";
+import { parseRemoteOrigins, type RemoteOrigins } from "./security/remote-origins.ts";
 
 export const PROJECT_DIRS = ["media", "work", "progress", "deliverables"] as const;
 const OWNER_ONLY_MODE = 0o700;
@@ -21,6 +22,8 @@ export interface ServerConfig {
   readonly databaseUrl: string | undefined;
   readonly isContainer: boolean;
   readonly ffprobePath: string;
+  /** Set only when both public origins are; undefined keeps the loopback-only behaviour. */
+  readonly remote: RemoteOrigins | undefined;
 }
 
 export function loadServerConfig(env: Environment): ServerConfig {
@@ -36,6 +39,7 @@ export function loadServerConfig(env: Environment): ServerConfig {
     databaseUrl: env[ENV.databaseUrl] || undefined,
     isContainer: env[ENV.container] === "1",
     ffprobePath: ffprobeBeside(pinnedToolPath(env, studioHome, "ffmpeg")),
+    remote: parseRemoteOrigins(env),
   };
 }
 

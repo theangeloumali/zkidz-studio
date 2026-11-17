@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { projectDir } from "../config.ts";
 import { HttpError, notFound, toHttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { hostOfOrigin, type RemoteOrigins } from "../security/remote-origins.ts";
 import { allowedHostsFor, isAllowedHost } from "../security/request-guards.ts";
 import { openConfined } from "../security/confine-path.ts";
 
@@ -17,6 +18,8 @@ export interface PreviewOriginDependencies {
   readonly studioHome: string;
   readonly appPort: number;
   readonly previewPort: number;
+  /** Set in remote mode: the public preview host is served and the public app origin may frame it. */
+  readonly remote?: RemoteOrigins;
 }
 
 export const COMPOSITION_PATH_PREFIX = "/compositions";
@@ -45,8 +48,8 @@ const compositionDirOf = (projectRoot: string, videoId: string) => join(projectR
 
 export function createPreviewOrigin(deps: PreviewOriginDependencies): Hono {
   const app = new Hono();
-  const allowedHosts = allowedHostsFor(deps.previewPort);
-  const previewHeaders = buildPreviewHeaders(deps.appPort);
+  const allowedHosts = [...allowedHostsFor(deps.previewPort), ...(deps.remote === undefined ? [] : [hostOfOrigin(deps.remote.previewOrigin)])];
+  const previewHeaders = buildPreviewHeaders(deps.appPort, deps.remote);
 
   app.use("*", async (c, next) => {
     if (isAllowedHost(c.req.header("host"), allowedHosts)) await next();
@@ -79,11 +82,12 @@ export function createPreviewOrigin(deps: PreviewOriginDependencies): Hono {
   return app;
 }
 
-function buildPreviewHeaders(appPort: number): Readonly<Record<string, string>> {
+function buildPreviewHeaders(appPort: number, remote?: RemoteOrigins): Readonly<Record<string, string>> {
   // Chrome rejects an IPv6 literal as a CSP source, so the app opened as [::1] cannot frame the preview.
   const frameAncestors = allowedHostsFor(appPort)
     .filter((host) => !host.startsWith("["))
     .map((host) => `http://${host}`)
+    .concat(remote === undefined ? [] : [remote.appOrigin])
     .join(" ");
   return {
     // Every Host the app answers to may frame it, or the app opened as localhost shows an empty preview.

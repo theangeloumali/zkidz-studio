@@ -7,6 +7,7 @@ import type { WSContext } from "hono/ws";
 import { z } from "zod";
 import { HttpError, notFound, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
+import type { RemoteOrigins } from "../security/remote-origins.ts";
 import type { TicketStore, WebSocketUpgradeOptions, WebSocketUpgradeResult } from "../security/ws-guard.ts";
 import { preToolUseAnswer, type TerminalSession, type TerminalSessions } from "./terminal-sessions.ts";
 
@@ -19,6 +20,7 @@ export interface TerminalRouteDeps {
   readonly tickets: TicketStore;
   readonly checkWebSocketUpgrade: (request: Request, options: WebSocketUpgradeOptions) => WebSocketUpgradeResult;
   readonly allowedHosts: readonly string[];
+  readonly remote?: RemoteOrigins;
   readonly logger: Logger;
 }
 
@@ -48,6 +50,7 @@ export function registerTerminalRoutes(app: Hono, deps: TerminalRouteDeps): void
         allowedHosts: deps.allowedHosts,
         tickets: deps.tickets,
         sessionId,
+        remote: deps.remote,
       });
       if (!verdict.ok) {
         deps.logger.warn("terminal socket refused", { reason: verdict.reason });

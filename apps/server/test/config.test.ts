@@ -90,3 +90,42 @@ describe("ensureStudioHome", () => {
     for (const dir of ["", ...ZKS_HOME_DIRS]) expect((await stat(join(studioHome, dir))).mode & 0o777).toBe(0o700);
   });
 });
+
+describe("loadServerConfig remote mode", () => {
+  const baseEnv = { ZKS_HOME: "/srv/zks" };
+  const app = "https://studio.example.com";
+  const preview = "https://studio-preview.example.com";
+  beforeEach(() => vi.stubEnv("ZKS_FFMPEG", ""));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is off unless both origins are set", () => {
+    expect(loadServerConfig(baseEnv).remote).toBeUndefined();
+    expect(loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: "", ZKS_PREVIEW_PUBLIC_ORIGIN: "" }).remote).toBeUndefined();
+  });
+
+  it("reads both origins, dropping one trailing slash", () => {
+    const env = { ...baseEnv, ZKS_PUBLIC_ORIGIN: `${app}/`, ZKS_PREVIEW_PUBLIC_ORIGIN: preview };
+    expect(loadServerConfig(env).remote).toEqual({ appOrigin: app, previewOrigin: preview });
+  });
+
+  it("refuses one origin without the other", () => {
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: app })).toThrow(/ZKS_PREVIEW_PUBLIC_ORIGIN/);
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_PREVIEW_PUBLIC_ORIGIN: preview })).toThrow(/ZKS_PUBLIC_ORIGIN/);
+  });
+
+  it.each([
+    ["an http origin", "http://studio.example.com"],
+    ["an origin with a path", "https://studio.example.com/app"],
+    ["an origin with a query", "https://studio.example.com?x=1"],
+    ["an origin with a hash", "https://studio.example.com#x"],
+    ["an origin with credentials", "https://user:pw@studio.example.com"],
+    ["a bare host", "studio.example.com"],
+  ])("rejects %s", (_label, badOrigin) => {
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: badOrigin, ZKS_PREVIEW_PUBLIC_ORIGIN: preview })).toThrow(/ZKS_PUBLIC_ORIGIN/);
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: app, ZKS_PREVIEW_PUBLIC_ORIGIN: badOrigin })).toThrow(/ZKS_PREVIEW_PUBLIC_ORIGIN/);
+  });
+
+  it("rejects two origins that are the same", () => {
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: app, ZKS_PREVIEW_PUBLIC_ORIGIN: app })).toThrow(/must differ/);
+  });
+});

@@ -5,6 +5,7 @@ import type { StudioDatabase } from "@zks/db";
 import { API_ROUTES, CutSpecSchema, keptSpansOf, LOOPBACK_HOST, VideoIdSchema, type CutSpec, type PlayerEdl } from "@zks/shared";
 import type { Hono } from "hono";
 import { projectDir } from "../config.ts";
+import type { RemoteOrigins } from "../security/remote-origins.ts";
 import type { EventBus } from "../events/event-bus.ts";
 import { HttpError, notFound } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
@@ -27,6 +28,8 @@ export interface PreviewServiceDependencies {
   readonly eventBus: EventBus;
   readonly logger: Logger;
   readonly previewPort: number;
+  /** Set in remote mode: compositions are announced on the public preview origin. */
+  readonly remote?: RemoteOrigins;
   readonly buildComposition: BuildComposition;
 }
 
@@ -44,6 +47,7 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
   const buildStates = new Map<string, BuildState>();
   const latestPreviews = new Map<string, PlayerEdl["preview"]>();
   let buildCount = 0;
+  const previewBase = deps.remote?.previewOrigin ?? `http://${LOOPBACK_HOST}:${deps.previewPort}`;
 
   const openVideoIdsOf = (projectId: string) => {
     const prefix = videoKeyOf(projectId, "");
@@ -86,7 +90,7 @@ export function createPreviewService(deps: PreviewServiceDependencies): PreviewS
       await writePreviewEdl(projectRoot, videoId, cuts.spec);
       await deps.buildComposition({ projectRoot, videoId });
       buildCount += 1;
-      const compositionUrl = `http://${LOOPBACK_HOST}:${deps.previewPort}${COMPOSITION_PATH_PREFIX}/${projectId}/${videoId}/index.html?build=${buildCount}`;
+      const compositionUrl = `${previewBase}${COMPOSITION_PATH_PREFIX}/${projectId}/${videoId}/index.html?build=${buildCount}`;
       latestPreviews.set(videoKeyOf(projectId, videoId), { compositionUrl, edlVersion: cuts.version });
       await deps.eventBus.publish({ type: "preview.ready", projectId, videoId, edlVersion: cuts.version, compositionUrl });
     } catch (error) {

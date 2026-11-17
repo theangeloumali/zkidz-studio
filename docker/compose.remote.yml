@@ -1,0 +1,25 @@
+# Created by The Angelo Umali.
+# Remote mode behind a TLS proxy on the external network proxy-apps. See docs/user/docker.md.
+# Use: docker compose -f docker/compose.yml -f docker/compose.remote.yml up -d --build
+services:
+  studio:
+    container_name: zkidz-studio
+    build:
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:?set it in .env}
+    environment:
+      ZKS_PUBLIC_ORIGIN: ${ZKS_PUBLIC_ORIGIN:?set it in .env}
+      ZKS_PREVIEW_PUBLIC_ORIGIN: ${ZKS_PREVIEW_PUBLIC_ORIGIN:?set it in .env}
+    volumes:
+      # Claude Code keeps its sign-in under ~/.claude; Studio reads ~/.claude/projects for usage.
+      - zks-node-home:/home/node
+    networks:
+      - default
+      - proxy-apps
+
+networks:
+  proxy-apps:
+    external: true
+
+volumes:
+  zks-node-home:

@@ -30,6 +30,18 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /zks-home \
   && chown node:node /zks-home
+# Terminal mode runs Claude Code in the image. Empty (the default) installs nothing and leaves the image as it was.
+# Pinned install: https://code.claude.com/docs/en/setup#install-a-specific-version (install.sh | bash -s <version>).
+ARG CLAUDE_CODE_VERSION=
+# Set only with a version, so the pinned build never swaps itself for a newer one.
+ENV DISABLE_AUTOUPDATER=${CLAUDE_CODE_VERSION:+1}
+# Installed under /opt, not ~node: the remote override mounts a volume over /home/node, which would hide the binary.
+RUN if [ -n "$CLAUDE_CODE_VERSION" ]; then \
+    apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && install -d -o node -g node /opt/claude-code \
+    && runuser -u node -- env HOME=/opt/claude-code bash -c "curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION" \
+    && ln -s /opt/claude-code/.local/bin/claude /usr/local/bin/claude; \
+  fi
 COPY --from=builder --chown=node:node /opt/zks /opt/zks
 COPY --from=builder --chown=node:node /app /app
 COPY --chown=node:node --chmod=0755 docker/entrypoint.sh /usr/local/bin/zks-entrypoint

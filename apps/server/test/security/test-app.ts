@@ -3,16 +3,19 @@
 import { CSRF_HEADER } from "@zks/shared";
 import { Hono } from "hono";
 import { createSecurity } from "../../src/security/index.ts";
+import type { RemoteOrigins } from "../../src/security/remote-origins.ts";
 
 export const TEST_APP_PORT = 4317;
 export const TEST_PREVIEW_PORT = 4318;
 export const TEST_APP_HOST = `127.0.0.1:${TEST_APP_PORT}`;
 export const TEST_APP_ORIGIN = `http://${TEST_APP_HOST}`;
+export const TEST_REMOTE: RemoteOrigins = { appOrigin: "https://studio.example.com", previewOrigin: "https://studio-preview.example.com" };
+export const TEST_REMOTE_HOST = "studio.example.com";
 
 export type HeaderOverrides = Record<string, string | undefined>;
 
-export function buildGuardedApp() {
-  const security = createSecurity({ appPort: TEST_APP_PORT, previewPort: TEST_PREVIEW_PORT, container: false });
+export function buildGuardedApp(remote?: RemoteOrigins) {
+  const security = createSecurity({ appPort: TEST_APP_PORT, previewPort: TEST_PREVIEW_PORT, container: false, remote });
   const app = new Hono();
   app.use(security.middleware);
   app.get("/api/leaky", (c) => {

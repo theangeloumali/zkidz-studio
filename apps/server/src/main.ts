@@ -49,7 +49,7 @@ const CONTAINER_BIND_HOST = "0.0.0.0";
 async function main(): Promise<void> {
   const logger = createLogger();
   const config = loadServerConfig(process.env);
-  const security = createSecurity({ appPort: config.port, previewPort: config.previewPort, container: config.isContainer });
+  const security = createSecurity({ appPort: config.port, previewPort: config.previewPort, container: config.isContainer, remote: config.remote });
   const bindHost = config.isContainer ? CONTAINER_BIND_HOST : LOOPBACK_HOST;
   security.assertLoopbackBind(bindHost);
   await assertFfprobeInstalled(config.ffprobePath);
@@ -84,6 +84,7 @@ async function main(): Promise<void> {
     jobRunner,
     logger,
     appPort: config.port,
+    remote: config.remote,
     appVersion: await readAppVersion(),
     pluginDir: PLUGIN_DIR,
     runDir,
@@ -136,6 +137,7 @@ async function main(): Promise<void> {
       eventBus,
       logger,
       previewPort: config.previewPort,
+      remote: config.remote,
       buildComposition: previewBuilder,
     }),
   });
@@ -148,7 +150,13 @@ async function main(): Promise<void> {
       (error: unknown) => logger.error("agent runner probe failed", { error }),
     );
   });
-  const previewOrigin = createPreviewOrigin({ database: database.db, studioHome: config.studioHome, appPort: config.port, previewPort: config.previewPort });
+  const previewOrigin = createPreviewOrigin({
+    database: database.db,
+    studioHome: config.studioHome,
+    appPort: config.port,
+    previewPort: config.previewPort,
+    remote: config.remote,
+  });
   const previewServer = serve({ fetch: previewOrigin.fetch, hostname: bindHost, port: config.previewPort }, (address) => {
     logger.info("preview origin listening", { host: bindHost, port: address.port });
   });

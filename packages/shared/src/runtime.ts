@@ -18,6 +18,9 @@ export const ENV = {
   ffmpeg: "ZKS_FFMPEG",
   chrome: "ZKS_CHROME",
   container: "ZKS_CONTAINER",
+  /** Remote mode: the https origins a TLS proxy publishes for the app and the preview; both or neither. */
+  publicOrigin: "ZKS_PUBLIC_ORIGIN",
+  previewPublicOrigin: "ZKS_PREVIEW_PUBLIC_ORIGIN",
   /** Unset selects PGlite; a postgres:// or postgresql:// URL selects Postgres (plan §8). */
   databaseUrl: "DATABASE_URL",
 } as const;

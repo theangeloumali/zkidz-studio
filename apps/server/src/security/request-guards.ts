@@ -3,6 +3,7 @@
 import { API_ROUTES, CSRF_HEADER, isStateChangingMethod, LOOPBACK_HOST } from "@zks/shared";
 import type { Context, MiddlewareHandler } from "hono";
 import { STUDIO_MCP_ROUTES } from "../tools/mcp-paths.ts";
+import { hostOfOrigin, type RemoteOrigins } from "./remote-origins.ts";
 import { applySecurityHeaders, buildSecurityHeaders } from "./security-headers.ts";
 import { tokensMatch } from "./token.ts";
 
@@ -10,6 +11,7 @@ export interface RequestGuardConfig {
   readonly appPort: number;
   readonly previewPort: number;
   readonly csrfToken: string;
+  readonly remote?: RemoteOrigins;
 }
 
 type RejectionReason = "host" | "framed" | "fetch-site" | "origin" | "csrf" | "content-type" | "bearer";
@@ -31,8 +33,14 @@ const BEARER_ROUTES = [
 const BEARER_PREFIX = "Bearer ";
 
 /** The Host values a browser may send for the app (DNS rebinding guard, plan §11). */
-export function allowedHostsFor(appPort: number): readonly string[] {
-  return [`${LOOPBACK_HOST}:${appPort}`, `localhost:${appPort}`, `[::1]:${appPort}`];
+export function allowedHostsFor(appPort: number, remote?: RemoteOrigins): readonly string[] {
+  const loopbackHosts = [`${LOOPBACK_HOST}:${appPort}`, `localhost:${appPort}`, `[::1]:${appPort}`];
+  return remote === undefined ? loopbackHosts : [...loopbackHosts, hostOfOrigin(remote.appOrigin)];
+}
+
+/** The one Origin a browser may send with this Host: https on the public host, http on a loopback one. */
+export function expectedOriginFor(host: string, remote?: RemoteOrigins): string {
+  return remote !== undefined && host === hostOfOrigin(remote.appOrigin) ? remote.appOrigin : `http://${host}`;
 }
 
 export function isAllowedHost(hostHeader: string | undefined, allowedHosts: readonly string[]): boolean {
@@ -40,11 +48,11 @@ export function isAllowedHost(hostHeader: string | undefined, allowedHosts: read
 }
 
 export function createRequestGuard(config: RequestGuardConfig): MiddlewareHandler {
-  const allowedHosts = allowedHostsFor(config.appPort);
-  const securityHeaders = buildSecurityHeaders(config.previewPort);
+  const allowedHosts = allowedHostsFor(config.appPort, config.remote);
+  const securityHeaders = buildSecurityHeaders(config.previewPort, config.remote);
 
   return async (c, next) => {
-    const rejectionReason = findRejectionReason(c, { allowedHosts, csrfToken: config.csrfToken });
+    const rejectionReason = findRejectionReason(c, { allowedHosts, csrfToken: config.csrfToken, remote: config.remote });
     if (rejectionReason !== null) {
       const rejection = rejectionReason === "bearer" ? c.json({ error: "Unauthorized" }, 401) : c.json({ error: `Forbidden: ${rejectionReason}` }, 403);
       applySecurityHeaders(rejection.headers, securityHeaders);
@@ -57,16 +65,16 @@ export function createRequestGuard(config: RequestGuardConfig): MiddlewareHandle
   };
 }
 
-function findRejectionReason(c: Context, guard: { allowedHosts: readonly string[]; csrfToken: string }): RejectionReason | null {
+function findRejectionReason(c: Context, guard: { allowedHosts: readonly string[]; csrfToken: string; remote?: RemoteOrigins }): RejectionReason | null {
   const host = c.req.header("host")?.toLowerCase();
   if (host === undefined || !isAllowedHost(host, guard.allowedHosts)) return "host";
   if (FRAME_DESTINATIONS.has(c.req.header("sec-fetch-dest")?.toLowerCase() ?? "")) return "framed";
   if (!isFetchSiteAllowed(c)) return "fetch-site";
-  if (isBearerRoute(c)) return findBearerRejection(c, host);
+  if (isBearerRoute(c)) return findBearerRejection(c, expectedOriginFor(host, guard.remote));
   if (!isStateChangingMethod(c.req.method)) return null;
 
   // Exact same-origin: the scheme and the Host the browser actually used.
-  if (c.req.header("origin") !== `http://${host}`) return "origin";
+  if (c.req.header("origin") !== expectedOriginFor(host, guard.remote)) return "origin";
   if (!tokensMatch(guard.csrfToken, c.req.header(CSRF_HEADER))) return "csrf";
   if (mediaTypeOf(c.req.header("content-type")) !== expectedMediaType(c)) return "content-type";
   return null;
@@ -77,9 +85,9 @@ function isBearerRoute(c: Context): boolean {
 }
 
 /** No Origin is fine (node callers send none), but a browser's foreign one never is. */
-function findBearerRejection(c: Context, host: string): RejectionReason | null {
+function findBearerRejection(c: Context, expectedOrigin: string): RejectionReason | null {
   const origin = c.req.header("origin");
-  if (origin !== undefined && origin !== `http://${host}`) return "origin";
+  if (origin !== undefined && origin !== expectedOrigin) return "origin";
   if (!c.req.header("authorization")?.startsWith(BEARER_PREFIX)) return "bearer";
   if (isStateChangingMethod(c.req.method) && mediaTypeOf(c.req.header("content-type")) !== "application/json") return "content-type";
   return null;

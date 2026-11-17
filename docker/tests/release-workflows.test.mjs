@@ -13,6 +13,9 @@ const CHECK_STEP_NAME = "Re-check every pinned SHA-256";
 const APP_CHECK_STEP_NAME = "Check the release GitHub App is configured";
 const jqAndCurlInstalled = spawnSync("jq", ["--version"]).status === 0 && spawnSync("curl", ["--version"]).status === 0;
 
+// ci.yml pins the linux_amd64 actionlint build, which cannot execute on any other host.
+const pinnedActionlintRunsHere = process.platform === "linux" && process.arch === "x64";
+
 const readWorkflow = (/** @type {string} */ name) => readFileSync(join(REPO_ROOT, ".github/workflows", name), "utf8");
 const readJson = (/** @type {string} */ name) => JSON.parse(readFileSync(join(REPO_ROOT, name), "utf8"));
 
@@ -187,12 +190,16 @@ describe.skipIf(!jqAndCurlInstalled)("ci workflow lint", () => {
     writeFileSync(join(scratchDir, ".github/workflows/bad.yml"), body);
   };
 
-  it("fails a job-level env that reads the runner context", () => {
-    writeWorkflow("on: push\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    env:\n      HOME_DIR: ${{ runner.temp }}/x\n    steps:\n      - run: echo hi\n");
-    const result = runLint(stepScript(readWorkflow("ci.yml"), LINT_STEP_NAME));
-    expect(result.status).not.toBe(0);
-    expect(result.stdout + result.stderr).toContain('context "runner" is not allowed here');
-  }, 60_000);
+  it.skipIf(!pinnedActionlintRunsHere)(
+    "fails a job-level env that reads the runner context",
+    () => {
+      writeWorkflow("on: push\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    env:\n      HOME_DIR: ${{ runner.temp }}/x\n    steps:\n      - run: echo hi\n");
+      const result = runLint(stepScript(readWorkflow("ci.yml"), LINT_STEP_NAME));
+      expect(result.status).not.toBe(0);
+      expect(result.stdout + result.stderr).toContain('context "runner" is not allowed here');
+    },
+    60_000,
+  );
 
   it("refuses to run a download whose SHA-256 is not the pinned one", () => {
     writeWorkflow("on: push\njobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo hi\n");

@@ -1,7 +1,9 @@
 // Created by The Angelo Umali.
 import { LOOPBACK_HOST } from "@zks/shared";
+import type { RemoteOrigins } from "./remote-origins.ts";
 
-export function buildSecurityHeaders(previewPort: number): Readonly<Record<string, string>> {
+export function buildSecurityHeaders(previewPort: number, remote?: RemoteOrigins): Readonly<Record<string, string>> {
+  const previewFrameSources = [`http://${LOOPBACK_HOST}:${previewPort}`, ...(remote === undefined ? [] : [remote.previewOrigin])];
   const contentSecurityPolicy = [
     "default-src 'self'",
     "script-src 'self'",
@@ -11,7 +13,7 @@ export function buildSecurityHeaders(previewPort: number): Readonly<Record<strin
     "font-src 'self'",
     "connect-src 'self'",
     // The overlay preview is the only frame the app embeds (plan §9.3).
-    `frame-src http://${LOOPBACK_HOST}:${previewPort}`,
+    `frame-src ${previewFrameSources.join(" ")}`,
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",

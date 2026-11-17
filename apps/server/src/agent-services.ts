@@ -24,6 +24,7 @@ import { snapshotRenderJobSpecs } from "./jobs/spec-snapshot.ts";
 import type { Logger } from "./logging/logger.ts";
 import { DEFAULT_PROJECT_SETTINGS } from "./rules/project-settings.ts";
 import { loadSessionSetup } from "./rules/session-setup.ts";
+import type { RemoteOrigins } from "./security/remote-origins.ts";
 import { allowedHostsFor } from "./security/request-guards.ts";
 import { createSessionToken, tokensMatch } from "./security/token.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "./security/ws-guard.ts";
@@ -51,6 +52,7 @@ export interface AgentServicesDeps {
   readonly jobRunner: JobRunner;
   readonly logger: Logger;
   readonly appPort: number;
+  readonly remote?: RemoteOrigins;
   readonly appVersion: string;
   readonly pluginDir: string;
   /** §11 ZKS_RUN; main.ts empties it at startup. */
@@ -191,7 +193,8 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
       },
       tickets: createTicketStore(),
       checkWebSocketUpgrade,
-      allowedHosts: allowedHostsFor(deps.appPort),
+      allowedHosts: allowedHostsFor(deps.appPort, deps.remote),
+      remote: deps.remote,
       logger: deps.logger,
     });
     registerStudioToolRoutes(app, {

@@ -12,6 +12,9 @@ const CALLER_ENV = Object.fromEntries(Object.entries(process.env).filter(([name]
 const listSteps = (/** @type {string[]} */ args) => spawnSync("bash", [SCRIPT, "--list", ...args], { encoding: "utf8", env: CALLER_ENV });
 
 // The local run stands in for every Linux job the GitHub workflows ran, so a merge is checked the same way.
+// flock is util-linux; macOS has none, and ci-local.sh itself is documented as Linux-only.
+const flockInstalled = spawnSync("flock", ["--version"]).status === 0;
+
 describe("ci-local", () => {
   // The lint, scan and install run first; then every check that shares nothing runs side by side. The server suite keeps
   // its own lane: each of its files boots a PGlite, and beside the other suites that once ran out of memory.
@@ -121,7 +124,7 @@ describe("ci-local", () => {
   });
 
   // Overlapping runs from parallel sessions pushed vitest past its 60 s worker-start timeout, so runs take turns.
-  it("waits for another ci-local run on this machine to finish before starting", () => {
+  it.skipIf(!flockInstalled)("waits for another ci-local run on this machine to finish before starting", () => {
     const lockFile = join(mkdtempSync(join(tmpdir(), "zks-ci-lock-")), "ci-local.lock");
     const holder = spawnSync("bash", ["-c", `exec 9>"${lockFile}"; flock 9; timeout 3 bash "${SCRIPT}" 2>&1; echo "status=$?"`], {
       encoding: "utf8",
@@ -132,7 +135,7 @@ describe("ci-local", () => {
   });
 
   // Worktrees running it at once timed out starting vitest workers, so a run waits for the machine-wide lock.
-  it("gives up when another run holds the lock past ZKS_CI_LOCK_WAIT_S", () => {
+  it.skipIf(!flockInstalled)("gives up when another run holds the lock past ZKS_CI_LOCK_WAIT_S", () => {
     const lockFile = join(mkdtempSync(join(tmpdir(), "zks-ci-lock-")), "ci-local.lock");
     const holder = spawn("flock", [lockFile, "sleep", "5"], { stdio: "ignore" });
     let lockIsFree = true;

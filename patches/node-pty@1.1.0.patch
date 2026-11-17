@@ -1,0 +1,13 @@
+diff --git a/scripts/prebuild.js b/scripts/prebuild.js
+index 17f1d980e62e017d77058627a7a15c4c29f9470c..ceb0595ae0fa090b1f4bafc382cd373eddeea500 100644
+--- a/scripts/prebuild.js
++++ b/scripts/prebuild.js
+@@ -31,4 +31,8 @@ if (!fs.existsSync(PREBUILD_DIR)) {
+   process.exit(1);
+ }
+ 
++// 1.1.0 ships the macOS spawn-helper without its execute bit, so every spawn fails with posix_spawnp.
++const spawnHelper = path.join(PREBUILD_DIR, 'spawn-helper');
++if (fs.existsSync(spawnHelper)) fs.chmodSync(spawnHelper, 0o755);
++
+ process.exit(0);

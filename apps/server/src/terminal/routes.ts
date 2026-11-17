@@ -7,6 +7,7 @@ import type { WSContext } from "hono/ws";
 import { z } from "zod";
 import { HttpError, notFound, parseOrBadRequest, readJsonBody } from "../http/http-error.ts";
 import type { Logger } from "../logging/logger.ts";
+import { peerAddressOf } from "../security/proxy-proof.ts";
 import type { RemoteOrigins } from "../security/remote-origins.ts";
 import type { TicketStore, WebSocketUpgradeOptions, WebSocketUpgradeResult } from "../security/ws-guard.ts";
 import { preToolUseAnswer, type TerminalSession, type TerminalSessions } from "./terminal-sessions.ts";
@@ -51,6 +52,7 @@ export function registerTerminalRoutes(app: Hono, deps: TerminalRouteDeps): void
         tickets: deps.tickets,
         sessionId,
         remote: deps.remote,
+        peerAddress: peerAddressOf(c),
       });
       if (!verdict.ok) {
         deps.logger.warn("terminal socket refused", { reason: verdict.reason });

@@ -2,6 +2,7 @@
 // Mode T WebSocket upgrade guard (plan §6.3, §11): allowed Host, an Origin naming that same host, fetch metadata that is
 // same-origin when present, and a single-use ticket.
 import { TERMINAL_TICKET_TTL_S } from "@zks/shared";
+import { hasProxyProof, PROXY_SECRET_HEADER } from "./proxy-proof.ts";
 import { expectedOriginFor, isAllowedHost } from "./request-guards.ts";
 import type { RemoteOrigins } from "./remote-origins.ts";
 import { createSessionToken } from "./token.ts";
@@ -28,6 +29,8 @@ export interface WebSocketUpgradeOptions {
   readonly tickets: TicketStore;
   readonly sessionId: string;
   readonly remote?: RemoteOrigins;
+  /** The TCP peer of the upgrade; with remote mode on, a non-loopback peer must carry the proxy secret. */
+  readonly peerAddress?: string;
 }
 
 export type WebSocketUpgradeResult = { readonly ok: true } | { readonly ok: false; readonly status: 403; readonly reason: string };
@@ -66,6 +69,7 @@ export function checkWebSocketUpgrade(request: Request, options: WebSocketUpgrad
 
 // Header checks run before redeem so a refused upgrade cannot spend the app's own ticket.
 function findUpgradeRejection(request: Request, options: WebSocketUpgradeOptions): string | null {
+  if (!hasProxyProof(options.peerAddress, request.headers.get(PROXY_SECRET_HEADER), options.remote)) return "proxy";
   const host = request.headers.get("host") ?? undefined;
   if (!isAllowedHost(host, options.allowedHosts)) return "host";
   // The same host-bound rule as HTTP writes, so the app works on 127.0.0.1, localhost and [::1] alike.

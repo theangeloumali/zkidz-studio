@@ -2,11 +2,18 @@
 // Remote mode (docs/user/docker.md): the public hosts join the allowlist and carry https Origins; everything else holds.
 import { CSRF_HEADER } from "@zks/shared";
 import { describe, expect, it } from "vitest";
+import { PROXY_SECRET_HEADER } from "../../src/security/proxy-proof.ts";
 import { allowedHostsFor } from "../../src/security/request-guards.ts";
 import { checkWebSocketUpgrade, createTicketStore } from "../../src/security/ws-guard.ts";
-import { buildGuardedApp, sendRequest, TEST_APP_HOST, TEST_APP_PORT, TEST_REMOTE, TEST_REMOTE_HOST, validWriteHeaders } from "./test-app.ts";
+import { buildGuardedApp, sendRequest as sendBare, TEST_APP_HOST, TEST_APP_PORT, TEST_REMOTE, TEST_REMOTE_HOST, validWriteHeaders } from "./test-app.ts";
 
 const PUBLIC_ORIGIN = TEST_REMOTE.appOrigin;
+const PROXY_PEER = "172.18.0.5";
+const OTHER_CONTAINER_PEER = "172.18.0.9";
+
+/** Behaves like Caddy on the docker network: a non-loopback peer that carries the proxy secret. */
+const sendRequest: typeof sendBare = (app, path, init = {}) =>
+  sendBare(app, path, { peer: PROXY_PEER, ...init, headers: { [PROXY_SECRET_HEADER]: TEST_REMOTE.proxySecret, ...init.headers } });
 const SESSION_ID = "session-1";
 
 function publicWriteHeaders(csrfToken: string) {
@@ -18,7 +25,13 @@ function upgradeRequest(ticket: string, headers: Record<string, string>): Reques
 }
 
 function checkUpgrade(request: Request, tickets: ReturnType<typeof createTicketStore>) {
-  return checkWebSocketUpgrade(request, { allowedHosts: allowedHostsFor(TEST_APP_PORT, TEST_REMOTE), tickets, sessionId: SESSION_ID, remote: TEST_REMOTE });
+  return checkWebSocketUpgrade(request, {
+    allowedHosts: allowedHostsFor(TEST_APP_PORT, TEST_REMOTE),
+    tickets,
+    sessionId: SESSION_ID,
+    remote: TEST_REMOTE,
+    peerAddress: PROXY_PEER,
+  });
 }
 
 describe("allowedHostsFor", () => {
@@ -91,7 +104,7 @@ describe("the request guard in remote mode", () => {
 });
 
 describe("the terminal WebSocket guard in remote mode", () => {
-  const publicHeaders = { host: TEST_REMOTE_HOST, origin: PUBLIC_ORIGIN, "sec-fetch-site": "same-origin" };
+  const publicHeaders = { host: TEST_REMOTE_HOST, origin: PUBLIC_ORIGIN, "sec-fetch-site": "same-origin", [PROXY_SECRET_HEADER]: TEST_REMOTE.proxySecret };
 
   it("accepts the public host with its exact https Origin and a fresh ticket", () => {
     const tickets = createTicketStore();
@@ -119,5 +132,79 @@ describe("the terminal WebSocket guard in remote mode", () => {
       sessionId: SESSION_ID,
     });
     expect(result).toMatchObject({ ok: false, status: 403, reason: "host" });
+  });
+});
+
+describe("proof that the peer is the proxy", () => {
+  const publicRead = { host: TEST_REMOTE_HOST };
+
+  it.each([
+    ["no secret", {}],
+    ["a wrong secret", { [PROXY_SECRET_HEADER]: "x".repeat(40) }],
+    ["a secret of another length", { [PROXY_SECRET_HEADER]: "short" }],
+  ])("refuses a non-loopback peer with %s, whatever the Host", async (_label, proof) => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    for (const host of [TEST_REMOTE_HOST, TEST_APP_HOST, "evil.example"]) {
+      const response = await sendBare(app, "/api/projects", { peer: OTHER_CONTAINER_PEER, headers: { host, ...proof } });
+      expect(response.status).toBe(403);
+    }
+    const refusal = await sendBare(app, "/api/projects", { peer: OTHER_CONTAINER_PEER, headers: { ...publicRead, ...proof } });
+    expect(await refusal.json()).toEqual({ error: "Forbidden: proxy" });
+    expect(refusal.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  });
+
+  it("refuses a request whose peer address is unknown and carries no secret", async () => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    expect((await sendBare(app, "/api/projects", { headers: publicRead })).status).toBe(403);
+  });
+
+  it("does not hand the CSRF token to a peer without proof", async () => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    const response = await sendBare(app, "/api/projects", { peer: OTHER_CONTAINER_PEER, headers: publicRead });
+    expect(response.headers.get(CSRF_HEADER)).toBeNull();
+  });
+
+  it("passes the right secret from a non-loopback peer", async () => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    const headers = { ...publicRead, [PROXY_SECRET_HEADER]: TEST_REMOTE.proxySecret };
+    expect((await sendBare(app, "/api/projects", { peer: OTHER_CONTAINER_PEER, headers })).status).toBe(200);
+  });
+
+  it.each(["127.0.0.1", "::1", "::ffff:127.0.0.1"])("passes a loopback peer %s with no secret, for the healthcheck", async (peer) => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    expect((await sendBare(app, "/", { peer, headers: { host: TEST_APP_HOST } })).status).toBe(200);
+  });
+
+  it("keeps the other guards after the proof: a loopback peer still needs Origin and CSRF on writes", async () => {
+    const { app } = buildGuardedApp(TEST_REMOTE);
+    const response = await sendBare(app, "/api/rules", { method: "POST", peer: "127.0.0.1", headers: { host: TEST_APP_HOST }, body: "{}" });
+    expect(response.status).toBe(403);
+  });
+
+  it("ignores the secret when remote mode is off", async () => {
+    const { app } = buildGuardedApp();
+    expect((await sendBare(app, "/api/projects", { peer: OTHER_CONTAINER_PEER })).status).toBe(200);
+  });
+});
+
+describe("the WebSocket upgrade needs the same proof", () => {
+  const headers = { host: TEST_REMOTE_HOST, origin: PUBLIC_ORIGIN, "sec-fetch-site": "same-origin" };
+  const check = (proof: Record<string, string>, peerAddress: string | undefined) => {
+    const tickets = createTicketStore();
+    const { ticket } = tickets.issue(SESSION_ID);
+    const options = { allowedHosts: allowedHostsFor(TEST_APP_PORT, TEST_REMOTE), tickets, sessionId: SESSION_ID, remote: TEST_REMOTE, peerAddress };
+    return { result: checkWebSocketUpgrade(upgradeRequest(ticket, { ...headers, ...proof }), options), tickets, ticket };
+  };
+
+  it("refuses a non-loopback peer with no or a wrong secret, leaving the ticket unspent", () => {
+    for (const proof of [{}, { [PROXY_SECRET_HEADER]: "x".repeat(40) }]) {
+      const { result, tickets, ticket } = check(proof, OTHER_CONTAINER_PEER);
+      expect(result).toMatchObject({ ok: false, status: 403, reason: "proxy" });
+      expect(tickets.redeem(ticket, SESSION_ID)).toBe(true);
+    }
+  });
+
+  it("accepts the right secret", () => {
+    expect(check({ [PROXY_SECRET_HEADER]: TEST_REMOTE.proxySecret }, OTHER_CONTAINER_PEER).result).toEqual({ ok: true });
   });
 });

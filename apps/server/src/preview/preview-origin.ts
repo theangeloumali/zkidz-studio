@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { projectDir } from "../config.ts";
 import { HttpError, notFound, toHttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
+import { hasProxyProof, PROXY_SECRET_HEADER, peerAddressOf } from "../security/proxy-proof.ts";
 import { hostOfOrigin, type RemoteOrigins } from "../security/remote-origins.ts";
 import { allowedHostsFor, isAllowedHost } from "../security/request-guards.ts";
 import { openConfined } from "../security/confine-path.ts";
@@ -52,7 +53,8 @@ export function createPreviewOrigin(deps: PreviewOriginDependencies): Hono {
   const previewHeaders = buildPreviewHeaders(deps.appPort, deps.remote);
 
   app.use("*", async (c, next) => {
-    if (isAllowedHost(c.req.header("host"), allowedHosts)) await next();
+    if (!hasProxyProof(peerAddressOf(c), c.req.header(PROXY_SECRET_HEADER), deps.remote)) c.res = c.json({ error: "Forbidden: proxy" }, 403);
+    else if (isAllowedHost(c.req.header("host"), allowedHosts)) await next();
     else c.res = c.json({ error: "Forbidden: host" }, 403);
     for (const [name, value] of Object.entries(previewHeaders)) c.res.headers.set(name, value);
   });

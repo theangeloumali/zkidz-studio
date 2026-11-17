@@ -95,6 +95,7 @@ describe("loadServerConfig remote mode", () => {
   const baseEnv = { ZKS_HOME: "/srv/zks" };
   const app = "https://studio.example.com";
   const preview = "https://studio-preview.example.com";
+  const secret = "s".repeat(32);
   beforeEach(() => vi.stubEnv("ZKS_FFMPEG", ""));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -104,8 +105,8 @@ describe("loadServerConfig remote mode", () => {
   });
 
   it("reads both origins, dropping one trailing slash", () => {
-    const env = { ...baseEnv, ZKS_PUBLIC_ORIGIN: `${app}/`, ZKS_PREVIEW_PUBLIC_ORIGIN: preview };
-    expect(loadServerConfig(env).remote).toEqual({ appOrigin: app, previewOrigin: preview });
+    const env = { ...baseEnv, ZKS_PUBLIC_ORIGIN: `${app}/`, ZKS_PREVIEW_PUBLIC_ORIGIN: preview, ZKS_PROXY_SECRET: secret };
+    expect(loadServerConfig(env).remote).toEqual({ appOrigin: app, previewOrigin: preview, proxySecret: secret });
   });
 
   it("refuses one origin without the other", () => {
@@ -127,5 +128,14 @@ describe("loadServerConfig remote mode", () => {
 
   it("rejects two origins that are the same", () => {
     expect(() => loadServerConfig({ ...baseEnv, ZKS_PUBLIC_ORIGIN: app, ZKS_PREVIEW_PUBLIC_ORIGIN: app })).toThrow(/must differ/);
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["empty", ""],
+    ["31 characters", "s".repeat(31)],
+  ])("refuses remote mode when ZKS_PROXY_SECRET is %s", (_label, shortSecret) => {
+    const env = { ...baseEnv, ZKS_PUBLIC_ORIGIN: app, ZKS_PREVIEW_PUBLIC_ORIGIN: preview, ZKS_PROXY_SECRET: shortSecret };
+    expect(() => loadServerConfig(env)).toThrow(/ZKS_PROXY_SECRET must be at least 32/);
   });
 });

@@ -3,6 +3,7 @@
 import { API_ROUTES, CSRF_HEADER, isStateChangingMethod, LOOPBACK_HOST } from "@zks/shared";
 import type { Context, MiddlewareHandler } from "hono";
 import { STUDIO_MCP_ROUTES } from "../tools/mcp-paths.ts";
+import { hasProxyProof, PROXY_SECRET_HEADER, peerAddressOf } from "./proxy-proof.ts";
 import { hostOfOrigin, type RemoteOrigins } from "./remote-origins.ts";
 import { applySecurityHeaders, buildSecurityHeaders } from "./security-headers.ts";
 import { tokensMatch } from "./token.ts";
@@ -14,7 +15,7 @@ export interface RequestGuardConfig {
   readonly remote?: RemoteOrigins;
 }
 
-type RejectionReason = "host" | "framed" | "fetch-site" | "origin" | "csrf" | "content-type" | "bearer";
+type RejectionReason = "host" | "framed" | "fetch-site" | "origin" | "csrf" | "content-type" | "bearer" | "proxy";
 
 const FRAME_DESTINATIONS: ReadonlySet<string> = new Set(["iframe", "frame", "embed", "object", "fencedframe"]);
 const ALWAYS_ALLOWED_FETCH_SITES: ReadonlySet<string> = new Set(["same-origin", "none"]);
@@ -66,6 +67,7 @@ export function createRequestGuard(config: RequestGuardConfig): MiddlewareHandle
 }
 
 function findRejectionReason(c: Context, guard: { allowedHosts: readonly string[]; csrfToken: string; remote?: RemoteOrigins }): RejectionReason | null {
+  if (!hasProxyProof(peerAddressOf(c), c.req.header(PROXY_SECRET_HEADER), guard.remote)) return "proxy";
   const host = c.req.header("host")?.toLowerCase();
   if (host === undefined || !isAllowedHost(host, guard.allowedHosts)) return "host";
   if (FRAME_DESTINATIONS.has(c.req.header("sec-fetch-dest")?.toLowerCase() ?? "")) return "framed";

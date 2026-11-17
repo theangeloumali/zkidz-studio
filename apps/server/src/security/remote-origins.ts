@@ -5,7 +5,10 @@ import { ENV } from "@zks/shared";
 export interface RemoteOrigins {
   readonly appOrigin: string;
   readonly previewOrigin: string;
+  readonly proxySecret: string;
 }
+
+export const MIN_PROXY_SECRET_LENGTH = 32;
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -23,7 +26,11 @@ export function parseRemoteOrigins(env: Environment): RemoteOrigins | undefined 
   const appOrigin = parseHttpsOrigin(ENV.publicOrigin, rawApp);
   const previewOrigin = parseHttpsOrigin(ENV.previewPublicOrigin, rawPreview);
   if (appOrigin === previewOrigin) throw new Error(`${ENV.previewPublicOrigin} must differ from ${ENV.publicOrigin}: the preview is a separate origin`);
-  return { appOrigin, previewOrigin };
+  const proxySecret = env[ENV.proxySecret] ?? "";
+  if (proxySecret.length < MIN_PROXY_SECRET_LENGTH) {
+    throw new Error(`${ENV.proxySecret} must be at least ${MIN_PROXY_SECRET_LENGTH} characters when remote mode is on`);
+  }
+  return { appOrigin, previewOrigin, proxySecret };
 }
 
 /** Only a bare `https://host[:port]`, so a path, query, hash or credentials cannot widen what the guards trust. */

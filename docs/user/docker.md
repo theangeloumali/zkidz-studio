@@ -78,10 +78,12 @@ which reaches the container over a shared docker network. Remote mode is off unl
 CLAUDE_CODE_VERSION=<version>
 ZKS_PUBLIC_ORIGIN=https://studio.example.com
 ZKS_PREVIEW_PUBLIC_ORIGIN=https://studio-preview.example.com
+ZKS_PROXY_SECRET=<32 or more random characters>
 
 docker compose --env-file .env -f docker/compose.yml -f docker/compose.remote.yml up -d --build
 ```
 
+- `ZKS_PROXY_SECRET` is required in remote mode and must be at least 32 characters (`openssl rand -hex 32` works). The server stops without it.
 - Each origin is a bare `https://host`, with no path, and the two must differ. One set without the other stops the server.
 - The proxy forwards the public app host to port 4317 and the public preview host to the preview port (`ZKS_PORT` + 1,
   4318 by default), both with the original `Host` header.
@@ -90,6 +92,40 @@ docker compose --env-file .env -f docker/compose.yml -f docker/compose.remote.ym
 - The override joins the external docker network `proxy-apps` (create it first, or attach your proxy to it) and mounts
   `zks-node-home` at `/home/node` so the Claude Code sign-in survives a rebuild.
 - Anyone who can reach the public host can use Studio, so keep it on a private network and do not publish it to the internet.
+
+## Who may reach the server in remote mode
+
+Two separate checks guard a remote setup, and neither replaces the other:
+
+- The human login: put `basic_auth` (or your proxy's equivalent) on both public hosts. Studio has no sign-in of its own.
+- The proxy proof: other containers on the shared docker network can reach the server directly, so every request must come
+  from a loopback address (the container's own healthcheck) or carry `x-zks-proxy-secret` equal to `ZKS_PROXY_SECRET`.
+  Anything else gets `403 Forbidden: proxy`, whatever its `Host` header says.
+
+The proxy sets the header and strips any copy a client sent. A Caddyfile sketch, with placeholders only:
+
+```caddy
+studio.example.com, studio-preview.example.com {
+	basic_auth {
+		<user> <password-hash>
+	}
+	@app host studio.example.com
+	handle @app {
+		reverse_proxy zkidz-studio:4317 {
+			header_up -x-zks-proxy-secret
+			header_up x-zks-proxy-secret {env.ZKS_PROXY_SECRET}
+		}
+	}
+	handle {
+		reverse_proxy zkidz-studio:4318 {
+			header_up -x-zks-proxy-secret
+			header_up x-zks-proxy-secret {env.ZKS_PROXY_SECRET}
+		}
+	}
+}
+```
+
+Give the proxy the same `ZKS_PROXY_SECRET` in its environment. Rotate it by changing both and restarting both.
 
 ## Limits
 

@@ -64,7 +64,7 @@ override below (it requires `CLAUDE_CODE_VERSION`) or directly:
 docker build --build-arg CLAUDE_CODE_VERSION=<version> -f docker/Dockerfile -t zkidz-studio:local .
 ```
 
-With the variable empty the image carries no Claude Code. Auto-update is off, so the version only changes when you rebuild.
+With the variable empty the image carries no Claude Code. The version must be exact (`x.y.z`; `latest` and `stable` fail the build). The build verifies the release manifest's GPG signature against Anthropic's published key fingerprint, then the binary's SHA-256 against that manifest. All updates are off through a managed setting (`/etc/claude-code/managed-settings.json`, `DISABLE_UPDATES`), so the version only changes when you rebuild.
 Run `/login` once in the pane. The sign-in lives in Claude Code's own `~/.claude`, never in Studio, and usage counts against
 your Claude plan.
 
@@ -87,7 +87,8 @@ docker compose --env-file .env -f docker/compose.yml -f docker/compose.remote.ym
 - Each origin is a bare `https://host`, with no path, and the two must differ. One set without the other stops the server.
 - The proxy forwards the public app host to port 4317 and the public preview host to the preview port (`ZKS_PORT` + 1,
   4318 by default), both with the original `Host` header.
-- The server still binds as before; the compose file keeps the `127.0.0.1:4317` mapping. Writes still need the exact
+- The server still binds as before; the compose file keeps the `127.0.0.1:4317` mapping. That mapping reaches the container from
+  the docker bridge gateway, not from loopback, so in remote mode a request through it also needs `x-zks-proxy-secret`. Writes still need the exact
   `https://` Origin and the per-launch CSRF token.
 - The override joins the external docker network `proxy-apps` (create it first, or attach your proxy to it) and mounts
   `zks-node-home` at `/home/node` so the Claude Code sign-in survives a rebuild.
@@ -102,7 +103,7 @@ Two separate checks guard a remote setup, and neither replaces the other:
   from a loopback address (the container's own healthcheck) or carry `x-zks-proxy-secret` equal to `ZKS_PROXY_SECRET`.
   Anything else gets `403 Forbidden: proxy`, whatever its `Host` header says.
 
-The proxy sets the header and strips any copy a client sent. A Caddyfile sketch, with placeholders only:
+The proxy sets the header, and `header_up` overwrites any copy a client sent (checked against a real Caddy 2: a request carrying a wrong value still got through). A Caddyfile sketch, with placeholders only:
 
 ```caddy
 studio.example.com, studio-preview.example.com {
@@ -112,13 +113,11 @@ studio.example.com, studio-preview.example.com {
 	@app host studio.example.com
 	handle @app {
 		reverse_proxy zkidz-studio:4317 {
-			header_up -x-zks-proxy-secret
 			header_up x-zks-proxy-secret {env.ZKS_PROXY_SECRET}
 		}
 	}
 	handle {
 		reverse_proxy zkidz-studio:4318 {
-			header_up -x-zks-proxy-secret
 			header_up x-zks-proxy-secret {env.ZKS_PROXY_SECRET}
 		}
 	}

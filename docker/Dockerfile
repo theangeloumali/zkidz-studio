@@ -31,16 +31,32 @@ RUN apt-get update \
   && mkdir -p /zks-home \
   && chown node:node /zks-home
 # Terminal mode runs Claude Code in the image. Empty (the default) installs nothing and leaves the image as it was.
-# Pinned install: https://code.claude.com/docs/en/setup#install-a-specific-version (install.sh | bash -s <version>).
+# Verified install, per https://code.claude.com/docs/en/setup#binary-integrity-and-code-signing: the release manifest's
+# GPG signature (pinned key fingerprint) vouches for the binary's SHA-256. install.sh only checks an unsigned manifest.
 ARG CLAUDE_CODE_VERSION=
-# Set only with a version, so the pinned build never swaps itself for a newer one.
-ENV DISABLE_AUTOUPDATER=${CLAUDE_CODE_VERSION:+1}
+ARG CLAUDE_CODE_RELEASE_FPR=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Installed under /opt, not ~node: the remote override mounts a volume over /home/node, which would hide the binary.
 RUN if [ -n "$CLAUDE_CODE_VERSION" ]; then \
-    apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
-    && install -d -o node -g node /opt/claude-code \
-    && runuser -u node -- env HOME=/opt/claude-code bash -c "curl -fsSL https://claude.ai/install.sh | bash -s -- $CLAUDE_CODE_VERSION" \
-    && ln -s /opt/claude-code/.local/bin/claude /usr/local/bin/claude; \
+    [[ "$CLAUDE_CODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+      || { echo "CLAUDE_CODE_VERSION must be an exact x.y.z version, got: $CLAUDE_CODE_VERSION" >&2; exit 1; }; \
+    apt-get update && apt-get install -y --no-install-recommends curl gnupg && rm -rf /var/lib/apt/lists/* \
+    && case "$(dpkg --print-architecture)" in amd64) platform=linux-x64 ;; arm64) platform=linux-arm64 ;; *) echo "no Claude Code build for $(dpkg --print-architecture)" >&2; exit 1 ;; esac \
+    && release="https://downloads.claude.ai/claude-code-releases/$CLAUDE_CODE_VERSION" \
+    && work="$(mktemp -d)" && export GNUPGHOME="$work/gnupg" && install -d -m 0700 "$GNUPGHOME" \
+    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc | gpg --batch --import \
+    && curl -fsSL -o "$work/manifest.json" "$release/manifest.json" \
+    && curl -fsSL -o "$work/manifest.json.sig" "$release/manifest.json.sig" \
+    && gpg --batch --status-fd 1 --verify "$work/manifest.json.sig" "$work/manifest.json" | grep -q "^\[GNUPG:\] VALIDSIG .* $CLAUDE_CODE_RELEASE_FPR\$" \
+    && expected="$(node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(m.version!==process.argv[3])process.exit(2);process.stdout.write(m.platforms[process.argv[2]].checksum)' "$work/manifest.json" "$platform" "$CLAUDE_CODE_VERSION")" \
+    && install -d /opt/claude-code/bin \
+    && curl -fsSL -o /opt/claude-code/bin/claude "$release/$platform/claude" \
+    && echo "$expected  /opt/claude-code/bin/claude" | sha256sum -c - \
+    && chmod 0755 /opt/claude-code/bin/claude \
+    && ln -s /opt/claude-code/bin/claude /usr/local/bin/claude \
+    && install -d /etc/claude-code \
+    && printf '{"env":{"DISABLE_UPDATES":"1","DISABLE_AUTOUPDATER":"1"}}\n' > /etc/claude-code/managed-settings.json \
+    && rm -rf "$work"; \
   fi
 COPY --from=builder --chown=node:node /opt/zks /opt/zks
 COPY --from=builder --chown=node:node /app /app

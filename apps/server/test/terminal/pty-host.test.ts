@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildAgentEnv } from "../../src/auth/agent-env.ts";
 import { createPtyHost, TerminalLaunchError, type PtyHost, type TerminalPty } from "../../src/terminal/pty-host.ts";
 import { INTERRUPT_KEY } from "../../src/terminal/prompt-input.ts";
-import { REAL_PTY_TEST_TIMEOUT_MS, waitFor, writeStubClaude } from "./stub-claude.ts";
+import { parseStubReport, REAL_PTY_TEST_TIMEOUT_MS, waitFor, writeStubClaude } from "./stub-claude.ts";
 
 const SESSION_ID = "6f1c2a52-1d0c-4c3e-9a51-2b7f0f6f9f10";
 const OTHER_SESSION_ID = "9d0c4b1e-2f3a-4b5c-8d7e-6f5a4b3c2d1e";
@@ -85,7 +85,7 @@ describe("a launched terminal", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () => {
     pty.onData((chunk) => (output += chunk));
     await waitFor(() => output.includes("READY"));
 
-    const report = JSON.parse(/READY (\{.*\})/.exec(output)?.[1] ?? "{}") as { argv: string[]; cwd: string; envKeys: string[] };
+    const report = parseStubReport(output);
     expect(report.argv).toEqual(["--session-id", SESSION_ID]);
     expect(report.envKeys).toContain("ZKS_HOOK_TOKEN");
     expect(report.envKeys.filter((key) => key.startsWith("ANTHROPIC_"))).toEqual([]);

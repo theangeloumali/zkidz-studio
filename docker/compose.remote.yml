@@ -14,9 +14,8 @@ services:
     volumes:
       # Claude Code keeps its sign-in under ~/.claude; Studio reads ~/.claude/projects for usage.
       - zks-node-home:/home/node
-    # Only the proxy's network: the proxy is the one client, and a host short on Docker address
-    # pools cannot create a default network (compose !override replaces the base list).
-    networks: !override
+    networks:
+      - default
       - proxy-apps
 
 networks:

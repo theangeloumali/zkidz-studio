@@ -74,18 +74,13 @@ describe.skipIf(!dockerComposeInstalled)("docker/compose.remote.yml", () => {
     return JSON.parse(result.stdout);
   }
 
-  // A host short on Docker address pools cannot create a default network; behind the proxy it is not needed.
-  it("joins only the proxy network, so it needs no network of its own", () => {
-    const { services, networks } = resolvedRemote();
-    expect(Object.keys(services.studio.networks)).toEqual(["proxy-apps"]);
-    expect(Object.keys(networks)).toEqual(["proxy-apps"]);
-  });
-
-  it("still publishes only 127.0.0.1:4317", () => {
+  // A proxy network is often internal; the default network is the studio's way out to Anthropic.
+  it("keeps its own network beside the proxy's, and still publishes only 127.0.0.1:4317", () => {
+    const { services } = resolvedRemote();
+    expect(Object.keys(services.studio.networks).sort()).toEqual(["default", "proxy-apps"]);
     /** @type {{ host_ip: string; published: string; target: number }[]} */
-    const mappings = resolvedRemote().services.studio.ports;
-    const ports = mappings.map((port) => `${port.host_ip}:${port.published}:${port.target}`);
-    expect(ports).toEqual(["127.0.0.1:4317:4317"]);
+    const mappings = services.studio.ports;
+    expect(mappings.map((port) => `${port.host_ip}:${port.published}:${port.target}`)).toEqual(["127.0.0.1:4317:4317"]);
   });
 });
 

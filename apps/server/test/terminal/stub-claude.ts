@@ -35,7 +35,8 @@ async function askPreToolUse(toolName) {
 
 // Raw mode before READY: a test writes on READY, and a cooked tty would turn the paste's CR into LF.
 if (process.stdin.isTTY) process.stdin.setRawMode(true);
-process.stdout.write("READY " + JSON.stringify({ argv: args, cwd: process.cwd(), envKeys: Object.keys(process.env).sort() }) + "\n");
+// The report first, then READY: the PTY keeps order, so once READY shows the long report line is whole.
+process.stdout.write("STUB-REPORT " + JSON.stringify({ argv: args, cwd: process.cwd(), envKeys: Object.keys(process.env).sort() }) + "\nREADY\n");
 process.stdin.on("data", (chunk) => {
   let text = chunk.toString("utf8");
   // Under load the PTY can hand over earlier input and the Esc in one read.
@@ -66,9 +67,13 @@ export interface StubReport {
   readonly envKeys: string[];
 }
 
-/** What the stub printed on its READY line: the argv, cwd and env keys it was launched with. */
+/** What the stub printed before READY: the argv, cwd and env keys it was launched with. */
+export function parseStubReport(output: string): StubReport {
+  return JSON.parse(/STUB-REPORT (\{.*\})/.exec(output)?.[1] ?? "{}") as StubReport;
+}
+
 export function stubReport(session: { readonly pty: { snapshot(): string } }): StubReport {
-  return JSON.parse(/READY (\{.*\})/.exec(session.pty.snapshot())?.[1] ?? "{}") as StubReport;
+  return parseStubReport(session.pty.snapshot());
 }
 
 const WAIT_FOR_TIMEOUT_MS = 10_000;

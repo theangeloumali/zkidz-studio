@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type { ReportProgress } from "../jobs/job-runner.ts";
-import { engineParentEnv } from "../jobs/engine-process.ts";
+import { ENV } from "@zks/shared";
+import { engineParentEnv, type PinnedEngineTools } from "../jobs/engine-process.ts";
 
 const runFile = promisify(execFile);
 const STDERR_TAIL_CHARS = 2000;
@@ -36,13 +37,19 @@ export interface DemoRunnerOptions {
   readonly engineDir: string;
   readonly demoScript: string;
   readonly studioHome: string;
+  readonly tools: PinnedEngineTools;
 }
 
-export function createDemoRunner({ engineDir, demoScript, studioHome }: DemoRunnerOptions): DemoRunner {
+/** The engine's pinned tools: without ZKS_FFMPEG the engine falls back to an ffmpeg on PATH, which the image has none of. */
+export function demoEnv(tools: PinnedEngineTools, studioHome: string): Record<string, string> {
+  return { ...engineParentEnv({}), [ENV.home]: studioHome, [ENV.ffmpeg]: tools.ffmpegPath, [ENV.chrome]: tools.chromePath };
+}
+
+export function createDemoRunner({ engineDir, demoScript, studioHome, tools }: DemoRunnerOptions): DemoRunner {
   return {
     run: async (projectRoot, reportProgress) => {
       const argv = ["run", "--project", engineDir, "python", demoScript, "--project", projectRoot];
-      const env = { ...engineParentEnv({}), ZKS_HOME: studioHome };
+      const env = demoEnv(tools, studioHome);
       const watcher = watchDemoStages(projectRoot, reportProgress);
       try {
         await runFile("uv", argv, { cwd: projectRoot, env, shell: false });

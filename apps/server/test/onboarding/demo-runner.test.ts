@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ReportProgress } from "../../src/jobs/job-runner.ts";
-import { createDemoRunner, watchDemoStages } from "../../src/onboarding/demo-runner.ts";
+import { createDemoRunner, demoEnv, watchDemoStages } from "../../src/onboarding/demo-runner.ts";
 
 const ENGINE_DIR = fileURLToPath(new URL("../../../../packages/engine", import.meta.url));
 const DEMO_SCRIPT = fileURLToPath(new URL("../../../../examples/demo/make_demo.py", import.meta.url));
@@ -52,6 +52,23 @@ describe("demo stage watcher", () => {
   });
 });
 
+describe("demo environment", () => {
+  it("hands the demo the server's pinned ffmpeg and Chrome, even when the server's own env names none", () => {
+    vi.stubEnv("ZKS_FFMPEG", undefined);
+    vi.stubEnv("ZKS_CHROME", undefined);
+    try {
+      const env = demoEnv({ ffmpegPath: "/opt/zks/tools/ffmpeg/8.1/ffmpeg", chromePath: "/opt/zks/tools/chrome/155/chrome" }, "/zks-home");
+      expect(env).toMatchObject({
+        ZKS_FFMPEG: "/opt/zks/tools/ffmpeg/8.1/ffmpeg",
+        ZKS_CHROME: "/opt/zks/tools/chrome/155/chrome",
+        ZKS_HOME: "/zks-home",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe.skipIf(!hasRenderTools)("demo runner", () => {
   it(
     "renders the demo master into a project folder that has no footage",
@@ -59,8 +76,9 @@ describe.skipIf(!hasRenderTools)("demo runner", () => {
       const studioHome = await mkdtemp(join(tmpdir(), "zks-demo-"));
       const projectRoot = join(studioHome, "projects", "demo");
       try {
-        await createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome }).run(await emptyDemoProject(projectRoot), () =>
-          Promise.resolve(),
+        await createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome, tools: renderTools() }).run(
+          await emptyDemoProject(projectRoot),
+          () => Promise.resolve(),
         );
         expect((await stat(join(projectRoot, "work", "out", "v1.mp4"))).size).toBeGreaterThan(0);
       } finally {
@@ -70,6 +88,10 @@ describe.skipIf(!hasRenderTools)("demo runner", () => {
     RENDER_TIMEOUT_MS,
   );
 });
+
+function renderTools() {
+  return { ffmpegPath: process.env["ZKS_FFMPEG"] ?? "", chromePath: process.env["ZKS_CHROME"] ?? "" };
+}
 
 async function emptyDemoProject(projectRoot: string): Promise<string> {
   await mkdir(join(projectRoot, "media"), { recursive: true });

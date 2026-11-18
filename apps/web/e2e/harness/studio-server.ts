@@ -52,11 +52,12 @@ async function startStudioServer(): Promise<void> {
   let shutdownAgent: (() => Promise<void>) | undefined;
   let previewBuilder: CompositionBuilder | undefined;
   const server = await createTestServer((base) => {
+    const engineTools = pinnedEngineTools(process.env, base.studioHome);
     const engine = createEngineProcessRunner({
       executable: "uv",
       prefixArgs: ["run", "--project", repoPath("packages/engine"), "zks-engine"],
       studioHome: base.studioHome,
-      tools: pinnedEngineTools(process.env, base.studioHome),
+      tools: engineTools,
     });
     const agent = createAgentServices({
       database: base.database.db,
@@ -89,7 +90,12 @@ async function startStudioServer(): Promise<void> {
       eventBus: base.eventBus,
       jobRunner: base.jobRunner,
       engine,
-      demoRunner: createDemoRunner({ engineDir: repoPath("packages/engine"), demoScript: repoPath("examples/demo/make_demo.py"), studioHome: base.studioHome }),
+      demoRunner: createDemoRunner({
+        engineDir: repoPath("packages/engine"),
+        demoScript: repoPath("examples/demo/make_demo.py"),
+        studioHome: base.studioHome,
+        tools: engineTools,
+      }),
       ffprobePath,
       uploadLimits: DEFAULT_UPLOAD_LIMITS,
     });

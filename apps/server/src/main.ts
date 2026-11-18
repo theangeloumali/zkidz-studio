@@ -71,11 +71,12 @@ async function main(): Promise<void> {
   const { promise: listening, resolve: markListening } = Promise.withResolvers<void>();
   const claudeVersion = listening.then(() => readClaudeVersion(claudePath));
   const hasSdkBinary = listening.then(() => hasBundledClaudeBinary());
+  const engineTools = pinnedEngineTools(process.env, config.studioHome);
   const engine = createEngineProcessRunner({
     executable: "uv",
     prefixArgs: ["run", "--project", ENGINE_DIR, "zks-engine"],
     studioHome: config.studioHome,
-    tools: pinnedEngineTools(process.env, config.studioHome),
+    tools: engineTools,
   });
   const agent = createAgentServices({
     database: database.db,
@@ -98,7 +99,7 @@ async function main(): Promise<void> {
     engine,
   });
 
-  const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome });
+  const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome, tools: engineTools });
   const onboarding = createOnboardingServices({
     database: database.db,
     studioHome: config.studioHome,

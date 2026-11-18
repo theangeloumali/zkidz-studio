@@ -11,6 +11,7 @@ import { HttpError } from "../http/http-error.ts";
 import { findProjectOrThrow } from "../projects/project-store.ts";
 import { loadRulesPromptBlock } from "../rules/session-setup.ts";
 import type { TerminalSession, TerminalSessions } from "./terminal-sessions.ts";
+import { defaultTranscriptRoot, hasSessionTranscript } from "./transcript-usage.ts";
 
 /** Only Claude takes a studio-chosen session id, so only Claude sessions resume (agent-launch.ts). */
 const RESUMABLE_AUTH_MODES = ["terminal"] as const;
@@ -20,6 +21,8 @@ export interface ProjectTerminalOpenerDeps {
   readonly studioHome: string;
   readonly model?: string;
   readonly sessions: Pick<TerminalSessions, "open" | "findByProject">;
+  /** Where Claude Code saves transcripts; defaults to ~/.claude/projects. */
+  readonly transcriptRoot?: string;
 }
 
 export interface ProjectTerminalRouteDeps {
@@ -60,7 +63,7 @@ async function openSession(deps: ProjectTerminalOpenerDeps, project: ProjectRow)
   // The studio's model names are Claude's; another agent keeps the model its own config chose.
   const model = isClaude ? deps.model : undefined;
   const [resumeSessionId, rulesText] = await Promise.all([
-    isClaude ? findResumeSessionId(database, project.id, RESUMABLE_AUTH_MODES) : Promise.resolve(undefined),
+    isClaude ? findResumableSessionId(deps, project.id) : Promise.resolve(undefined),
     loadRulesPromptBlock(database),
   ]);
   const session = await deps.sessions.open({
@@ -74,4 +77,11 @@ async function openSession(deps: ProjectTerminalOpenerDeps, project: ProjectRow)
   const authMode = isTerminalAuthMode(mode) ? mode : "terminal";
   await recordCurrentSession(database, { projectId: project.id, sdkSessionId: session.sessionId, model: model ?? null, authMode });
   return session;
+}
+
+/** `claude --resume` fails on a session with no saved conversation, and every reopen would retry it. */
+async function findResumableSessionId(deps: ProjectTerminalOpenerDeps, projectId: string): Promise<string | undefined> {
+  const sessionId = await findResumeSessionId(deps.database, projectId, RESUMABLE_AUTH_MODES);
+  if (sessionId === undefined) return undefined;
+  return (await hasSessionTranscript(sessionId, deps.transcriptRoot ?? defaultTranscriptRoot())) ? sessionId : undefined;
 }

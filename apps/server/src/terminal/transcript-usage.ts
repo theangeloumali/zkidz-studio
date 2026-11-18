@@ -1,7 +1,7 @@
 // Created by The Angelo Umali.
 // A mode T session's token totals from Claude Code's own transcript: the status line only carries the latest call.
 import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -27,6 +27,24 @@ type TokenUsage = z.infer<typeof AssistantEntrySchema>["message"]["usage"];
 /** The PTY's claude runs without CLAUDE_CONFIG_DIR (terminal-env.ts), so its transcripts live under ~/.claude/projects. */
 export function defaultTranscriptRoot(): string {
   return join(homedir(), ".claude", "projects");
+}
+
+/** Whether Claude Code saved this session's conversation; one spent only on the theme picker and /login saves none. */
+export async function hasSessionTranscript(sessionId: string, root: string): Promise<boolean> {
+  try {
+    const folders = await readdir(root, { withFileTypes: true });
+    for (const folder of folders) {
+      if (!folder.isDirectory()) continue;
+      const found = await stat(join(root, folder.name, `${sessionId}.jsonl`)).then(
+        (file) => file.isFile(),
+        () => false,
+      );
+      if (found) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** The path arrives in a hook payload, so only the transcript named after this very session is read. */

@@ -1,5 +1,5 @@
 // Created by The Angelo Umali.
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openDatabase, type StudioDatabaseHandle } from "@zks/db";
 import { agentSessions, projects, rules } from "@zks/db/schema";
@@ -18,6 +18,7 @@ let database: StudioDatabaseHandle;
 let app: Hono;
 let projectId = "";
 let sdkCalls: string[];
+let transcriptRoot = "";
 
 const post = (path: string, body: unknown = null) =>
   app.request(`/api/projects/${projectId}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -33,6 +34,12 @@ const openTerminal = async (body: unknown = null) => {
 };
 const startSession = (sessionId: string) =>
   fixture.sessions.handleHook(sessionId, { session_id: sessionId, hook_event_name: "SessionStart", permission_mode: "default" });
+/** Claude Code saves a transcript once a conversation has a message; a session spent signing in saves none. */
+const saveTranscript = async (sessionId: string) => {
+  const folder = join(transcriptRoot, "-zks-projects-demo");
+  await mkdir(folder, { recursive: true });
+  await writeFile(join(folder, `${sessionId}.jsonl`), "{}\n");
+};
 const liveSession = (sessionId: string | undefined) => {
   const session = fixture.sessions.find(sessionId ?? "");
   if (session === undefined) throw new Error(`no live terminal ${sessionId}`);
@@ -46,6 +53,7 @@ beforeEach(async () => {
   const [project] = await database.db.insert(projects).values({ slug: "demo", title: "Demo" }).returning();
   projectId = project?.id ?? "";
   sdkCalls = [];
+  transcriptRoot = join(fixture.studioHome, "claude-projects");
   const recordSdkCall = (name: string) => () => Promise.resolve(void sdkCalls.push(name));
   const sdkManager = { submit: recordSdkCall("submit"), stop: recordSdkCall("stop"), kill: recordSdkCall("kill"), decide: () => false };
 
@@ -55,6 +63,7 @@ beforeEach(async () => {
     studioHome: fixture.studioHome,
     model: "haiku",
     sessions: fixture.sessions,
+    transcriptRoot,
   });
   registerAgentRoutes(app, { database: database.db, manager: sdkManager, terminal: { sessions: fixture.sessions, open: openProjectTerminal } });
   registerProjectTerminalRoutes(app, { database: database.db, openTerminal: openProjectTerminal });
@@ -152,6 +161,7 @@ describe("project terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () =>
 
     expect((await post("prompt", { text: "Make a cut" })).status).toBe(200);
     await waitFor(() => first.pty.snapshot().includes("Make a cut"));
+    await saveTranscript(first.sessionId);
     expect((await post("stop")).status).toBe(200);
     await waitFor(() => first.pty.snapshot().includes("INTERRUPTED"));
     expect((await post("kill")).status).toBe(200);
@@ -161,6 +171,19 @@ describe("project terminal routes", { timeout: REAL_PTY_TEST_TIMEOUT_MS }, () =>
     await waitFor(() => reopened.pty.snapshot().includes("READY"));
     expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--resume", first.sessionId]);
     expect(sdkCalls).toEqual([]);
+  });
+
+  it("starts a fresh conversation when the last session saved none, such as one spent signing in", async () => {
+    await writeConnection(database.db, { mode: "terminal" });
+    const first = liveSession((await openTerminal()).body.sessionId);
+    await waitFor(() => first.pty.snapshot().includes("READY"));
+    expect((await post("kill")).status).toBe(200);
+    await waitFor(() => fixture.sessions.findByProject(projectId) === undefined);
+
+    const reopened = liveSession((await openTerminal()).body.sessionId);
+    await waitFor(() => reopened.pty.snapshot().includes("READY"));
+    expect(reopened.sessionId).not.toBe(first.sessionId);
+    expect(stubReport(reopened).argv.slice(0, 2)).toEqual(["--session-id", reopened.sessionId]);
   });
 
   it("opens the project's terminal for a prompt in mode T and sends the prompt once the session has started", async () => {

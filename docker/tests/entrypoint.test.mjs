@@ -29,7 +29,7 @@ describe.skipIf(!shellInstalled)("docker/entrypoint.sh", () => {
   function runEntrypoint() {
     const source = readFileSync(ENTRYPOINT, "utf8");
     expect(source).toContain(IMAGE_STORE_LINE);
-    const script = source.replace(IMAGE_STORE_LINE, `IMAGE_STORE='${imageStore}'`).replace(/^exec node .*$/m, "exit 0");
+    const script = source.replace(IMAGE_STORE_LINE, `IMAGE_STORE='${imageStore}'`).replace(/^exec node .*$/m, 'printf "%s\\n" "$PATH"; exit 0');
     return spawnSync("sh", ["-c", script], { encoding: "utf8", env: { ...process.env, ZKS_HOME: zksHome } });
   }
 
@@ -63,5 +63,13 @@ describe.skipIf(!shellInstalled)("docker/entrypoint.sh", () => {
     expect(runEntrypoint().status).toBe(0);
     expect(readlinkSync(join(zksHome, "models", "tiny.bin"))).toBe(join(imageStore, "models", "tiny.bin"));
     expect(readFileSync(join(zksHome, "models", "base.bin"), "utf8")).toBe("volume base");
+  });
+
+  it("puts the image's uv on PATH, since the server and the demo run uv by name", () => {
+    const uvDir = join(imageStore, "tools", "uv", "0.12.24");
+    mkdirSync(uvDir, { recursive: true });
+    const result = runEntrypoint();
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().split(":")).toContain(uvDir);
   });
 });

@@ -18,4 +18,9 @@ for model in "$IMAGE_STORE"/models/*; do
   target="$ZKS_HOME/models/${model##*/}"
   [ -e "$target" ] || ln -sfn "$model" "$target"
 done
+# The server and the demo run uv by name; a host gets it on PATH from setup, the image from here.
+for uv_dir in "$IMAGE_STORE"/tools/uv/*/; do
+  if [ -d "$uv_dir" ]; then PATH="${uv_dir%/}:$PATH"; fi
+done
+export PATH
 exec node /app/apps/server/src/main.ts "$@"

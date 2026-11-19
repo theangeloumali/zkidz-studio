@@ -105,17 +105,15 @@ describe("GET /api/stats", () => {
   it("leaves out jobs, edits and deliverables older than the range, and keeps them under all", async () => {
     const project = await insertProject(server);
     const oldJob = await insertFinishedJob(project.id, { kind: "export_deliverable", status: "succeeded", queuedAt: daysAgo(60), waitS: 1, runS: 3 });
-    await server.database.db
-      .insert(deliverables)
-      .values({
-        projectId: project.id,
-        jobId: oldJob.id,
-        kind: "full",
-        relPath: "deliverables/old.mp4",
-        bytes: 1,
-        sha256: "a".repeat(64),
-        createdAt: daysAgo(60),
-      });
+    await server.database.db.insert(deliverables).values({
+      projectId: project.id,
+      jobId: oldJob.id,
+      kind: "full",
+      relPath: "deliverables/old.mp4",
+      bytes: 1,
+      sha256: "a".repeat(64),
+      createdAt: daysAgo(60),
+    });
     await server.database.db.insert(edits).values({ projectId: project.id, videoId: "v1", agentKind: "claude_sdk", startedAt: daysAgo(60), turns: 2 });
 
     const recent = await readStats("7d");

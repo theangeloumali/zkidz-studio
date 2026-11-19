@@ -1,12 +1,13 @@
 // Created by The Angelo Umali.
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { deliverables, jobs } from "@zks/db/schema";
 import { DeliverableSchema } from "@zks/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createProjectDirs, projectDir } from "../../src/config.ts";
+import { createLogger } from "../../src/logging/logger.ts";
 import { exportDeliverables, registerExportHandler, toDeliverableDto } from "../../src/jobs/deliverables.ts";
 import type { EngineProcessRequest } from "../../src/jobs/engine-process.ts";
 import { writeJobResult } from "../../src/tools/job-results.ts";
@@ -347,5 +348,56 @@ describe("export deliverables", () => {
     await runner.idle();
 
     expect(await readJob(server, job.id)).toMatchObject({ status: "failed" });
+  });
+});
+
+describe("copy to ZKS_EXPORT_DIR", () => {
+  const exportJob = async (exportCopy?: { dir: string; logLines: string[] }) => {
+    const { project, deps } = await projectWithMasters();
+    const runner = newRunner(server);
+    const logger = createLogger((line) => exportCopy?.logLines.push(line));
+    registerExportHandler(runner, { ...deps, ...(exportCopy === undefined ? {} : { exportCopy: { dir: exportCopy.dir, logger } }) });
+    const job = await runner.enqueue({ projectId: project.id, kind: "export_deliverable", videoId: "v1", lane: "cpu", params: { kinds: ["full"] } });
+    await runner.idle();
+    return { project, job: await readJob(server, job.id) };
+  };
+  const newExportDir = () => mkdtemp(join(server.scratchDir, "export-"));
+
+  it("copies each deliverable to <dir>/<project-slug>/ and leaves no temp file", async () => {
+    const dir = await newExportDir();
+    const { project, job } = await exportJob({ dir, logLines: [] });
+
+    expect(job.status).toBe("succeeded");
+    expect(await readdir(join(dir, project.slug))).toEqual([`${project.slug}-4k.mp4`]);
+    expect(await readFile(join(dir, project.slug, `${project.slug}-4k.mp4`), "utf8")).toBe("full master bytes");
+  });
+
+  it("writes nothing outside the project when no export folder is set", async () => {
+    const dir = await newExportDir();
+    const { job } = await exportJob();
+
+    expect(job.status).toBe("succeeded");
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it("keeps the export succeeded when the copy fails, and says so in the job and the log", async () => {
+    const blockedDir = join(await newExportDir(), "not-a-folder");
+    await writeFile(blockedDir, "a file where the folder should be");
+    const logLines: string[] = [];
+    const { job } = await exportJob({ dir: blockedDir, logLines });
+
+    expect(job.status).toBe("succeeded");
+    expect(job.stage).toMatch(/^Export copy failed/);
+    expect(logLines.join("\n")).toMatch(/export copy failed/);
+  });
+
+  it("names the export folder ZKS_EXPORT_DIR in the stage and leaves no absolute host path in it", async () => {
+    const blockedDir = join(await newExportDir(), "not-a-folder");
+    await writeFile(blockedDir, "a file where the folder should be");
+    const { job } = await exportJob({ dir: blockedDir, logLines: [] });
+
+    expect(job.stage).toMatch(/^Export copy failed: .*ZKS_EXPORT_DIR\//);
+    expect(job.stage).not.toContain(server.scratchDir);
+    expect(job.stage).not.toMatch(/(^|[\s'"])\/[^\s'"]/);
   });
 });

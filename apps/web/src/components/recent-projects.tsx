@@ -1,21 +1,14 @@
 // Created by The Angelo Umali.
 import { useQuery } from "@tanstack/react-query";
-import type { EditSummary, Project } from "@zks/shared";
+import type { EditSummary } from "@zks/shared";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 import { projectsQuery } from "../api/queries.ts";
 import { editFigures, latestEditsQuery } from "../edits/edits-client.ts";
 import { formatDate, formatUsage } from "../lib/format.ts";
+import { PROJECT_STATUS_LABELS } from "../lib/project-status.ts";
 import { editorPath } from "../lib/routes.ts";
 import { buttonClass } from "./button-class.ts";
-
-const STATUS_LABELS: Record<Project["status"], string> = {
-  draft: "Draft",
-  editing: "Editing",
-  rendering: "Rendering",
-  delivered: "Delivered",
-  archived: "Archived",
-};
 
 export function RecentProjects() {
   const projects = useQuery(projectsQuery());
@@ -63,7 +56,9 @@ export function RecentProjects() {
                   </span>
                   <LastEditLine edit={finishedEdits.get(project.id)} />
                 </span>
-                <span className="shrink-0 rounded-pill border border-line-strong px-3 py-1 text-ui-sm text-copy-muted">{STATUS_LABELS[project.status]}</span>
+                <span className="shrink-0 rounded-pill border border-line-strong px-3 py-1 text-ui-sm text-copy-muted">
+                  {PROJECT_STATUS_LABELS[project.status]}
+                </span>
                 <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-copy-dim" />
               </Link>
             </li>

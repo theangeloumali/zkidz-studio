@@ -14,7 +14,7 @@ import { lazySdkQuery } from "./agent/sdk-loader.ts";
 import { createApp } from "./app.ts";
 import { EditRecorder } from "./edits/edit-recorder.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
-import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
+import { assertExportDirWritable, assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { closeServer } from "./http/close-server.ts";
@@ -55,6 +55,7 @@ async function main(): Promise<void> {
   await assertFfprobeInstalled(config.ffprobePath);
 
   await ensureStudioHome(config.studioHome);
+  if (config.exportDir !== undefined) await assertExportDirWritable(config.exportDir, config.studioHome);
   await removeStaleParts(config.studioHome);
   const database = await openDatabase({ dataDir: join(config.studioHome, "db"), databaseUrl: config.databaseUrl });
   await database.migrate();
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
     hasSdkBinary: () => hasSdkBinary,
     ffprobePath: config.ffprobePath,
     engine,
+    ...(config.exportDir === undefined ? {} : { exportDir: config.exportDir }),
   });
 
   const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome, tools: engineTools });

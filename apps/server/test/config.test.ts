@@ -1,11 +1,11 @@
 // Created by The Angelo Umali.
-import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { APP_PORT, PREVIEW_PORT } from "@zks/shared";
 import { isDownload, loadToolsLock, platformKey, ZKS_HOME_DIRS } from "@zks/shared/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "../src/config.ts";
+import { assertExportDirWritable, assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "../src/config.ts";
 
 let scratchDir = "";
 afterEach(async () => {
@@ -137,5 +137,73 @@ describe("loadServerConfig remote mode", () => {
   ])("refuses remote mode when ZKS_PROXY_SECRET is %s", (_label, shortSecret) => {
     const env = { ...baseEnv, ZKS_PUBLIC_ORIGIN: app, ZKS_PREVIEW_PUBLIC_ORIGIN: preview, ZKS_PROXY_SECRET: shortSecret };
     expect(() => loadServerConfig(env)).toThrow(/ZKS_PROXY_SECRET must be at least 32/);
+  });
+});
+
+describe("ZKS_EXPORT_DIR", () => {
+  const baseEnv = { ZKS_HOME: "/srv/zks" };
+  beforeEach(() => vi.stubEnv("ZKS_FFMPEG", ""));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is off when unset or empty", () => {
+    expect(loadServerConfig(baseEnv).exportDir).toBeUndefined();
+    expect(loadServerConfig({ ...baseEnv, ZKS_EXPORT_DIR: "" }).exportDir).toBeUndefined();
+  });
+
+  it("reads an absolute folder", () => {
+    expect(loadServerConfig({ ...baseEnv, ZKS_EXPORT_DIR: "/srv/publisher/deliverables" }).exportDir).toBe("/srv/publisher/deliverables");
+  });
+
+  it("refuses a relative path", () => {
+    expect(() => loadServerConfig({ ...baseEnv, ZKS_EXPORT_DIR: "deliverables" })).toThrow(/ZKS_EXPORT_DIR must be an absolute path/);
+  });
+
+  it("refuses a folder that does not exist at startup", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await expect(assertExportDirWritable(join(scratchDir, "missing"), join(scratchDir, "home"))).rejects.toThrow(/ZKS_EXPORT_DIR .* is not a folder/);
+  });
+
+  it("refuses a file in place of a folder", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await writeFile(join(scratchDir, "file"), "x");
+    await expect(assertExportDirWritable(join(scratchDir, "file"), join(scratchDir, "home"))).rejects.toThrow(/is not a folder/);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("refuses a folder Studio cannot write", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    const readOnly = join(scratchDir, "ro");
+    await mkdir(readOnly, { mode: 0o500 });
+    await expect(assertExportDirWritable(readOnly, join(scratchDir, "home"))).rejects.toThrow(/ZKS_EXPORT_DIR .* is not writable/);
+    await chmod(readOnly, 0o700);
+  });
+
+  it("accepts a writable folder", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await expect(assertExportDirWritable(scratchDir, join(scratchDir, "home"))).resolves.toBeUndefined();
+  });
+
+  it("refuses the studio home itself", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await expect(assertExportDirWritable(scratchDir, scratchDir)).rejects.toThrow(/ZKS_EXPORT_DIR .* is inside ZKS_HOME/);
+  });
+
+  it("refuses a folder inside the studio home", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await mkdir(join(scratchDir, "projects"));
+    await expect(assertExportDirWritable(join(scratchDir, "projects"), scratchDir)).rejects.toThrow(/is inside ZKS_HOME/);
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a symlink that resolves into the studio home", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await mkdir(join(scratchDir, "home", "projects"), { recursive: true });
+    await symlink(join(scratchDir, "home", "projects"), join(scratchDir, "link"), "dir");
+    await expect(assertExportDirWritable(join(scratchDir, "link"), join(scratchDir, "home"))).rejects.toThrow(/is inside ZKS_HOME/);
+  });
+
+  it("accepts a sibling folder whose name starts with the studio home's name", async () => {
+    scratchDir = await mkdtemp(join(tmpdir(), "zks-export-"));
+    await mkdir(join(scratchDir, "home"));
+    await mkdir(join(scratchDir, "home-export"));
+    await expect(assertExportDirWritable(join(scratchDir, "home-export"), join(scratchDir, "home"))).resolves.toBeUndefined();
   });
 });

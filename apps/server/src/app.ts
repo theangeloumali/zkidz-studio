@@ -31,6 +31,7 @@ import { registerRuleRoutes } from "./rules/routes.ts";
 import { registerStyleRoutes } from "./routes/style.ts";
 import type { Security } from "./security/index.ts";
 import { registerSpecRoutes } from "./specs/spec-routes.ts";
+import { registerStatsRoutes } from "./stats/stats-routes.ts";
 
 export interface AppDependencies {
   readonly database: StudioDatabase;
@@ -70,6 +71,7 @@ export function createApp(deps: AppDependencies): Hono {
   registerEventRoutes(app, deps.eventBus, deps.agent?.pendingCards);
   registerRuleRoutes(app, deps);
   registerEdits(app, deps);
+  registerStatsRoutes(app, deps);
   registerStyleRoutes(app, deps);
   deps.agent?.registerRoutes(app);
   if (deps.doctor !== undefined) registerDoctorRoutes(app, { ...deps.doctor, logger: deps.logger });

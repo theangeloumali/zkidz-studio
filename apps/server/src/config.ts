@@ -1,9 +1,9 @@
 // Created by The Angelo Umali.
 // Server settings from the environment (plan §3.3). ZKS_HOME holds the database, keys and projects, so it is owner-only.
 import { constants } from "node:fs";
-import { access, chmod, mkdir, rm } from "node:fs/promises";
+import { access, chmod, mkdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { APP_PORT, ENV, PREVIEW_PORT } from "@zks/shared";
 import { defaultZksHome, loadToolsLock, pinnedExecutablePath, platformKey, ZKS_HOME_DIRS, type ToolName } from "@zks/shared/node";
 import { parseRemoteOrigins, type RemoteOrigins } from "./security/remote-origins.ts";
@@ -24,6 +24,8 @@ export interface ServerConfig {
   readonly ffprobePath: string;
   /** Set only when both public origins are; undefined keeps the loopback-only behaviour. */
   readonly remote: RemoteOrigins | undefined;
+  /** Where exports are also copied for another app; undefined copies nothing. */
+  readonly exportDir: string | undefined;
 }
 
 export function loadServerConfig(env: Environment): ServerConfig {
@@ -40,7 +42,39 @@ export function loadServerConfig(env: Environment): ServerConfig {
     isContainer: env[ENV.container] === "1",
     ffprobePath: ffprobeBeside(pinnedToolPath(env, studioHome, "ffmpeg")),
     remote: parseRemoteOrigins(env),
+    exportDir: parseExportDir(env[ENV.exportDir]),
   };
+}
+
+function parseExportDir(rawDir: string | undefined): string | undefined {
+  if (rawDir === undefined || rawDir === "") return undefined;
+  if (!isAbsolute(rawDir)) throw new Error(`${ENV.exportDir} must be an absolute path, got "${rawDir}"`);
+  return rawDir;
+}
+
+/** Startup check, so a missing volume mount fails loudly instead of on the first export. */
+export async function assertExportDirWritable(exportDir: string, studioHome: string): Promise<void> {
+  const isFolder = await stat(exportDir).then(
+    (stats) => stats.isDirectory(),
+    () => false,
+  );
+  if (!isFolder) throw new Error(`${ENV.exportDir} ${exportDir} is not a folder; create it or mount it as a volume`);
+  try {
+    await access(exportDir, constants.W_OK);
+  } catch {
+    throw new Error(`${ENV.exportDir} ${exportDir} is not writable by the Studio user`);
+  }
+  await assertOutsideStudioHome(exportDir, studioHome);
+}
+
+/** Another app reads the export folder, so it must never reach the database, keys or projects under ZKS_HOME. */
+async function assertOutsideStudioHome(exportDir: string, studioHome: string): Promise<void> {
+  const [realExportDir, realStudioHome] = await Promise.all([realpath(exportDir), realpath(studioHome).catch(() => studioHome)]);
+  const pathFromHome = relative(realStudioHome, realExportDir);
+  const isOutside = pathFromHome === ".." || pathFromHome.startsWith(`..${sep}`) || isAbsolute(pathFromHome);
+  if (!isOutside) {
+    throw new Error(`${ENV.exportDir} ${exportDir} is inside ${ENV.home} (${studioHome}); choose a folder outside it`);
+  }
 }
 
 /** Startup check: uploads are probed only by the checksummed tool `zks setup` installs (plan §11), never a PATH lookalike. */

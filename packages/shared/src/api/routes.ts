@@ -27,6 +27,7 @@ import {
 import { HomeTemplatesSchema, StartTemplateRequestSchema, StartTemplateResponseSchema, StyleCardsSchema } from "./onboarding.ts";
 import { HardwareSchema, QcCheckSchema } from "./render.ts";
 import { EventsQuerySchema } from "./sse.ts";
+import { StatsRangeSchema, StatsSchema } from "./stats.ts";
 import { HookPayloadSchema, HookResponseSchema, OpenTerminalResponseSchema, TerminalSocketQuerySchema, TerminalTicketSchema } from "./terminal.ts";
 
 export const CSRF_HEADER = "x-zks-csrf";
@@ -204,6 +205,8 @@ export const API_ROUTES = {
   listEdits: { method: "GET", path: "/api/projects/:projectId/edits", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
   /** Each project's newest edit, for the home list. */
   latestEdits: { method: "GET", path: "/api/edits/latest", response: z.strictObject({ edits: z.array(EditSummarySchema) }) },
+  /** The /stats page; range filters jobs, edits and deliverables, while projects count as they stand now. */
+  getStats: { method: "GET", path: "/api/stats", query: z.strictObject({ range: StatsRangeSchema.default("30d") }), response: StatsSchema },
 
   getProjectSettings: { method: "GET", path: "/api/projects/:projectId/settings", response: ProjectSettingsSchema },
   updateProjectSettings: { method: "PUT", path: "/api/projects/:projectId/settings", body: ProjectSettingsUpdateSchema, response: ProjectSettingsSchema },

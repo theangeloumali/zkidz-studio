@@ -126,6 +126,24 @@ studio.example.com, studio-preview.example.com {
 
 Give the proxy the same `ZKS_PROXY_SECRET` in its environment. Rotate it by changing both and restarting both.
 
+## Export to another app's folder
+
+Set `ZKS_EXPORT_DIR` to an absolute folder inside the container, and every export is also copied to
+`<ZKS_EXPORT_DIR>/<project-slug>/<file>`. Another app that watches that folder, such as a publisher, picks the files up there.
+
+1. Mount the other app's folder into the Studio container as a volume, for example a host folder `/srv/publisher/deliverables`
+   at `/exports` (see the commented example in `docker/compose.remote.yml`).
+2. Set `ZKS_EXPORT_DIR=/exports` in the `studio` service's environment.
+3. Make the host folder writable by the container's `node` user (uid 1000), for example `chown 1000 /srv/publisher/deliverables`.
+
+Studio refuses to start when the folder is missing, is not a folder or is not writable, so a forgotten mount shows up at once.
+Each file is written under a hidden temp name and renamed into place only after its SHA-256 matches the exported deliverable,
+so the other app never reads half a file. Folders are created with mode `0750` and files with `0640`, so the reading app must
+run as the same user or share the group. If a copy fails, the export still succeeds and the job's stage reads
+"Export copy failed: …". Leave `ZKS_EXPORT_DIR` unset and nothing changes.
+
+Node cannot open files relative to a checked folder, so keep the export folder writable only by Studio and the apps you trust.
+
 ## Limits
 
 - Mode T in the container needs the image built with `CLAUDE_CODE_VERSION` (see below); without it use mode A or B.

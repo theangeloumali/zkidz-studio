@@ -1,14 +1,13 @@
 // Created by The Angelo Umali.
 // Plan §7.6 export: each master is copied into ZKS_HOME/projects/<slug>/deliverables/ and recorded with its SHA-256.
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { access, lstat, mkdir, realpath, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { StudioDatabase } from "@zks/db";
 import { deliverables } from "@zks/db/schema";
-import { SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
+import { ENV, redactText, SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
@@ -16,6 +15,8 @@ import { findProjectOrThrow } from "../projects/project-store.ts";
 import { openConfined } from "../security/confine-path.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
+import { copyToExportDir, type ExportCopyTarget } from "./export-copy.ts";
+import { createHashingStream } from "./hashing-stream.ts";
 import type { JobRunner, ReportProgress } from "./job-runner.ts";
 import { findLatestMaster, QcMasterRecordSchema } from "./master-files.ts";
 import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "./render-provenance.ts";
@@ -38,6 +39,8 @@ export interface DeliverableDeps {
   readonly studioHome: string;
   /** Runs `zks-engine qc-status`, the gate every export passes first. */
   readonly engine: EngineProcessRunner;
+  /** Set from ZKS_EXPORT_DIR; a failed copy never fails the export. */
+  readonly exportCopy?: ExportCopyTarget;
 }
 
 export interface ExportRequest {
@@ -223,8 +226,25 @@ export function registerExportHandler(jobRunner: JobRunner, deps: DeliverableDep
     const { kinds } = STUDIO_TOOLS.export_deliverable.input.parse(job.params);
     const exported = await exportDeliverables(deps, { projectId: job.projectId, videoId: job.videoId, kinds, jobId: job.id, signal, reportProgress });
     const project = await findProjectOrThrow(deps.database, job.projectId);
-    await writeJobResult(projectDir(deps.studioHome, project.slug), job.id, { deliverables: exported });
+    const projectRoot = projectDir(deps.studioHome, project.slug);
+    await writeJobResult(projectRoot, job.id, { deliverables: exported });
+    if (deps.exportCopy === undefined) return;
+    try {
+      await copyToExportDir({ exportDir: deps.exportCopy.dir, projectRoot, slug: project.slug, deliverables: exported, signal });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      deps.exportCopy.logger.error("export copy failed", { jobId: job.id, exportDir: deps.exportCopy.dir, error: reason });
+      const publicReason = await maskExportPaths(reason, deps.exportCopy.dir, deps.studioHome);
+      await reportProgress({ stage: `Export copy failed: ${publicReason}`, pct: FULL_PCT });
+    }
   });
+}
+
+/** The stage reaches jobs.stage and SSE, so host paths go; the real path comes first because the configured one can be a prefix of it. */
+async function maskExportPaths(reason: string, exportDir: string, studioHome: string): Promise<string> {
+  const realExportDir = await realpath(exportDir).catch(() => exportDir);
+  const exportDirMasked = [realExportDir, exportDir].reduce((text, dir) => text.split(dir).join(ENV.exportDir), reason);
+  return redactText(exportDirMasked, { zksHome: studioHome });
 }
 
 export function toDeliverableDto(row: DeliverableRow): Deliverable {
@@ -234,24 +254,16 @@ export function toDeliverableDto(row: DeliverableRow): Deliverable {
 /** Hashes while copying into a .part file, so a reader never sees a half-written deliverable. Every source is opened
  * confined to the project; a master's digest must equal the one QC passed before the .part file is renamed into place. */
 async function copyWithSha256(projectRoot: string, source: DeliverableSource, targetPath: string): Promise<{ sha256: string; bytes: number }> {
-  const hash = createHash("sha256");
-  let bytes = 0;
-  const hashingStream = new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      hash.update(chunk);
-      bytes += chunk.length;
-      done(null, chunk);
-    },
-  });
+  const hashing = createHashingStream();
   const partPath = `${targetPath}.${randomUUID()}.part`;
   let handle: FileHandle | undefined;
   let sha256: string;
   try {
     ({ handle } = await openConfined(projectRoot, source.sourceRelPath));
     await assertStillPassedQc(projectRoot, source, handle);
-    await pipeline(handle.createReadStream({ autoClose: false }), hashingStream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE, flags: "wx" }));
+    await pipeline(handle.createReadStream({ autoClose: false }), hashing.stream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE, flags: "wx" }));
     await assertStillPassedQc(projectRoot, source, handle);
-    sha256 = hash.digest("hex");
+    sha256 = hashing.digest();
     if (source.passedQc !== undefined && sha256 !== source.passedQc.master.sha256) throw changedAfterQcError(source);
     await rename(partPath, targetPath);
   } catch (error) {
@@ -260,7 +272,7 @@ async function copyWithSha256(projectRoot: string, source: DeliverableSource, ta
   } finally {
     await handle?.close();
   }
-  return { sha256, bytes };
+  return { sha256, bytes: hashing.byteCount() };
 }
 
 async function replaceDeliverableRow(database: StudioDatabase, row: typeof deliverables.$inferInsert): Promise<void> {

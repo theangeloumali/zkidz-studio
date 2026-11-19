@@ -6,6 +6,7 @@ export const ROUTE_PATHS = {
   render: "/p/:projectId/render",
   rules: "/rules",
   style: "/setup/style",
+  stats: "/stats",
 } as const;
 
 export function editorPath(projectId: string): string {

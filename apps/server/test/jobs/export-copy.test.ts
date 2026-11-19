@@ -1,10 +1,26 @@
 // Created by The Angelo Umali.
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { copyToExportDir } from "../../src/jobs/export-copy.ts";
+
+// Lets a test act between the folder check and the write, and between the copy and the rename.
+const race = vi.hoisted(() => ({ beforeOpen: async () => {}, afterRead: async () => {} }));
+vi.mock("../../src/security/confine-path.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../src/security/confine-path.ts")>();
+  return {
+    ...original,
+    openConfined: async (rootDir: string, candidatePath: string) => {
+      await race.beforeOpen();
+      const confined = await original.openConfined(rootDir, candidatePath);
+      const readStream = confined.handle.createReadStream.bind(confined.handle);
+      confined.handle.createReadStream = (options) => readStream(options).on("end", () => void race.afterRead());
+      return confined;
+    },
+  };
+});
 
 const SLUG = "beach-day";
 const NAME = "beach-day-4k.mp4";
@@ -23,6 +39,8 @@ beforeEach(async () => {
   await writeFile(join(projectRoot, "deliverables", NAME), BYTES);
 });
 afterEach(async () => {
+  race.beforeOpen = async () => {};
+  race.afterRead = async () => {};
   await rm(scratchDir, { recursive: true, force: true });
 });
 
@@ -72,4 +90,44 @@ describe("copyToExportDir", () => {
     await expect(copy({ signal: controller.signal })).rejects.toThrow();
     expect(await readdir(join(exportDir, SLUG))).toEqual([]);
   });
+
+  it.skipIf(process.platform === "win32")("refuses a slug folder swapped for a symlink after the check, before the write", async () => {
+    const elsewhere = await swapTarget();
+    race.beforeOpen = () => swapSlugDirFor(elsewhere);
+
+    await expect(copy()).rejects.toThrow(/changed during the copy/);
+    expect(await readdir(elsewhere)).toEqual([]);
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a slug folder swapped for a symlink after the copy, before the rename", async () => {
+    const elsewhere = await swapTarget();
+    let swapped: Promise<void> = Promise.resolve();
+    race.afterRead = () => (swapped = swapSlugDirFor(elsewhere));
+
+    await expect(copy()).rejects.toThrow(/changed during the copy/);
+    await swapped;
+    expect(await readdir(elsewhere)).toEqual([]);
+  });
+
+  it.skipIf(process.platform === "win32")("never renames over a symlink at the target name", async () => {
+    const outside = join(scratchDir, "outside.mp4");
+    await writeFile(outside, "keep me");
+    await mkdir(join(exportDir, SLUG));
+    await symlink(outside, join(exportDir, SLUG, NAME));
+
+    await expect(copy()).rejects.toThrow(/symlink/);
+    expect(await readFile(outside, "utf8")).toBe("keep me");
+    expect(await readdir(join(exportDir, SLUG))).toEqual([NAME]);
+  });
 });
+
+async function swapTarget(): Promise<string> {
+  const elsewhere = join(scratchDir, "elsewhere");
+  await mkdir(elsewhere);
+  return elsewhere;
+}
+
+async function swapSlugDirFor(elsewhere: string): Promise<void> {
+  await rename(join(exportDir, SLUG), join(exportDir, `${SLUG}-moved`));
+  await symlink(elsewhere, join(exportDir, SLUG), "dir");
+}

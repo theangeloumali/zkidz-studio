@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { StudioDatabase } from "@zks/db";
 import { deliverables } from "@zks/db/schema";
-import { SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
+import { ENV, redactText, SpecsSnapshotRefSchema, STUDIO_TOOLS, type DeliverableKind, type DeliverableSchema } from "@zks/shared";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { projectDir } from "../config.ts";
@@ -234,9 +234,17 @@ export function registerExportHandler(jobRunner: JobRunner, deps: DeliverableDep
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       deps.exportCopy.logger.error("export copy failed", { jobId: job.id, exportDir: deps.exportCopy.dir, error: reason });
-      await reportProgress({ stage: `Export copy failed: ${reason}`, pct: FULL_PCT });
+      const publicReason = await maskExportPaths(reason, deps.exportCopy.dir, deps.studioHome);
+      await reportProgress({ stage: `Export copy failed: ${publicReason}`, pct: FULL_PCT });
     }
   });
+}
+
+/** The stage reaches jobs.stage and SSE, so host paths go; the real path comes first because the configured one can be a prefix of it. */
+async function maskExportPaths(reason: string, exportDir: string, studioHome: string): Promise<string> {
+  const realExportDir = await realpath(exportDir).catch(() => exportDir);
+  const exportDirMasked = [realExportDir, exportDir].reduce((text, dir) => text.split(dir).join(ENV.exportDir), reason);
+  return redactText(exportDirMasked, { zksHome: studioHome });
 }
 
 export function toDeliverableDto(row: DeliverableRow): Deliverable {

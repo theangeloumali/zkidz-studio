@@ -390,4 +390,14 @@ describe("copy to ZKS_EXPORT_DIR", () => {
     expect(job.stage).toMatch(/^Export copy failed/);
     expect(logLines.join("\n")).toMatch(/export copy failed/);
   });
+
+  it("names the export folder ZKS_EXPORT_DIR in the stage and leaves no absolute host path in it", async () => {
+    const blockedDir = join(await newExportDir(), "not-a-folder");
+    await writeFile(blockedDir, "a file where the folder should be");
+    const { job } = await exportJob({ dir: blockedDir, logLines: [] });
+
+    expect(job.stage).toMatch(/^Export copy failed: .*ZKS_EXPORT_DIR\//);
+    expect(job.stage).not.toContain(server.scratchDir);
+    expect(job.stage).not.toMatch(/(^|[\s'"])\/[^\s'"]/);
+  });
 });

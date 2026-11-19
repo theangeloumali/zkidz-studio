@@ -48,6 +48,11 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Weekday, date and clock time in the viewer's locale, like "Tue, Nov 17, 4:12 PM". */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 /** Playback position as m:ss.t, the transport's precision. */
 export function formatTimecode(totalSeconds: number): string {
   const tenths = Math.floor(Math.max(0, totalSeconds) * 10);

@@ -11,9 +11,13 @@ services:
       ZKS_PUBLIC_ORIGIN: ${ZKS_PUBLIC_ORIGIN:?set it in .env}
       ZKS_PREVIEW_PUBLIC_ORIGIN: ${ZKS_PREVIEW_PUBLIC_ORIGIN:?set it in .env}
       ZKS_PROXY_SECRET: ${ZKS_PROXY_SECRET:?set it in .env}
+      # Optional: also copy every export into another app's folder (docs/user/docker.md, "Export to another app's folder").
+      # ZKS_EXPORT_DIR: /exports
     volumes:
       # Claude Code keeps its sign-in under ~/.claude; Studio reads ~/.claude/projects for usage.
       - zks-node-home:/home/node
+      # Optional, with ZKS_EXPORT_DIR above: the other app's folder on the host.
+      # - /srv/publisher/deliverables:/exports
     networks:
       - default
       - proxy-apps

@@ -53,9 +53,9 @@ async function main(): Promise<void> {
   const bindHost = config.isContainer ? CONTAINER_BIND_HOST : LOOPBACK_HOST;
   security.assertLoopbackBind(bindHost);
   await assertFfprobeInstalled(config.ffprobePath);
-  if (config.exportDir !== undefined) await assertExportDirWritable(config.exportDir);
 
   await ensureStudioHome(config.studioHome);
+  if (config.exportDir !== undefined) await assertExportDirWritable(config.exportDir, config.studioHome);
   await removeStaleParts(config.studioHome);
   const database = await openDatabase({ dataDir: join(config.studioHome, "db"), databaseUrl: config.databaseUrl });
   await database.migrate();

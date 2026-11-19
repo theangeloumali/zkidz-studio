@@ -4,5 +4,6 @@ export * from "./onboarding.ts";
 export * from "./render.ts";
 export * from "./routes.ts";
 export * from "./sse.ts";
+export * from "./stats.ts";
 export * from "./terminal.ts";
 export * from "./preview-messages.ts";

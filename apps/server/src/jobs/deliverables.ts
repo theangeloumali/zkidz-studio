@@ -1,10 +1,9 @@
 // Created by The Angelo Umali.
 // Plan §7.6 export: each master is copied into ZKS_HOME/projects/<slug>/deliverables/ and recorded with its SHA-256.
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { access, lstat, mkdir, realpath, rename, rm, type FileHandle } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { StudioDatabase } from "@zks/db";
 import { deliverables } from "@zks/db/schema";
@@ -17,6 +16,7 @@ import { openConfined } from "../security/confine-path.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
 import { copyToExportDir, type ExportCopyTarget } from "./export-copy.ts";
+import { createHashingStream } from "./hashing-stream.ts";
 import type { JobRunner, ReportProgress } from "./job-runner.ts";
 import { findLatestMaster, QcMasterRecordSchema } from "./master-files.ts";
 import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "./render-provenance.ts";
@@ -230,12 +230,7 @@ export function registerExportHandler(jobRunner: JobRunner, deps: DeliverableDep
     await writeJobResult(projectRoot, job.id, { deliverables: exported });
     if (deps.exportCopy === undefined) return;
     try {
-      await copyToExportDir(
-        deps.exportCopy.dir,
-        projectRoot,
-        project.slug,
-        exported.map((deliverable) => deliverable.path),
-      );
+      await copyToExportDir({ exportDir: deps.exportCopy.dir, projectRoot, slug: project.slug, deliverables: exported, signal });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       deps.exportCopy.logger.error("export copy failed", { jobId: job.id, exportDir: deps.exportCopy.dir, error: reason });
@@ -251,24 +246,16 @@ export function toDeliverableDto(row: DeliverableRow): Deliverable {
 /** Hashes while copying into a .part file, so a reader never sees a half-written deliverable. Every source is opened
  * confined to the project; a master's digest must equal the one QC passed before the .part file is renamed into place. */
 async function copyWithSha256(projectRoot: string, source: DeliverableSource, targetPath: string): Promise<{ sha256: string; bytes: number }> {
-  const hash = createHash("sha256");
-  let bytes = 0;
-  const hashingStream = new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      hash.update(chunk);
-      bytes += chunk.length;
-      done(null, chunk);
-    },
-  });
+  const hashing = createHashingStream();
   const partPath = `${targetPath}.${randomUUID()}.part`;
   let handle: FileHandle | undefined;
   let sha256: string;
   try {
     ({ handle } = await openConfined(projectRoot, source.sourceRelPath));
     await assertStillPassedQc(projectRoot, source, handle);
-    await pipeline(handle.createReadStream({ autoClose: false }), hashingStream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE, flags: "wx" }));
+    await pipeline(handle.createReadStream({ autoClose: false }), hashing.stream, createWriteStream(partPath, { mode: OWNER_ONLY_FILE_MODE, flags: "wx" }));
     await assertStillPassedQc(projectRoot, source, handle);
-    sha256 = hash.digest("hex");
+    sha256 = hashing.digest();
     if (source.passedQc !== undefined && sha256 !== source.passedQc.master.sha256) throw changedAfterQcError(source);
     await rename(partPath, targetPath);
   } catch (error) {
@@ -277,7 +264,7 @@ async function copyWithSha256(projectRoot: string, source: DeliverableSource, ta
   } finally {
     await handle?.close();
   }
-  return { sha256, bytes };
+  return { sha256, bytes: hashing.byteCount() };
 }
 
 async function replaceDeliverableRow(database: StudioDatabase, row: typeof deliverables.$inferInsert): Promise<void> {

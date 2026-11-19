@@ -20,7 +20,6 @@ export const StatsEditSchema = z.strictObject({
   startedAt: IsoTimestampSchema,
   turns: CountSchema,
   tokens: CountSchema.nullable(),
-  keptPct: z.number().min(0).max(100).nullable(),
 });
 
 export const StatsSchema = z.strictObject({
@@ -32,8 +31,17 @@ export const StatsSchema = z.strictObject({
   /** Over jobs that finished; null when none did. */
   medianRunS: SecondsSchema.nullable(),
   medianQueueWaitS: SecondsSchema.nullable(),
-  failures: z.array(
-    z.strictObject({ jobId: IdSchema, projectTitle: z.string(), kind: z.string(), error: z.string().nullable(), finishedAt: IsoTimestampSchema.nullable() }),
+  /** Finished jobs, newest first. */
+  recentJobs: z.array(
+    z.strictObject({
+      jobId: IdSchema,
+      projectTitle: z.string(),
+      kind: z.string(),
+      outcome: z.enum(["succeeded", "failed"]),
+      runS: SecondsSchema,
+      error: z.string().nullable(),
+      finishedAt: IsoTimestampSchema,
+    }),
   ),
   edits: z.array(StatsEditSchema),
   footage: z.strictObject({ keptS: SecondsSchema, sourceS: SecondsSchema }),
@@ -41,3 +49,4 @@ export const StatsSchema = z.strictObject({
 });
 export type Stats = z.infer<typeof StatsSchema>;
 export type StatsEdit = z.infer<typeof StatsEditSchema>;
+export type StatsJob = Stats["recentJobs"][number];

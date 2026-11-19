@@ -56,7 +56,7 @@ describe("GET /api/stats", () => {
       jobsByWeek: [],
       medianRunS: null,
       medianQueueWaitS: null,
-      failures: [],
+      recentJobs: [],
       edits: [],
       deliverablesByWeek: [],
     });
@@ -91,7 +91,11 @@ describe("GET /api/stats", () => {
     const stats = await readStats("7d");
     expect(stats.medianRunS).toBe(45);
     expect(stats.medianQueueWaitS).toBe(5);
-    expect(stats.failures).toEqual([expect.objectContaining({ projectTitle: project.title, kind: "render_master", error: "The encoder stopped at 62%." })]);
+    expect(stats.recentJobs).toHaveLength(4);
+    expect(stats.recentJobs).toContainEqual(
+      expect.objectContaining({ projectTitle: project.title, kind: "render_master", outcome: "failed", runS: 90, error: "The encoder stopped at 62%." }),
+    );
+    expect(stats.recentJobs).toContainEqual(expect.objectContaining({ kind: "qc_master", outcome: "succeeded", runS: 50, error: null }));
     const renderRows = stats.jobsByWeek.filter((row) => row.kind === "render_master");
     expect(renderRows.map(({ outcome, count }) => ({ outcome, count }))).toEqual(
       expect.arrayContaining([
@@ -144,11 +148,23 @@ describe("GET /api/stats", () => {
 
     const stats = await readStats("7d");
     expect(stats.edits).toEqual([
-      expect.objectContaining({ projectTitle: project.title, turns: 9, tokens: 1250, keptPct: 25 }),
-      expect.objectContaining({ turns: 1, tokens: null, keptPct: null }),
+      expect.objectContaining({ projectTitle: project.title, turns: 9, tokens: 1250 }),
+      expect.objectContaining({ turns: 1, tokens: null }),
     ]);
     expect(stats.footage).toEqual({ keptS: 50, sourceS: 200 });
     expect(JSON.stringify(stats)).not.toMatch(/cost|usd/i);
+  });
+
+  it("lists the newest finished jobs first and leaves out queued and running ones", async () => {
+    const project = await insertProject(server);
+    await insertFinishedJob(project.id, { kind: "render_master", status: "succeeded", queuedAt: daysAgo(2), waitS: 1, runS: 10 });
+    await insertFinishedJob(project.id, { kind: "render_reels", status: "failed", queuedAt: daysAgo(1), waitS: 1, runS: 5, error: "No GPU found." });
+    await server.database.db
+      .insert(jobs)
+      .values({ projectId: project.id, kind: "render_master", videoId: "v1", lane: "gpu", status: "running", queuedAt: daysAgo(0) });
+
+    const { recentJobs } = await readStats("7d");
+    expect(recentJobs.map((job) => job.kind)).toEqual(["render_reels", "render_master"]);
   });
 
   it("rejects a range it does not know", async () => {

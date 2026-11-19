@@ -2,15 +2,15 @@
 // Reads /stats from the projects, jobs, edits and deliverables tables; no table of its own.
 import type { StudioDatabase } from "@zks/db";
 import { deliverables, edits, jobs, projects } from "@zks/db/schema";
-import { PROJECT_STATUSES, type EditFacts, type Stats, type StatsRange } from "@zks/shared";
+import { PROJECT_STATUSES, type Stats, type StatsRange } from "@zks/shared";
 import { count, desc, eq, gte, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { countBy, isoWeekOf, median, rangeStart } from "./stats-math.ts";
 
-const MAX_FAILURES = 20;
+const MAX_RECENT_JOBS = 10;
 const MAX_EDITS = 50;
 const MS_PER_S = 1000;
-const FINISHED_STATUSES: ReadonlySet<string> = new Set(["succeeded", "failed"]);
+const isFinishedStatus = (status: string): status is "succeeded" | "failed" => status === "succeeded" || status === "failed";
 
 const since = (column: PgColumn, start: Date | null): SQL | undefined => (start === null ? undefined : gte(column, start));
 const secondsBetween = (from: Date, to: Date) => (to.getTime() - from.getTime()) / MS_PER_S;
@@ -54,8 +54,8 @@ export async function readStats(database: StudioDatabase, range: StatsRange, now
   ]);
 
   const finished = jobRows.flatMap((job) =>
-    FINISHED_STATUSES.has(job.status) && job.startedAt !== null && job.finishedAt !== null
-      ? [{ ...job, startedAt: job.startedAt, finishedAt: job.finishedAt }]
+    isFinishedStatus(job.status) && job.startedAt !== null && job.finishedAt !== null
+      ? [{ ...job, status: job.status, startedAt: job.startedAt, finishedAt: job.finishedAt }]
       : [],
   );
   const jobGroups = countBy(jobRows, (job) => `${isoWeekOf(job.queuedAt)}|${job.kind}|${job.status}`);
@@ -70,17 +70,24 @@ export async function readStats(database: StudioDatabase, range: StatsRange, now
       .map(([, { sample, count: jobCount }]) => ({ week: isoWeekOf(sample.queuedAt), kind: sample.kind, outcome: sample.status, count: jobCount })),
     medianRunS: median(finished.map((job) => secondsBetween(job.startedAt, job.finishedAt))),
     medianQueueWaitS: median(finished.map((job) => secondsBetween(job.queuedAt, job.startedAt))),
-    failures: jobRows
-      .filter((job) => job.status === "failed")
-      .slice(0, MAX_FAILURES)
-      .map((job) => ({ jobId: job.id, projectTitle: job.projectTitle, kind: job.kind, error: job.error, finishedAt: job.finishedAt?.toISOString() ?? null })),
+    recentJobs: finished
+      .toSorted((left, right) => right.finishedAt.getTime() - left.finishedAt.getTime())
+      .slice(0, MAX_RECENT_JOBS)
+      .map((job) => ({
+        jobId: job.id,
+        projectTitle: job.projectTitle,
+        kind: job.kind,
+        outcome: job.status,
+        runS: secondsBetween(job.startedAt, job.finishedAt),
+        error: job.error,
+        finishedAt: job.finishedAt.toISOString(),
+      })),
     edits: editRows.slice(0, MAX_EDITS).map((edit) => ({
       id: edit.id,
       projectTitle: edit.projectTitle,
       startedAt: edit.startedAt.toISOString(),
       turns: edit.turns,
       tokens: totalTokens(edit),
-      keptPct: keptPct(edit.facts),
     })),
     footage: {
       keptS: editRows.reduce((sum, edit) => sum + (edit.facts?.keptS ?? 0), 0),
@@ -95,9 +102,4 @@ export async function readStats(database: StudioDatabase, range: StatsRange, now
 function totalTokens(edit: { inputTokens: number | null; outputTokens: number | null; cacheTokens: number | null }): number | null {
   const parts = [edit.inputTokens, edit.outputTokens, edit.cacheTokens].filter((tokens) => tokens !== null);
   return parts.length === 0 ? null : parts.reduce((sum, tokens) => sum + tokens, 0);
-}
-
-function keptPct(facts: EditFacts | null): number | null {
-  if (facts?.keptS === undefined || facts.sourceS === undefined || facts.sourceS === 0) return null;
-  return Math.min(100, (facts.keptS / facts.sourceS) * 100);
 }

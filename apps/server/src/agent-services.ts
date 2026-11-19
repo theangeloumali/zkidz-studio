@@ -70,6 +70,8 @@ export interface AgentServicesDeps {
   readonly hasSdkBinary?: () => boolean | Promise<boolean>;
   readonly engine: EngineRunner;
   readonly ffprobePath: string;
+  /** ZKS_EXPORT_DIR, checked writable at startup. */
+  readonly exportDir?: string;
   readonly fetch?: FetchFunction;
 }
 
@@ -159,7 +161,8 @@ export function createAgentServices(deps: AgentServicesDeps): AgentServices {
   registerRenderJobHandlers(deps.jobRunner, engineJobDeps);
   snapshotRenderJobSpecs(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome });
   gateRenderJobs(deps.jobRunner);
-  registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine });
+  const exportCopy = deps.exportDir === undefined ? {} : { exportCopy: { dir: deps.exportDir, logger: deps.logger } };
+  registerExportHandler(deps.jobRunner, { database: deps.database, studioHome: deps.studioHome, engine: deps.engine, ...exportCopy });
 
   const registerRoutes = (app: Hono) => {
     registerConnectRoutes(app, {

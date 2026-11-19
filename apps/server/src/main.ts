@@ -14,7 +14,7 @@ import { lazySdkQuery } from "./agent/sdk-loader.ts";
 import { createApp } from "./app.ts";
 import { EditRecorder } from "./edits/edit-recorder.ts";
 import { createOsKeyringEntry, createSecretStore } from "./auth/secret-store.ts";
-import { assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
+import { assertExportDirWritable, assertFfprobeInstalled, ensureStudioHome, loadServerConfig } from "./config.ts";
 import { createCliDoctorRunner } from "./doctor/runner.ts";
 import { EventBus } from "./events/event-bus.ts";
 import { closeServer } from "./http/close-server.ts";
@@ -53,6 +53,7 @@ async function main(): Promise<void> {
   const bindHost = config.isContainer ? CONTAINER_BIND_HOST : LOOPBACK_HOST;
   security.assertLoopbackBind(bindHost);
   await assertFfprobeInstalled(config.ffprobePath);
+  if (config.exportDir !== undefined) await assertExportDirWritable(config.exportDir);
 
   await ensureStudioHome(config.studioHome);
   await removeStaleParts(config.studioHome);
@@ -97,6 +98,7 @@ async function main(): Promise<void> {
     hasSdkBinary: () => hasSdkBinary,
     ffprobePath: config.ffprobePath,
     engine,
+    ...(config.exportDir === undefined ? {} : { exportDir: config.exportDir }),
   });
 
   const demoRunner = createDemoRunner({ engineDir: ENGINE_DIR, demoScript: DEMO_SCRIPT, studioHome: config.studioHome, tools: engineTools });

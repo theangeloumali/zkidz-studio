@@ -25,4 +25,6 @@ export const ENV = {
   proxySecret: "ZKS_PROXY_SECRET",
   /** Unset selects PGlite; a postgres:// or postgresql:// URL selects Postgres (plan §8). */
   databaseUrl: "DATABASE_URL",
+  /** Optional absolute folder another app reads; each export is also copied to <dir>/<project-slug>/. */
+  exportDir: "ZKS_EXPORT_DIR",
 } as const;

@@ -16,6 +16,7 @@ import { findProjectOrThrow } from "../projects/project-store.ts";
 import { openConfined } from "../security/confine-path.ts";
 import { writeJobResult } from "../tools/job-results.ts";
 import type { EngineProcessRunner } from "./engine-process.ts";
+import { copyToExportDir, type ExportCopyTarget } from "./export-copy.ts";
 import type { JobRunner, ReportProgress } from "./job-runner.ts";
 import { findLatestMaster, QcMasterRecordSchema } from "./master-files.ts";
 import { assertNoRenderInFlight, assertRenderedBytes, findRenderOf } from "./render-provenance.ts";
@@ -38,6 +39,8 @@ export interface DeliverableDeps {
   readonly studioHome: string;
   /** Runs `zks-engine qc-status`, the gate every export passes first. */
   readonly engine: EngineProcessRunner;
+  /** Set from ZKS_EXPORT_DIR; a failed copy never fails the export. */
+  readonly exportCopy?: ExportCopyTarget;
 }
 
 export interface ExportRequest {
@@ -223,7 +226,21 @@ export function registerExportHandler(jobRunner: JobRunner, deps: DeliverableDep
     const { kinds } = STUDIO_TOOLS.export_deliverable.input.parse(job.params);
     const exported = await exportDeliverables(deps, { projectId: job.projectId, videoId: job.videoId, kinds, jobId: job.id, signal, reportProgress });
     const project = await findProjectOrThrow(deps.database, job.projectId);
-    await writeJobResult(projectDir(deps.studioHome, project.slug), job.id, { deliverables: exported });
+    const projectRoot = projectDir(deps.studioHome, project.slug);
+    await writeJobResult(projectRoot, job.id, { deliverables: exported });
+    if (deps.exportCopy === undefined) return;
+    try {
+      await copyToExportDir(
+        deps.exportCopy.dir,
+        projectRoot,
+        project.slug,
+        exported.map((deliverable) => deliverable.path),
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      deps.exportCopy.logger.error("export copy failed", { jobId: job.id, exportDir: deps.exportCopy.dir, error: reason });
+      await reportProgress({ stage: `Export copy failed: ${reason}`, pct: FULL_PCT });
+    }
   });
 }
 

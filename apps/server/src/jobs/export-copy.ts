@@ -5,6 +5,7 @@ import { createWriteStream } from "node:fs";
 import { lstat, mkdir, realpath, rename, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { PROJECT_SLUG_PATTERN } from "@zks/shared";
 import type { Logger } from "../logging/logger.ts";
 import { openConfined } from "../security/confine-path.ts";
 import { createHashingStream } from "./hashing-stream.ts";
@@ -42,7 +43,7 @@ export async function copyToExportDir(request: ExportCopyRequest): Promise<void>
 
 /** The export folder is shared with another app, so a planted symlink must not redirect where Studio writes. */
 async function prepareSlugDir(exportDir: string, slug: string): Promise<CheckedFolder> {
-  if (basename(slug) !== slug) throw new Error(`Project slug "${slug}" is not a single folder name`);
+  if (!PROJECT_SLUG_PATTERN.test(slug)) throw new Error(`Project slug "${slug}" is not a valid folder name`);
   const slugDir = join(exportDir, slug);
   await mkdir(slugDir, { mode: EXPORT_DIR_MODE }).catch((error: unknown) => {
     if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;

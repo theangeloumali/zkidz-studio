@@ -26,9 +26,12 @@ export const PROJECT_TITLE_MAX_CHARS = 255;
 /** Every enabled rule joins every system prompt, so their number is capped too. */
 export const RULES_ENABLED_MAX = 50;
 
+/** A slug names a folder under ZKS_HOME and ZKS_EXPORT_DIR, so it can never be "", "." or "..". */
+export const PROJECT_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
 export const ProjectSchema = z.strictObject({
   id: IdSchema,
-  slug: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  slug: z.string().regex(PROJECT_SLUG_PATTERN),
   title: z.string().min(1),
   status: ProjectStatusSchema,
   videoId: VideoIdSchema,

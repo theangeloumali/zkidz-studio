@@ -44,11 +44,11 @@ afterEach(async () => {
   await rm(scratchDir, { recursive: true, force: true });
 });
 
-const copy = (overrides: { sha256?: string; signal?: AbortSignal } = {}) =>
+const copy = (overrides: { sha256?: string; signal?: AbortSignal; slug?: string } = {}) =>
   copyToExportDir({
     exportDir,
     projectRoot,
-    slug: SLUG,
+    slug: overrides.slug ?? SLUG,
     deliverables: [{ path: `deliverables/${NAME}`, sha256: overrides.sha256 ?? sha256Of(BYTES) }],
     ...(overrides.signal === undefined ? {} : { signal: overrides.signal }),
   });
@@ -58,6 +58,12 @@ describe("copyToExportDir", () => {
     await copy();
     expect(await readdir(join(exportDir, SLUG))).toEqual([NAME]);
     expect(await readFile(join(exportDir, SLUG, NAME), "utf8")).toBe(BYTES);
+  });
+
+  it.each(["..", ".", ""])("refuses the slug %j before any path work, writing nothing outside the export folder", async (slug) => {
+    await expect(copy({ slug })).rejects.toThrow(/not a valid folder name/);
+    expect((await readdir(scratchDir)).toSorted()).toEqual(["export", "project"]);
+    expect(await readdir(exportDir)).toEqual([]);
   });
 
   it.skipIf(process.platform === "win32")("refuses a source swapped for a symlink to a file outside the project", async () => {
